@@ -85,9 +85,6 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
           <h1 className="text-base font-semibold" style={{ color: 'var(--navy-50)' }}>Annual Roadmap</h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Set milestones per quarter — active quarter flows into your OKRs</p>
         </div>
-        <button className="btn-primary text-xs px-3 py-1.5" onClick={() => setModal({ type: 'add_obj' })}>
-          + Add objective
-        </button>
       </div>
 
       {/* Legend */}

@@ -227,7 +227,7 @@ export default function HQPage() {
           </button>
         ) : (
           <button key={item.id} onClick={() => setScreen(item.id)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: 12, minWidth: 56, position: 'relative' }}>
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: screen === item.id ? 'var(--accent-dim)' : 'none', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: 12, minWidth: 56, position: 'relative', transition: 'background .15s' }}>
             {item.id === 'park' && parkedCount > 0 && (
               <span style={{ position: 'absolute', top: 2, right: 6, background: 'var(--amber)', color: '#0b1520', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, lineHeight: 1.4 }}>{parkedCount}</span>
             )}

@@ -84,7 +84,6 @@ export default function Focus({ objectives, roadmapItems, krs, actions, setActio
       {/* Action cards — clean and flat */}
       {enriched.map(({ action, obj }) => (
         <div key={action.id}
-          onClick={() => toggleAction(action)}
           style={{
             background: 'var(--navy-800)',
             border: '1px solid var(--navy-600)',
@@ -94,25 +93,26 @@ export default function Focus({ objectives, roadmapItems, krs, actions, setActio
             display: 'flex',
             alignItems: 'center',
             gap: 14,
-            cursor: 'pointer',
             opacity: action.completed ? .55 : 1,
             transition: 'opacity .15s',
           }}>
 
-          {/* Circle checkbox */}
-          <div style={{
-            width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
-            border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`,
-            background: action.completed ? 'var(--teal)' : 'transparent',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'all .15s',
-          }}>
+          {/* Circle checkbox — only tappable element */}
+          <button
+            onClick={() => toggleAction(action)}
+            style={{
+              width: 26, height: 26, borderRadius: '50%', flexShrink: 0,
+              border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`,
+              background: action.completed ? 'var(--teal)' : 'transparent',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', transition: 'all .15s', padding: 0,
+            }}>
             {action.completed && (
               <svg width="12" height="9" viewBox="0 0 12 9" fill="none">
                 <path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             )}
-          </div>
+          </button>
 
           {/* Text */}
           <div style={{ flex: 1, minWidth: 0 }}>
