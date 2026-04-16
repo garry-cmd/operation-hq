@@ -21,6 +21,7 @@ export interface RoadmapItem {
   quarter: string | null
   sort_order: number
   status: ItemStatus
+  health_status: 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
   is_parked: boolean
   created_at: string
 }

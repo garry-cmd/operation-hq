@@ -206,7 +206,7 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} krs={krs} setKrs={setKrs} toast={setToast} />}
             {screen === 'focus'   && <Focus objectives={objectives} roadmapItems={roadmapItems} krs={krs} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'roadmap' && <Roadmap objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} toast={setToast} />}
             {screen === 'reflect' && <Reflect objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
