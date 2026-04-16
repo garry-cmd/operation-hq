@@ -14,6 +14,14 @@ export interface AnnualObjective {
   created_at: string
 }
 
+export interface ObjectiveLog {
+  id: string
+  objective_id: string
+  content: string
+  log_date: string
+  created_at: string
+}
+
 export interface ObjectiveLink {
   id: string
   objective_id: string

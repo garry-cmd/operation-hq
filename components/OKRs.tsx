@@ -1,5 +1,5 @@
 'use client'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog } from '@/lib/types'
 import ObjectiveCard from './ObjectiveCard'
 
 type Props = {
@@ -10,12 +10,15 @@ type Props = {
   actions: WeeklyAction[]
   weekStart: string
   links: ObjectiveLink[]
+  logs: ObjectiveLog[]
   onAddLink: (link: ObjectiveLink) => void
   onDeleteLink: (id: string) => void
+  onAddLog: (log: ObjectiveLog) => void
+  onDeleteLog: (id: string) => void
   toast: (m: string) => void
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, weekStart, links, onAddLink, onDeleteLink, toast }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, toast }: Props) {
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack  = activeKRs.filter(i => i.health_status === 'on_track').length
@@ -61,10 +64,13 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               actions={actions}
               weekStart={weekStart}
               links={links}
+              logs={logs}
               setRoadmapItems={setRoadmapItems}
               setObjectives={setObjectives}
               onAddLink={onAddLink}
               onDeleteLink={onDeleteLink}
+              onAddLog={onAddLog}
+              onDeleteLog={onDeleteLog}
               onEditKR={() => {}}
               toast={toast}
             />

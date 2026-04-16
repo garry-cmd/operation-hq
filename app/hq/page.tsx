@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog } from '@/lib/types'
 import { getMonday, ACTIVE_Q } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -36,6 +36,7 @@ export default function HQPage() {
   const [checkins, setCheckins] = useState<DailyCheckin[]>([])
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [links, setLinks] = useState<ObjectiveLink[]>([])
+  const [logs, setLogs] = useState<ObjectiveLog[]>([])
   const [shareToken, setShareToken] = useState('')
 
   useEffect(() => {
@@ -66,13 +67,14 @@ export default function HQPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [o, r, a, ci, rv, lk, st] = await Promise.all([
+    const [o, r, a, ci, rv, lk, lg, st] = await Promise.all([
       supabase.from('annual_objectives').select('*').order('sort_order'),
       supabase.from('roadmap_items').select('*').order('sort_order'),
       supabase.from('weekly_actions').select('*').order('created_at'),
       supabase.from('daily_checkins').select('*').order('checkin_date', { ascending: false }),
       supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
       supabase.from('objective_links').select('*').order('sort_order'),
+      supabase.from('objective_logs').select('*').order('created_at', { ascending: false }),
       supabase.from('share_tokens').select('token').eq('label', 'Melissa').eq('active', true).single(),
     ])
     setObjectives(o.data ?? [])
@@ -81,6 +83,7 @@ export default function HQPage() {
     setCheckins(ci.data ?? [])
     setReviews(rv.data ?? [])
     setLinks(lk.data ?? [])
+    setLogs(lg.data ?? [])
     if (st.data) setShareToken(st.data.token)
     setLoading(false)
   }, [])
@@ -195,7 +198,7 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={actions} weekStart={weekStart} links={links} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={actions} weekStart={weekStart} links={links} logs={logs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} toast={setToast} />}
             {screen === 'focus'   && <Focus objectives={objectives} roadmapItems={roadmapItems} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'roadmap' && <Roadmap objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} toast={setToast} />}
             {screen === 'reflect' && <Reflect objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}

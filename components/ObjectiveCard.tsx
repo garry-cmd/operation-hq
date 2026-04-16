@@ -1,10 +1,10 @@
 'use client'
 import { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, HealthStatus } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus } from '@/lib/types'
 import Modal from './Modal'
 
-type Section = 'notes' | 'links' | null
+type Section = 'notes' | 'links' | 'logs' | null
 
 const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'on_track', 'off_track', 'blocked', 'done']
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
@@ -26,20 +26,25 @@ interface Props {
   actions: WeeklyAction[]
   weekStart: string
   links: ObjectiveLink[]
+  logs: ObjectiveLog[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   onAddLink: (link: ObjectiveLink) => void
   onDeleteLink: (id: string) => void
+  onAddLog: (log: ObjectiveLog) => void
+  onDeleteLog: (id: string) => void
   onEditKR: (kr: RoadmapItem) => void
   toast: (m: string) => void
 }
 
-export default function ObjectiveCard({ obj, krs, actions, weekStart, links, setRoadmapItems, setObjectives, onAddLink, onDeleteLink, onEditKR, toast }: Props) {
-  const [section, setSection] = useState<Section>(null)
+export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, setRoadmapItems, setObjectives, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, toast }: Props) {
+  const [section, setSection] = useState<'notes' | 'links' | 'logs' | null>(null)
   const [notes, setNotes] = useState(obj.notes ?? '')
   const [notesSaved, setNotesSaved] = useState(true)
   const [linkUrl, setLinkUrl] = useState('')
   const [addingLink, setAddingLink] = useState(false)
+  const [logEntry, setLogEntry] = useState('')
+  const [savingLog, setSavingLog] = useState(false)
   const [editKR, setEditKR] = useState<RoadmapItem | null>(null)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -48,6 +53,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, set
   const offTrack = krs.filter(k => k.health_status === 'off_track').length
   const blocked  = krs.filter(k => k.health_status === 'blocked').length
   const objLinks = links.filter(l => l.objective_id === obj.id)
+  const objLogs  = logs.filter(l => l.objective_id === obj.id)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
   async function cycleStatus(kr: RoadmapItem) {
     const idx = HEALTH_CYCLE.indexOf(kr.health_status ?? 'not_started')
@@ -74,12 +81,27 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, set
     let url = linkUrl.trim()
     if (!url.startsWith('http')) url = 'https://' + url
     const domain = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0]
-    const title = domain
     const { data } = await supabase.from('objective_links')
-      .insert({ objective_id: obj.id, url, title, sort_order: objLinks.length })
+      .insert({ objective_id: obj.id, url, title: domain, sort_order: objLinks.length })
       .select().single()
     if (data) { onAddLink(data); setLinkUrl('') }
     setAddingLink(false)
+  }
+
+  async function saveLog() {
+    if (!logEntry.trim() || savingLog) return
+    setSavingLog(true)
+    const today = new Date().toISOString().slice(0, 10)
+    const { data } = await supabase.from('objective_logs')
+      .insert({ objective_id: obj.id, content: logEntry.trim(), log_date: today })
+      .select().single()
+    if (data) { onAddLog(data); setLogEntry('') }
+    setSavingLog(false)
+  }
+
+  async function deleteLogEntry(id: string) {
+    await supabase.from('objective_logs').delete().eq('id', id)
+    onDeleteLog(id)
   }
 
   async function deleteLink(id: string) {
@@ -164,7 +186,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, set
           </button>
           {/* Links tab */}
           <button onClick={() => toggleSection('links')}
-            style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'links' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: section === 'links' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
+            style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'links' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', borderRight: `1px solid ${divColor}`, cursor: 'pointer', color: section === 'links' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
               <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95L7 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
               <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0L3 8a3.5 3.5 0 0 0 4.95 4.95L9 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
@@ -173,6 +195,20 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, set
             {objLinks.length > 0 && (
               <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: section === 'links' ? obj.color : 'var(--navy-600)', color: section === 'links' ? '#fff' : 'var(--navy-400)' }}>
                 {objLinks.length}
+              </span>
+            )}
+          </button>
+          {/* Logs tab */}
+          <button onClick={() => toggleSection('logs')}
+            style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'logs' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: section === 'logs' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
+              <path d="M5 6h6M5 9h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
+            </svg>
+            Logs
+            {objLogs.length > 0 && (
+              <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: section === 'logs' ? obj.color : 'var(--navy-600)', color: section === 'logs' ? '#fff' : 'var(--navy-400)' }}>
+                {objLogs.length}
               </span>
             )}
           </button>
@@ -241,7 +277,49 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, set
         )}
       </div>
 
-      {/* Edit KR modal */}
+        {/* Logs section */}
+        {section === 'logs' && (
+          <div style={{ borderTop: `1px solid ${divColor}`, background: 'var(--navy-700)' }}>
+            {/* New entry form */}
+            <div style={{ padding: '12px 14px', borderBottom: `1px solid ${divColor}` }}>
+              <textarea
+                value={logEntry}
+                onChange={e => setLogEntry(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveLog() }}
+                placeholder={`What's happening with ${obj.name.split('—')[0].trim()}?`}
+                style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.6, resize: 'none', color: 'var(--navy-100)', outline: 'none', marginBottom: 8 }}
+                rows={3}
+              />
+              <button onClick={saveLog} disabled={!logEntry.trim() || savingLog}
+                style={{ padding: '8px 18px', background: obj.color, color: '#fff', fontSize: 12, fontWeight: 700, border: 'none', borderRadius: 9, cursor: 'pointer', opacity: !logEntry.trim() ? .45 : 1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="1.7" strokeLinecap="round"/></svg>
+                {savingLog ? 'Saving…' : 'Log it'}
+              </button>
+            </div>
+            {/* Entries — newest first */}
+            {objLogs.length === 0 && (
+              <div style={{ fontSize: 12, color: 'var(--navy-500)', textAlign: 'center', padding: '14px 0' }}>
+                No entries yet
+              </div>
+            )}
+            {objLogs.map((log, i) => (
+              <div key={log.id} style={{ padding: '12px 14px', borderBottom: i < objLogs.length - 1 ? `1px solid ${divColor}` : 'none', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 5 }}>
+                    {new Date(log.log_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--navy-200)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                    {log.content}
+                  </div>
+                </div>
+                <button onClick={() => deleteLogEntry(log.id)}
+                  style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0, marginTop: 2 }}>
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       {editKR && (
         <EditKRModal kr={editKR} onClose={() => setEditKR(null)}
           onSave={updated => { setRoadmapItems(prev => prev.map(i => i.id === updated.id ? updated : i)); setEditKR(null); toast('Key result updated.') }} />
