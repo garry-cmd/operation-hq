@@ -4,6 +4,14 @@ export type CheckinStatus = 'on_track' | 'off_track' | 'blocked'
 export type ReviewRating = 'strong' | 'steady' | 'rough'
 export type HealthStatus = 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
 
+export interface Space {
+  id: string
+  name: string
+  color: string
+  sort_order: number
+  created_at: string
+}
+
 export interface AnnualObjective {
   id: string
   name: string
@@ -11,6 +19,7 @@ export interface AnnualObjective {
   sort_order: number
   status: 'active' | 'abandoned'
   notes: string
+  space_id: string
   created_at: string
 }
 
@@ -72,4 +81,5 @@ export interface WeeklyReview {
   adjust_notes: string
   krs_hit: number
   krs_total: number
+  space_id: string
 }

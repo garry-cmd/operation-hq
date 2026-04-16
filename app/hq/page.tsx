@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog } from '@/lib/types'
 import { getMonday, ACTIVE_Q } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -10,6 +10,7 @@ import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
+import SpaceSwitcher from '@/components/SpaceSwitcher'
 import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
@@ -38,6 +39,9 @@ export default function HQPage() {
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
   const [shareToken, setShareToken] = useState('')
+  const [spaces, setSpaces] = useState<Space[]>([])
+  const [activeSpaceId, setActiveSpaceId] = useState('')
+  const [spaceSwitcherOpen, setSpaceSwitcherOpen] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('hq-theme') as 'dark' | 'light' | null
@@ -45,6 +49,11 @@ export default function HQPage() {
     setTheme(initial)
     document.documentElement.setAttribute('data-theme', initial)
   }, [])
+
+  function switchSpace(spaceId: string) {
+    setActiveSpaceId(spaceId)
+    localStorage.setItem('hq-active-space', spaceId)
+  }
 
   function toggleTheme() {
     const next = theme === 'dark' ? 'light' : 'dark'
@@ -69,7 +78,7 @@ export default function HQPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [o, r, a, ci, rv, lk, lg, st] = await Promise.all([
+    const [o, r, a, ci, rv, lk, lg, sp, st] = await Promise.all([
       supabase.from('annual_objectives').select('*').order('sort_order'),
       supabase.from('roadmap_items').select('*').order('sort_order'),
       supabase.from('weekly_actions').select('*').order('created_at'),
@@ -77,6 +86,7 @@ export default function HQPage() {
       supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
       supabase.from('objective_links').select('*').order('sort_order'),
       supabase.from('objective_logs').select('*').order('created_at', { ascending: false }),
+      supabase.from('spaces').select('*').order('sort_order'),
       supabase.from('share_tokens').select('token').eq('label', 'Melissa').eq('active', true).single(),
     ])
     setObjectives(o.data ?? [])
@@ -86,7 +96,13 @@ export default function HQPage() {
     setReviews(rv.data ?? [])
     setLinks(lk.data ?? [])
     setLogs(lg.data ?? [])
+    const loadedSpaces: Space[] = sp.data ?? []
+    setSpaces(loadedSpaces)
     if (st.data) setShareToken(st.data.token)
+    // Set active space from localStorage or default to first
+    const savedSpaceId = localStorage.getItem('hq-active-space')
+    const validId = loadedSpaces.find(s => s.id === savedSpaceId)?.id ?? loadedSpaces[0]?.id ?? ''
+    setActiveSpaceId(validId)
     setLoading(false)
   }, [])
 
@@ -120,6 +136,18 @@ export default function HQPage() {
   const initials = user.email?.slice(0, 2).toUpperCase() ?? 'HQ'
   const parkedCount = roadmapItems.filter(i => i.is_parked).length
 
+  // Space-scoped data — everything filters from the active space's objectives
+  const activeSpace = spaces.find(s => s.id === activeSpaceId)
+  const spaceObjectives = objectives.filter(o => o.space_id === activeSpaceId)
+  const spaceObjectiveIds = new Set(spaceObjectives.map(o => o.id))
+  const spaceRoadmapItems = roadmapItems.filter(i => spaceObjectiveIds.has(i.annual_objective_id))
+  const spaceRoadmapItemIds = new Set(spaceRoadmapItems.map(i => i.id))
+  const spaceActions = actions.filter(a => spaceRoadmapItemIds.has(a.roadmap_item_id))
+  const spaceCheckins = checkins.filter(c => spaceRoadmapItemIds.has(c.roadmap_item_id))
+  const spaceLinks = links.filter(l => spaceObjectiveIds.has(l.objective_id))
+  const spaceLogs = logs.filter(l => spaceObjectiveIds.has(l.objective_id))
+  const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
+
   // Nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking
   const NAV: { id: Screen; label: string; icon: React.ReactNode; fab?: boolean }[] = [
     { id: 'reflect',  label: 'Reflect',  icon: <ReflectIcon  active={screen === 'reflect'} /> },
@@ -133,8 +161,18 @@ export default function HQPage() {
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--navy-900)' }}>
       {/* Topbar */}
       <header style={{ position: 'sticky', top: 0, zIndex: 40, height: 54, background: 'var(--navy-800)', borderBottom: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)', flexShrink: 0 }}>
-          Op <span style={{ color: 'var(--accent)' }}>HQ</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)' }}>
+            Op <span style={{ color: 'var(--accent)' }}>HQ</span>
+          </div>
+          {activeSpace && (
+            <button onClick={() => setSpaceSwitcherOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 99, padding: '4px 10px 4px 8px', cursor: 'pointer', transition: 'all .15s' }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: activeSpace.color, flexShrink: 0 }} />
+              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-200)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeSpace.name}</span>
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}><path d="M2 4l3 3 3-3" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </button>
+          )}
         </div>
         {/* Search */}
         <div style={{ flex: 1, position: 'relative' }}>
@@ -200,11 +238,11 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={actions} weekStart={weekStart} links={links} logs={logs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} toast={setToast} />}
-            {screen === 'focus'   && <Focus objectives={objectives} roadmapItems={roadmapItems} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
-            {screen === 'roadmap' && <Roadmap objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} toast={setToast} />}
-            {screen === 'reflect' && <Reflect objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
-            {screen === 'park'    && <ParkingLot objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} toast={setToast} />}
+            {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
+            {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
+            {screen === 'reflect' && <Reflect objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} checkins={spaceCheckins} setCheckins={setCheckins} reviews={spaceReviews} setReviews={setReviews} weekStart={weekStart} activeSpaceId={activeSpaceId} toast={setToast} />}
+            {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
       </main>
@@ -231,9 +269,22 @@ export default function HQPage() {
         ))}
       </nav>
 
+      {spaceSwitcherOpen && (
+        <SpaceSwitcher
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          objectives={objectives}
+          roadmapItems={roadmapItems}
+          onSelect={id => { switchSpace(id) }}
+          onClose={() => setSpaceSwitcherOpen(false)}
+          onSpaceCreated={space => setSpaces(prev => [...prev, space])}
+          onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
+        />
+      )}
+
       <FastCapture
-        objectives={objectives}
-        roadmapItems={roadmapItems}
+        objectives={spaceObjectives}
+        roadmapItems={spaceRoadmapItems}
         weekStart={weekStart}
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}

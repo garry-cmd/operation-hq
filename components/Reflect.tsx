@@ -14,12 +14,13 @@ type Props = {
   reviews: WeeklyReview[]
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   weekStart: string
+  activeSpaceId: string
   toast: (m: string) => void
 }
 
 type Sub = 'checkin' | 'progress' | 'review' | 'history'
 
-export default function Reflect({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, toast }: Props) {
+export default function Reflect({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, toast }: Props) {
   const [sub, setSub] = useState<Sub>('checkin')
   const TABS: { id: Sub; label: string }[] = [
     { id: 'checkin',  label: 'Check-in' },
@@ -44,7 +45,7 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
       </div>
       {sub === 'checkin'  && <CheckinView  objectives={objectives} roadmapItems={roadmapItems} checkins={checkins} setCheckins={setCheckins} toast={toast} />}
       {sub === 'progress' && <ProgressView objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} toast={toast} />}
-      {sub === 'review'   && <ReviewView   reviews={reviews} setReviews={setReviews} roadmapItems={roadmapItems} weekStart={weekStart} toast={toast} />}
+      {sub === 'review'   && <ReviewView   reviews={reviews} setReviews={setReviews} roadmapItems={roadmapItems} weekStart={weekStart} activeSpaceId={activeSpaceId} toast={toast} />}
       {sub === 'history'  && <HistoryView  reviews={reviews} />}
     </div>
   )
@@ -154,7 +155,7 @@ function ProgressView({ objectives, roadmapItems, setRoadmapItems, toast }: Pick
 }
 
 /* ── Review ── */
-function ReviewView({ reviews, setReviews, roadmapItems, weekStart, toast }: Pick<Props, 'reviews' | 'setReviews' | 'roadmapItems' | 'weekStart' | 'toast'>) {
+function ReviewView({ reviews, setReviews, roadmapItems, weekStart, activeSpaceId, toast }: Pick<Props, 'reviews' | 'setReviews' | 'roadmapItems' | 'weekStart' | 'activeSpaceId' | 'toast'>) {
   const existing = reviews.find(r => r.week_start === weekStart)
   const [rv, setRv] = useState({ rating: existing?.rating ?? 'steady' as ReviewRating, win: existing?.win ?? '', slipped: existing?.slipped ?? '', adjust_notes: existing?.adjust_notes ?? '' })
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
@@ -166,7 +167,7 @@ function ReviewView({ reviews, setReviews, roadmapItems, weekStart, toast }: Pic
       await supabase.from('weekly_reviews').update(payload).eq('id', existing.id)
       setReviews(prev => prev.map(r => r.id === existing.id ? { ...r, ...payload } : r))
     } else {
-      const { data } = await supabase.from('weekly_reviews').insert(payload).select().single()
+      const { data } = await supabase.from('weekly_reviews').insert({ ...payload, space_id: activeSpaceId }).select().single()
       if (data) setReviews(prev => [data, ...prev])
     }
     toast('Review saved!')

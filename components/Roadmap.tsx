@@ -10,6 +10,7 @@ type Props = {
   roadmapItems: RoadmapItem[]
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
+  activeSpaceId: string
   toast: (m: string) => void
 }
 
@@ -28,7 +29,7 @@ function hex2rgba(hex: string, a: number) {
   return `rgba(${r},${g},${b},${a})`
 }
 
-export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, toast }: Props) {
+export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, activeSpaceId, toast }: Props) {
   const [modal, setModal] = useState<ModalState>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -177,6 +178,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
         <ObjModal
           obj={modal.type === 'edit_obj' ? modal.obj : undefined}
           objectives={objectives}
+          activeSpaceId={activeSpaceId}
           onClose={() => setModal(null)}
           onSave={o => {
             setObjectives(prev => modal.type === 'edit_obj' ? prev.map(x => x.id === o.id ? o : x) : [...prev, o])
@@ -265,8 +267,9 @@ function AddKRBtn({ onClick, color }: { onClick: (e: React.MouseEvent) => void; 
 }
 
 /* ── Objective modal ── */
-function ObjModal({ obj, objectives, onClose, onSave, onAbandon }: {
+function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon }: {
   obj?: AnnualObjective; objectives: AnnualObjective[]
+  activeSpaceId: string
   onClose: () => void; onSave: (o: AnnualObjective) => void
   onAbandon?: (obj: AnnualObjective) => void
 }) {
@@ -282,7 +285,7 @@ function ObjModal({ obj, objectives, onClose, onSave, onAbandon }: {
       onSave({ ...obj, name, color })
     } else {
       const { data } = await supabase.from('annual_objectives')
-        .insert({ name, color, sort_order: objectives.length, status: 'active' }).select().single()
+        .insert({ name, color, sort_order: objectives.length, status: 'active', space_id: activeSpaceId }).select().single()
       if (data) onSave(data)
     }
     setSaving(false)
