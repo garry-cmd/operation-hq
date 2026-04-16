@@ -56,13 +56,13 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
 
       {/* Legend */}
       <div className="flex gap-4 mb-3">
-        {[
+        {([
           [S.chipActive, '→Q Active quarter'],
           [S.chip, 'Planned'],
-          [{ ...S.chip, opacity: .4 }, 'Done'],
-        ].map(([style, label]) => (
-          <div key={label as string} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--navy-400)' }}>
-            <div className="w-3 h-3 rounded-sm" style={style as React.CSSProperties} />
+          [{ ...S.chip, opacity: 0.4 }, 'Done'],
+        ] as [React.CSSProperties, string][]).map(([style, label]) => (
+          <div key={label} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--navy-400)' }}>
+            <div className="w-3 h-3 rounded-sm" style={style} />
             {label}
           </div>
         ))}
