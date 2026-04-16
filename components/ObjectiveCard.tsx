@@ -57,6 +57,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const onTrack  = krs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
   const offTrack = krs.filter(k => k.health_status === 'off_track').length
   const blocked  = krs.filter(k => k.health_status === 'blocked').length
+  const notStarted = krs.filter(k => k.health_status === 'not_started' || !k.health_status).length
   const doneKRs  = krs.filter(k => k.health_status === 'done').length
   const progress = krs.length > 0 ? Math.round((doneKRs / krs.length) * 100) : 0
   const objLinks = links.filter(l => l.objective_id === obj.id)
@@ -168,7 +169,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                 {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
                 {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
                 {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
-                {onTrack === 0 && offTrack === 0 && blocked === 0 && krs.length > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{krs.length} not started</span>}
+                {notStarted > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{notStarted} not started</span>}
                 {krs.length === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>No key results</span>}
               </div>
             ) : (
@@ -177,7 +178,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                 {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
                 {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
                 {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
-                {onTrack === 0 && offTrack === 0 && blocked === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>not started</span>}
+                {notStarted > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{notStarted} not started</span>}
               </div>
             )}
             {/* Progress bar — always visible, even collapsed */}
