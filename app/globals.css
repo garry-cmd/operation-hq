@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Force dark as base — light is the toggle exception */
+:root {
+  color-scheme: dark;
+}
+
 /* ── Light theme (default) — cool grey-green mist ── */
 :root {
   --navy-900: #eef2f0;
