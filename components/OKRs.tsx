@@ -8,6 +8,7 @@ type Props = {
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   actions: WeeklyAction[]
+  setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   weekStart: string
   links: ObjectiveLink[]
   logs: ObjectiveLog[]
@@ -18,7 +19,7 @@ type Props = {
   toast: (m: string) => void
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, toast }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, toast }: Props) {
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack  = activeKRs.filter(i => i.health_status === 'on_track').length
@@ -66,6 +67,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               logs={logs}
               setRoadmapItems={setRoadmapItems}
               setObjectives={setObjectives}
+              setActions={setActions}
               onAddLink={onAddLink}
               onDeleteLink={onDeleteLink}
               onAddLog={onAddLog}

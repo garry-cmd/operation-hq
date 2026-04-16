@@ -1,5 +1,5 @@
 'use client'
-import { useState, useRef, useCallback } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
@@ -30,6 +30,7 @@ interface Props {
   logs: ObjectiveLog[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
+  setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   onAddLink: (link: ObjectiveLink) => void
   onDeleteLink: (id: string) => void
   onAddLog: (log: ObjectiveLog) => void
@@ -38,7 +39,7 @@ interface Props {
   toast: (m: string) => void
 }
 
-export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, setRoadmapItems, setObjectives, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, toast }: Props) {
+export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, setRoadmapItems, setObjectives, setActions, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, toast }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const [section, setSection] = useState<'notes' | 'links' | 'logs' | null>(null)
   const [notes, setNotes] = useState(obj.notes ?? '')
@@ -51,6 +52,9 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const [addingKR, setAddingKR] = useState(false)
   const [newKRTitle, setNewKRTitle] = useState('')
   const [savingKR, setSavingKR] = useState(false)
+  const [addingActionKRId, setAddingActionKRId] = useState<string | null>(null)
+  const [newActionTitle, setNewActionTitle] = useState('')
+  const [savingAction, setSavingAction] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
@@ -142,6 +146,25 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
     setSavingKR(false)
   }
 
+  async function addAction(krId: string) {
+    if (!newActionTitle.trim() || savingAction) return
+    setSavingAction(true)
+    const { data } = await supabase.from('weekly_actions')
+      .insert({
+        roadmap_item_id: krId,
+        title: newActionTitle.trim(),
+        week_start: weekStart,
+      })
+      .select().single()
+    if (data) {
+      setActions(prev => [...prev, data])
+      setNewActionTitle('')
+      setAddingActionKRId(null)
+      toast('Action added.')
+    }
+    setSavingAction(false)
+  }
+
   function toggleSection(s: Section) {
     setSection(prev => prev === s ? null : s)
   }
@@ -208,24 +231,57 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
           const h = kr.health_status ?? 'not_started'
           const hs = HEALTH[h]
           return (
-            <div key={kr.id} style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 4 }}>{kr.title}</div>
-                <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>
-                  {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
+            <React.Fragment key={kr.id}>
+              <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 4 }}>{kr.title}</div>
+                  <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>
+                    {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
+                  <button onClick={() => setAddingActionKRId(kr.id)}
+                    style={{ fontSize: 10, fontWeight: 600, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                    Add action
+                  </button>
+                  <button onClick={() => cycleStatus(kr)}
+                    style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s' }}>
+                    {hs.label}
+                  </button>
+                  <button onClick={() => setEditKR(kr)}
+                    style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                  </button>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
-                <button onClick={() => cycleStatus(kr)}
-                  style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s' }}>
-                  {hs.label}
-                </button>
-                <button onClick={() => setEditKR(kr)}
-                  style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                </button>
-              </div>
-            </div>
+              {/* Inline action form */}
+              {addingActionKRId === kr.id && (
+                <div style={{ padding: '11px 14px', borderTop: `1px solid ${divColor}`, background: 'var(--navy-700)' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <input
+                      value={newActionTitle}
+                      onChange={e => setNewActionTitle(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addAction(kr.id)
+                        if (e.key === 'Escape') { setAddingActionKRId(null); setNewActionTitle('') }
+                      }}
+                      placeholder="What action will move this KR forward?"
+                      autoFocus
+                      style={{ flex: 1, fontSize: 12, padding: '8px 10px', border: '1px solid var(--navy-600)', borderRadius: 8, background: 'var(--navy-800)', color: 'var(--navy-100)', outline: 'none' }}
+                    />
+                    <button onClick={() => addAction(kr.id)} disabled={!newActionTitle.trim() || savingAction}
+                      style={{ padding: '8px 12px', background: obj.color, color: '#fff', fontSize: 11, fontWeight: 600, border: 'none', borderRadius: 8, cursor: 'pointer', opacity: !newActionTitle.trim() ? .5 : 1 }}>
+                      {savingAction ? 'Adding…' : 'Add'}
+                    </button>
+                    <button onClick={() => { setAddingActionKRId(null); setNewActionTitle('') }}
+                      style={{ padding: '8px 12px', background: 'transparent', color: 'var(--navy-400)', fontSize: 11, border: '1px solid var(--navy-600)', borderRadius: 8, cursor: 'pointer' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </React.Fragment>
           )
         })}
 
