@@ -44,7 +44,7 @@ export default function OKRs({ objectives, roadmapItems, krs, setKrs, toast }: P
 
   return (
     <div>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>{ACTIVE_Q} OKRs</h1>
+      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>{ACTIVE_Q} — Objectives &amp; Key Results</h1>
       <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>Apr 1 – Jun 30</p>
 
       {/* Summary grid */}
