@@ -1,55 +1,37 @@
 'use client'
-import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus } from '@/lib/types'
-import Modal from './Modal'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink } from '@/lib/types'
+import ObjectiveCard from './ObjectiveCard'
 
 type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
+  setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   actions: WeeklyAction[]
   weekStart: string
+  links: ObjectiveLink[]
+  onAddLink: (link: ObjectiveLink) => void
+  onDeleteLink: (id: string) => void
   toast: (m: string) => void
 }
 
-const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'on_track', 'off_track', 'blocked', 'done']
-const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
-  not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
-  on_track:    { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'On track' },
-  off_track:   { bg: 'var(--red-bg)',    color: 'var(--red-text)',  label: 'Off track' },
-  blocked:     { bg: 'var(--amber-bg)',  color: 'var(--amber-text)', label: 'Blocked' },
-  done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done ✓' },
-}
-
-export default function OKRs({ objectives, roadmapItems, setRoadmapItems, actions, weekStart, toast }: Props) {
-  const [editKR, setEditKR] = useState<RoadmapItem | null>(null)
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, weekStart, links, onAddLink, onDeleteLink, toast }: Props) {
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
-  const onTrack = activeKRs.filter(i => i.health_status === 'on_track').length
+  const onTrack  = activeKRs.filter(i => i.health_status === 'on_track').length
   const offTrack = activeKRs.filter(i => i.health_status === 'off_track').length
-
-  async function cycleStatus(item: RoadmapItem) {
-    const idx = HEALTH_CYCLE.indexOf(item.health_status ?? 'not_started')
-    const next = HEALTH_CYCLE[(idx + 1) % HEALTH_CYCLE.length]
-    await supabase.from('roadmap_items').update({ health_status: next }).eq('id', item.id)
-    setRoadmapItems(prev => prev.map(i => i.id === item.id ? { ...i, health_status: next } : i))
-  }
 
   return (
     <div>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>
-        My OKRs
-      </h1>
+      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>My OKRs</h1>
       <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>What you're working on right now</p>
 
       {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 20 }}>
         {[
-          ['Key Results',      activeKRs.length,        'var(--accent)'],
-          ['On track',         onTrack,                 'var(--teal-text)'],
-          ['Off track',        offTrack,                'var(--red-text)'],
-          ['Actions this week',weekActions.length,      'var(--navy-50)'],
+          ['Key Results',      activeKRs.length,   'var(--accent)'],
+          ['On track',         onTrack,             'var(--teal-text)'],
+          ['Off track',        offTrack,            'var(--red-text)'],
         ].map(([l, v, c]) => (
           <div key={l as string} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '11px 13px' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.4px' }}>{l}</div>
@@ -66,88 +48,28 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, action
         </div>
       )}
 
-      {objectives.map(obj => {
-        const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
-        if (!objKRs.length) return null
-        return (
-          <div key={obj.id} style={{ marginBottom: 18 }}>
-            {/* Objective header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
-              <div style={{ width: 10, height: 10, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)' }}>{obj.name}</div>
-            </div>
-
-            {/* Single card for all KRs under this objective */}
-            <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, overflow: 'hidden', borderLeft: `4px solid ${obj.color}` }}>
-              {objKRs.map((kr, i) => {
-                const actCount = weekActions.filter(a => a.roadmap_item_id === kr.id).length
-                const h = kr.health_status ?? 'not_started'
-                const hs = HEALTH[h]
-                return (
-                  <div key={kr.id} style={{ borderTop: i > 0 ? '2px solid var(--navy-600)' : 'none' }}>
-                    <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        {/* KR title */}
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 8 }}>
-                          {kr.title}
-                        </div>
-                        {/* Progress bar */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
-                          <div style={{ flex: 1, height: 4, background: 'var(--navy-600)', borderRadius: 2 }}>
-                            <div style={{ height: 4, borderRadius: 2, background: obj.color, width: `${kr.progress ?? 0}%`, transition: 'width .3s' }} />
-                          </div>
-                          <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600, minWidth: 28, textAlign: 'right' }}>{kr.progress ?? 0}%</span>
-                        </div>
-                        {/* Action count */}
-                        <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
-                          {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
-                        </div>
-                      </div>
-                      {/* Status pill — tap to cycle */}
-                      <button onClick={() => cycleStatus(kr)}
-                        style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s', marginTop: 2 }}>
-                        {hs.label}
-                      </button>
-                      {/* Edit button */}
-                      <button onClick={() => setEditKR(kr)}
-                        style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginTop: 2 }}>
-                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )
-      })}
-
-      {/* Edit KR modal */}
-      {editKR && (
-        <EditKRModal kr={editKR} onClose={() => setEditKR(null)}
-          onSave={updated => { setRoadmapItems(prev => prev.map(i => i.id === updated.id ? updated : i)); setEditKR(null); toast('Key result updated.') }} />
-      )}
+      {objectives
+        .filter(o => o.status !== 'abandoned')
+        .map(obj => {
+          const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
+          if (!objKRs.length) return null
+          return (
+            <ObjectiveCard
+              key={obj.id}
+              obj={obj}
+              krs={objKRs}
+              actions={actions}
+              weekStart={weekStart}
+              links={links}
+              setRoadmapItems={setRoadmapItems}
+              setObjectives={setObjectives}
+              onAddLink={onAddLink}
+              onDeleteLink={onDeleteLink}
+              onEditKR={() => {}}
+              toast={toast}
+            />
+          )
+        })}
     </div>
-  )
-}
-
-function EditKRModal({ kr, onClose, onSave }: { kr: RoadmapItem; onClose: () => void; onSave: (kr: RoadmapItem) => void }) {
-  const [title, setTitle] = useState(kr.title)
-  const [saving, setSaving] = useState(false)
-  async function save() {
-    if (!title.trim()) return
-    setSaving(true)
-    await supabase.from('roadmap_items').update({ title }).eq('id', kr.id)
-    onSave({ ...kr, title })
-    setSaving(false)
-  }
-  return (
-    <Modal title="Edit Key Result" onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>{saving ? 'Saving…' : 'Save'}</button></>}>
-      <div className="field">
-        <label>Key Result</label>
-        <textarea className="input" rows={3} value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-      </div>
-    </Modal>
   )
 }

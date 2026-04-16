@@ -10,6 +10,16 @@ export interface AnnualObjective {
   color: string
   sort_order: number
   status: 'active' | 'abandoned'
+  notes: string
+  created_at: string
+}
+
+export interface ObjectiveLink {
+  id: string
+  objective_id: string
+  url: string
+  title: string
+  sort_order: number
   created_at: string
 }
 
