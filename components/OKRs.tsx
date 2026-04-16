@@ -71,68 +71,61 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, krs, s
         </div>
       )}
 
-      {activeItems.map(item => {
-        const obj = objectives.find(o => o.id === item.annual_objective_id)
-        const milestones = krs.filter(k => k.roadmap_item_id === item.id)
-        const doneMilestones = milestones.filter(k => k.status === 'done').length
-        const pct = milestones.length ? Math.round(doneMilestones / milestones.length * 100) : 0
-        const hs = item.health_status ?? 'not_started'
-        const style = HEALTH_STYLE[hs]
-
+      {/* Group Key Results under their Objective — one header per objective */}
+      {objectives.map(obj => {
+        const objItems = activeItems.filter(i => i.annual_objective_id === obj.id)
+        if (!objItems.length) return null
         return (
-          <div key={item.id} style={{ marginBottom: 14 }}>
-            {/* Objective label */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: obj?.color ?? 'var(--accent)', flexShrink: 0 }} />
+          <div key={obj.id} style={{ marginBottom: 18 }}>
+            {/* Objective label — rendered ONCE */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
               <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: '.6px', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {obj?.name}
+                {obj.name}
               </div>
               <div style={{ height: 1, background: 'var(--navy-600)', width: 28, flexShrink: 0 }} />
             </div>
 
-            {/* Key Result card */}
-            <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, overflow: 'hidden', borderLeft: `4px solid ${obj?.color ?? 'var(--accent)'}` }}>
-
-              {/* KR header: title + progress + status pill */}
-              <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'flex-start', gap: 12, borderBottom: milestones.length > 0 ? '1px solid var(--navy-600)' : 'none' }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)', lineHeight: 1.35, marginBottom: 8 }}>
-                    {item.title}
-                  </div>
-                  {/* Progress bar */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ flex: 1, height: 3, background: 'var(--navy-600)', borderRadius: 2 }}>
-                      <div style={{ height: 3, borderRadius: 2, background: obj?.color ?? 'var(--accent)', width: `${pct}%`, transition: 'width .3s' }} />
+            {/* All Key Results for this objective */}
+            {objItems.map(item => {
+              const milestones = krs.filter(k => k.roadmap_item_id === item.id)
+              const doneMilestones = milestones.filter(k => k.status === 'done').length
+              const pct = milestones.length ? Math.round(doneMilestones / milestones.length * 100) : 0
+              const hs = item.health_status ?? 'not_started'
+              const st = HEALTH_STYLE[hs]
+              return (
+                <div key={item.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, overflow: 'hidden', borderLeft: `4px solid ${obj.color}`, marginBottom: 8 }}>
+                  {/* KR header */}
+                  <div style={{ padding: '13px 16px', display: 'flex', alignItems: 'flex-start', gap: 12, borderBottom: milestones.length > 0 ? '1px solid var(--navy-600)' : 'none' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)', lineHeight: 1.35, marginBottom: 8 }}>{item.title}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ flex: 1, height: 3, background: 'var(--navy-600)', borderRadius: 2 }}>
+                          <div style={{ height: 3, borderRadius: 2, background: obj.color, width: `${pct}%`, transition: 'width .3s' }} />
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 600, flexShrink: 0 }}>{pct}%</span>
+                      </div>
                     </div>
-                    <span style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 600, flexShrink: 0 }}>{pct}%</span>
+                    <button onClick={() => cycleStatus(item)}
+                      style={{ flexShrink: 0, marginTop: 2, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 99, border: 'none', cursor: 'pointer', background: st.bg, color: st.color, transition: 'all .12s', whiteSpace: 'nowrap' }}>
+                      {st.label}
+                    </button>
                   </div>
+                  {/* Milestone rows */}
+                  {milestones.map((ms, i) => (
+                    <div key={ms.id} style={{ padding: '10px 16px 10px 20px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < milestones.length - 1 ? '1px solid var(--navy-600)' : 'none', minHeight: 40 }}>
+                      <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--navy-500)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, color: 'var(--navy-200)', flex: 1, lineHeight: 1.4 }}>{ms.title}</span>
+                      {ms.tag && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 6, background: 'var(--navy-700)', color: 'var(--navy-400)', flexShrink: 0 }}>{ms.tag}</span>}
+                    </div>
+                  ))}
+                  <button className="add-row-btn" onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                    Add milestone
+                  </button>
                 </div>
-
-                {/* Status pill — tap to cycle */}
-                <button
-                  onClick={() => cycleStatus(item)}
-                  style={{ flexShrink: 0, marginTop: 2, fontSize: 12, fontWeight: 700, padding: '6px 14px', borderRadius: 99, border: 'none', cursor: 'pointer', background: style.bg, color: style.color, transition: 'all .12s', whiteSpace: 'nowrap' }}>
-                  {style.label}
-                </button>
-              </div>
-
-              {/* Milestone rows — plain bullets, no checkboxes */}
-              {milestones.map((ms, i) => (
-                <div key={ms.id} style={{ padding: '10px 16px 10px 20px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < milestones.length - 1 ? '1px solid var(--navy-600)' : 'none', minHeight: 40 }}>
-                  <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--navy-500)', flexShrink: 0 }} />
-                  <span style={{ fontSize: 13, color: 'var(--navy-200)', flex: 1, lineHeight: 1.4 }}>{ms.title}</span>
-                  {ms.tag && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 6, background: 'var(--navy-700)', color: 'var(--navy-400)', flexShrink: 0 }}>{ms.tag}</span>}
-                </div>
-              ))}
-
-              {/* Add milestone */}
-              <button className="add-row-btn" onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                  <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-                </svg>
-                Add milestone
-              </button>
-            </div>
+              )
+            })}
           </div>
         )
       })}
