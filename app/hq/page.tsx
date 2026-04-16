@@ -41,7 +41,7 @@ export default function HQPage() {
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
-  const [spaceSwitcherOpen, setSpaceSwitcherOpen] = useState(false)
+
 
   useEffect(() => {
     const saved = localStorage.getItem('hq-theme') as 'dark' | 'light' | null
@@ -165,13 +165,16 @@ export default function HQPage() {
           <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)' }}>
             Op <span style={{ color: 'var(--accent)' }}>HQ</span>
           </div>
-          {activeSpace && (
-            <button onClick={() => setSpaceSwitcherOpen(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 99, padding: '4px 10px 4px 8px', cursor: 'pointer', transition: 'all .15s' }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: activeSpace.color, flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-200)', maxWidth: 90, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeSpace.name}</span>
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0 }}><path d="M2 4l3 3 3-3" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            </button>
+          {spaces.length > 0 && (
+            <SpaceSwitcher
+              spaces={spaces}
+              activeSpaceId={activeSpaceId}
+              objectives={objectives}
+              roadmapItems={roadmapItems}
+              onSelect={switchSpace}
+              onSpaceCreated={space => setSpaces(prev => [...prev, space])}
+              onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
+            />
           )}
         </div>
         {/* Search */}
@@ -268,19 +271,6 @@ export default function HQPage() {
           </button>
         ))}
       </nav>
-
-      {spaceSwitcherOpen && (
-        <SpaceSwitcher
-          spaces={spaces}
-          activeSpaceId={activeSpaceId}
-          objectives={objectives}
-          roadmapItems={roadmapItems}
-          onSelect={id => { switchSpace(id) }}
-          onClose={() => setSpaceSwitcherOpen(false)}
-          onSpaceCreated={space => setSpaces(prev => [...prev, space])}
-          onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
-        />
-      )}
 
       <FastCapture
         objectives={spaceObjectives}
