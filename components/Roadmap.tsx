@@ -83,9 +83,9 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-base font-semibold" style={{ color: 'var(--navy-50)' }}>Annual Roadmap</h1>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Set key results per quarter — active quarter flows into your OKRs</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Plan your key results by quarter — drag to reorder or reschedule</p>
         </div>
-        <button onClick={() => setModal({ type: 'obj' })} className="btn-primary"
+        <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
           style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
           Add Objective
