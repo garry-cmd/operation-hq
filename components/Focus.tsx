@@ -25,7 +25,10 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
   const taskTotal = weekActions.length
   const taskPct = taskTotal > 0 ? Math.round(taskDone / taskTotal * 100) : 0
   const allDone = taskTotal > 0 && taskDone === taskTotal
-  const unplanned = activeKRs.filter(kr => !weekActions.some(a => a.roadmap_item_id === kr.id))
+  const unplanned = activeKRs.filter(kr =>
+    !weekActions.some(a => a.roadmap_item_id === kr.id) &&
+    (kr.health_status === 'on_track' || kr.health_status === 'off_track' || kr.health_status === 'blocked')
+  )
 
   async function toggleAction(action: WeeklyAction) {
     const next = !action.completed
