@@ -45,7 +45,7 @@ export default function HQPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem('hq-theme') as 'dark' | 'light' | null
-    const initial = saved ?? 'dark'
+    const initial = saved ?? 'light'
     setTheme(initial)
     document.documentElement.setAttribute('data-theme', initial)
   }, [])
