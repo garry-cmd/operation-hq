@@ -16,9 +16,9 @@ type Props = {
 type CaptureType = 'keyresult' | 'action' | 'parking'
 
 const TYPES: { id: CaptureType; label: string; color: string; icon: string }[] = [
-  { id: 'parking',   label: 'Parking Lot', color: '#c89030', icon: 'P' },
-  { id: 'action',    label: 'Action',      color: '#4db8ff', icon: '✓' },
-  { id: 'keyresult', label: 'Key Result',  color: '#3a9e5c', icon: 'KR' },
+  { id: 'parking',   label: 'Parking Lot', color: 'var(--accent)',     icon: 'P'  },
+  { id: 'action',    label: 'Action',      color: 'var(--teal-text)',  icon: '✓'  },
+  { id: 'keyresult', label: 'Key Result',  color: 'var(--navy-300)',   icon: 'KR' },
 ]
 
 export default function FastCapture({ objectives, roadmapItems, weekStart, setRoadmapItems, setActions, toast }: Props) {
@@ -28,7 +28,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
   const [secondVal, setSecondVal] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && !i.is_parked && i.status !== 'abandoned')
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const activeObjs = objectives.filter(o => o.status === 'active')
 
   useEffect(() => {
@@ -85,7 +85,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
       {dialOpen && TYPES.map((t, i) => (
         <button key={t.id} onClick={() => openType(t.id)}
           style={{ position: 'fixed', right: 16, bottom: `${88 + 56 + (i * 52)}px`, zIndex: 46, display: 'flex', alignItems: 'center', gap: 10, background: 'var(--navy-700)', border: `1px solid ${t.color}`, borderRadius: 99, padding: '8px 14px 8px 10px', cursor: 'pointer', color: 'var(--navy-50)', fontSize: 13, fontWeight: 600, animation: `fabIn .15s ease ${i * 0.04}s both` }}>
-          <div style={{ width: 28, height: 28, borderRadius: '50%', background: t.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{t.icon}</div>
+          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--navy-600)', border: `1.5px solid ${t.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: t.color, flexShrink: 0 }}>{t.icon}</div>
           {t.label}
         </button>
       ))}
@@ -98,7 +98,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
       {active && (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 48, background: 'var(--navy-700)', borderTop: `2px solid ${typeInfo?.color}`, borderRadius: '20px 20px 0 0', padding: '20px 20px 32px', animation: 'sheetUp .2s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
-            <div style={{ width: 32, height: 32, borderRadius: '50%', background: typeInfo?.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0 }}>{typeInfo?.icon}</div>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--navy-600)', border: `1.5px solid ${typeInfo?.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: typeInfo?.color, flexShrink: 0 }}>{typeInfo?.icon}</div>
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)' }}>Add {typeInfo?.label}</div>
             <button onClick={close} style={{ marginLeft: 'auto', fontSize: 20, color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>×</button>
           </div>
@@ -118,7 +118,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
               </div>
             )}
             <button type="submit" disabled={!title.trim() || (!!secondField && secondField.options.length === 0)}
-              style={{ width: '100%', padding: 14, background: typeInfo?.color, color: '#fff', fontSize: 15, fontWeight: 700, border: 'none', borderRadius: 12, cursor: 'pointer', opacity: !title.trim() ? .5 : 1 }}>
+              style={{ width: '100%', padding: 14, background: 'var(--accent)', color: 'var(--navy-900)', fontSize: 15, fontWeight: 700, border: 'none', borderRadius: 12, cursor: 'pointer', opacity: !title.trim() ? .5 : 1 }}>
               Save
             </button>
           </form>
