@@ -5,14 +5,13 @@ import { AnnualObjective, RoadmapItem, QuarterlyKR, WeeklyAction, DailyCheckin, 
 import { getMonday, ACTIVE_Q } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
-import Weekly from '@/components/Weekly'
 import Checkin from '@/components/Checkin'
 import History from '@/components/History'
 import Toast from '@/components/Toast'
 import Modal from '@/components/Modal'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'roadmap' | 'okr' | 'weekly' | 'checkin' | 'history'
+type Screen = 'roadmap' | 'okr' | 'checkin' | 'history'
 
 export default function HQPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -134,7 +133,6 @@ export default function HQPage() {
   const NAV: [Screen, string][] = [
     ['roadmap', 'Roadmap'],
     ['okr', `${ACTIVE_Q} OKRs`],
-    ['weekly', 'Weekly'],
     ['checkin', 'Check-in'],
     ['history', 'History'],
   ]
@@ -191,8 +189,7 @@ export default function HQPage() {
         ) : (
           <>
             {screen === 'roadmap' && <Roadmap objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} toast={setToast} />}
-            {screen === 'okr'      && <OKRs objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} toast={setToast} />}
-            {screen === 'weekly'   && <Weekly objectives={objectives} roadmapItems={roadmapItems} krs={krs} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
+            {screen === 'okr'      && <OKRs objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'checkin'  && <Checkin objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
             {screen === 'history'  && <History reviews={reviews} />}
           </>
