@@ -209,10 +209,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                       </span>
                     </div>
                   ))}
-                  <button className="text-[11px] text-left px-1 transition-colors"
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--navy-500)' }}
-                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
-                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--navy-500)')}
+                  <button className="add-row-btn" style={{ borderTop: 'none', fontSize: 12, minHeight: 36, padding: '8px 10px' }}
                     onClick={() => setModal({ type: 'add_item', annualObjId: obj.id, quarter: q })}>+ add</button>
                 </div>
               )
