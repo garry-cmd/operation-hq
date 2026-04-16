@@ -43,13 +43,13 @@ export default function HQPage() {
     const saved = localStorage.getItem('hq-theme') as 'dark' | 'light' | null
     const initial = saved ?? 'dark'
     setTheme(initial)
-    document.documentElement.setAttribute('data-theme', initial === 'dark' ? 'dark' : '')
+    document.documentElement.setAttribute('data-theme', initial)
   }, [])
 
   function toggleTheme() {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
-    document.documentElement.setAttribute('data-theme', next === 'dark' ? 'dark' : '')
+    document.documentElement.setAttribute('data-theme', next)
     localStorage.setItem('hq-theme', next)
   }
 

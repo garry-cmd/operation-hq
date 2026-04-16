@@ -1,7 +1,17 @@
-export const COLORS = ['#4a8a68','#5a7aaa','#6a8a5a','#7a6aaa','#4a7a8a','#6a7a5a','#3a8a7a','#7a7a8a']
+// Naval objective colors — work in both submarine dark and battleship light
+export const COLORS = [
+  '#3a6a9a',  // steel blue
+  '#3a7a58',  // sea green
+  '#c89828',  // brass gold
+  '#5a6a9a',  // slate blue
+  '#3a7a7a',  // teal
+  '#6a5a3a',  // brass/tan
+  '#5a3a6a',  // deep purple (no pink)
+  '#6a7a4a',  // olive
+]
+
 export const ACTIVE_Q = '2Q2026'
 
-// Rolling 4 quarters starting from ACTIVE_Q
 export function getRollingQuarters(): string[] {
   const m = ACTIVE_Q.match(/(\d)Q(\d{4})/)
   if (!m) return []
