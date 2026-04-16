@@ -13,7 +13,7 @@ type Props = {
 }
 
 export default function PlanWeek({ objectives, roadmapItems, weekStart, onClose, onAddAction }: Props) {
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && i.status !== 'abandoned' && !i.is_parked)
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const [step, setStep] = useState(0)
   const [input, setInput] = useState('')
   const [stepActions, setStepActions] = useState<string[]>([])

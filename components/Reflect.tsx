@@ -53,7 +53,7 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
 /* ── Check-in ── */
 function CheckinView({ objectives, roadmapItems, checkins, setCheckins }: Pick<Props, 'objectives' | 'roadmapItems' | 'checkins' | 'setCheckins'>) {
   const today = new Date().toISOString().slice(0, 10)
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && !i.is_parked && i.status !== 'abandoned')
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const todayCheckins = checkins.filter(c => c.checkin_date === today)
 
   async function setStatus(krId: string, status: CheckinStatus) {
@@ -105,7 +105,7 @@ function CheckinView({ objectives, roadmapItems, checkins, setCheckins }: Pick<P
 
 /* ── Progress ── */
 function ProgressView({ objectives, roadmapItems, setRoadmapItems, toast }: Pick<Props, 'objectives' | 'roadmapItems' | 'setRoadmapItems' | 'toast'>) {
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && !i.is_parked && i.status !== 'abandoned')
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const PCT_OPTS = [0, 25, 50, 75, 100]
 
   async function setPct(kr: RoadmapItem, pct: number) {
@@ -156,7 +156,7 @@ function ProgressView({ objectives, roadmapItems, setRoadmapItems, toast }: Pick
 function ReviewView({ reviews, setReviews, roadmapItems, weekStart, toast }: Pick<Props, 'reviews' | 'setReviews' | 'roadmapItems' | 'weekStart' | 'toast'>) {
   const existing = reviews.find(r => r.week_start === weekStart)
   const [rv, setRv] = useState({ rating: existing?.rating ?? 'steady' as ReviewRating, win: existing?.win ?? '', slipped: existing?.slipped ?? '', adjust_notes: existing?.adjust_notes ?? '' })
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && !i.is_parked)
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
 
   async function save() {
     const onTrack = activeKRs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length

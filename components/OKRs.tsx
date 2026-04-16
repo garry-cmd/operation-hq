@@ -22,7 +22,7 @@ const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }>
 }
 
 export default function OKRs({ objectives, roadmapItems, setRoadmapItems, actions, weekStart, toast }: Props) {
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && i.status !== 'abandoned' && !i.is_parked)
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack = activeKRs.filter(i => i.health_status === 'on_track').length
   const offTrack = activeKRs.filter(i => i.health_status === 'off_track').length
@@ -60,7 +60,7 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, action
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
           No active key results yet.<br />
-          <span style={{ fontSize: 13 }}>Add objectives on Roadmap, then schedule key results to the active quarter.</span>
+          <span style={{ fontSize: 13 }}>Add objectives and key results on the Roadmap.</span>
         </div>
       )}
 

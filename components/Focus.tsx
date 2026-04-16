@@ -17,7 +17,7 @@ type Props = {
 
 export default function Focus({ objectives, roadmapItems, actions, setActions, weekStart, setWeekStart, toast }: Props) {
   const [planning, setPlanning] = useState(false)
-  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && i.status !== 'abandoned' && !i.is_parked)
+  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const taskDone = weekActions.filter(a => a.completed).length
   const taskTotal = weekActions.length

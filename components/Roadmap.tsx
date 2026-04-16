@@ -42,7 +42,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     const newStatus = quarter === ACTIVE_Q ? 'active' : quarter ? 'planned' : 'planned'
     await supabase.from('roadmap_items').update({ quarter, status: newStatus }).eq('id', itemId)
     setRoadmapItems(prev => prev.map(i => i.id === itemId ? { ...i, quarter, status: newStatus } : i))
-    toast(quarter ? `Moved to ${formatQ(quarter)}` : 'Moved to Unscheduled')
+    toast(`Moved to ${formatQ(quarter ?? 'Roadmap')}`)
   }
 
   async function parkKR(item: RoadmapItem) {
@@ -83,9 +83,9 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     moveKR(itemId, quarter)
   }
 
-  // Column widths: Unscheduled + 4 quarters
-  const COLS = '120px repeat(4, 1fr)'
-  const MIN_W = 560
+  // Column widths: 4 rolling quarters only
+  const COLS = 'repeat(4, 1fr)'
+  const MIN_W = 480
 
   return (
     <div>
@@ -112,10 +112,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
           <div style={{ minWidth: MIN_W }}>
 
             {/* Quarter headers */}
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 8, paddingLeft: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '7px 6px', borderRadius: 8, background: 'var(--navy-700)', color: 'var(--navy-400)', border: '1px dashed var(--navy-500)' }}>
-                📥 Unscheduled
-              </div>
+            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 8 }}>
               {ROLLING.map(q => (
                 <div key={q} style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '7px 6px', borderRadius: 8, lineHeight: 1.3,
                   background: q === ACTIVE_Q ? 'var(--accent-dim)' : 'var(--navy-700)',
@@ -144,29 +141,8 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                     </button>
                   </div>
 
-                  {/* KR chips row — 5 columns */}
+                  {/* Quarter cells only */}
                   <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, padding: '8px 8px 10px' }}>
-                    {/* Unscheduled cell */}
-                    <DropsCell
-                      cellKey={cellKey(obj.id, null)}
-                      dragOver={dragOver}
-                      isActive={false}
-                      objColor={obj.color}
-                      onDragOver={e => onDragOver(e, cellKey(obj.id, null))}
-                      onDragLeave={() => setDragOver(null)}
-                      onDrop={e => onDrop(e, obj.id, null)}
-                    >
-                      {objItems.filter(i => !i.quarter).map(item => (
-                        <KRChip key={item.id} item={item} objColor={obj.color} quarter={null}
-                          dragging={draggingId === item.id}
-                          onDragStart={e => onDragStart(e, item.id)}
-                          onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
-                          onClick={() => setModal({ type: 'edit_kr', item })} />
-                      ))}
-                      <AddKRBtn onClick={() => setModal({ type: 'add_kr', objId: obj.id, quarter: null })} color={obj.color} />
-                    </DropsCell>
-
-                    {/* Quarter cells */}
                     {ROLLING.map(q => (
                       <DropsCell key={q}
                         cellKey={cellKey(obj.id, q)}
