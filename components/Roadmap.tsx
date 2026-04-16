@@ -33,6 +33,22 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   const [modal, setModal] = useState<null | { type: string; obj?: AnnualObjective; item?: RoadmapItem; annualObjId?: string; quarter?: string }>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dragOverCell, setDragOverCell] = useState<CellKey | null>(null)
+  const [draggingObjId, setDraggingObjId] = useState<string | null>(null)
+  const [dragOverObjId, setDragOverObjId] = useState<string | null>(null)
+
+  async function reorderObjective(draggedId: string, targetId: string) {
+    if (draggedId === targetId) return
+    const list = [...objectives]
+    const fromIdx = list.findIndex(o => o.id === draggedId)
+    const toIdx = list.findIndex(o => o.id === targetId)
+    if (fromIdx === -1 || toIdx === -1) return
+    const reordered = [...list]
+    const [moved] = reordered.splice(fromIdx, 1)
+    reordered.splice(toIdx, 0, moved)
+    const updated = reordered.map((o, i) => ({ ...o, sort_order: i }))
+    setObjectives(() => updated)
+    await Promise.all(updated.map(o => supabase.from('annual_objectives').update({ sort_order: o.sort_order }).eq('id', o.id)))
+  }
 
   async function moveItem(itemId: string, targetQuarter: string) {
     const item = roadmapItems.find(i => i.id === itemId)
@@ -94,9 +110,32 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
 
         {objectives.map((obj, idx) => (
           <div key={obj.id} className="contents">
-            {/* Annual objective cell */}
-            <div className="rounded-xl p-3 flex flex-col gap-1.5" style={{ ...S.card, opacity: obj.status === 'abandoned' ? .45 : 1 }}>
-              <div className="w-2 h-2 rounded-full" style={{ background: obj.color }} />
+            {/* Annual objective cell — draggable to reorder */}
+            <div
+              draggable
+              onDragStart={e => { e.dataTransfer.setData('objId', obj.id); setDraggingObjId(obj.id) }}
+              onDragEnd={() => { setDraggingObjId(null); setDragOverObjId(null) }}
+              onDragOver={e => { e.preventDefault(); setDragOverObjId(obj.id) }}
+              onDragLeave={() => setDragOverObjId(null)}
+              onDrop={e => {
+                e.preventDefault()
+                const draggedId = e.dataTransfer.getData('objId')
+                if (draggedId) reorderObjective(draggedId, obj.id)
+                setDraggingObjId(null); setDragOverObjId(null)
+              }}
+              className="rounded-xl p-3 flex flex-col gap-1.5"
+              style={{
+                ...S.card,
+                opacity: obj.status === 'abandoned' ? .45 : draggingObjId === obj.id ? 0.4 : 1,
+                cursor: 'grab',
+                outline: dragOverObjId === obj.id && draggingObjId !== obj.id ? '2px solid var(--accent)' : 'none',
+                outlineOffset: '-2px',
+                transition: 'outline .1s, opacity .1s',
+              }}>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: obj.color }} />
+                <span style={{ color: 'var(--navy-600)', fontSize: 12, letterSpacing: 1, userSelect: 'none' as const }}>⠿</span>
+              </div>
               <div style={S.label}>Annual objective</div>
               <div style={obj.status === 'abandoned' ? S.nameAbandoned : S.name}>{obj.name}</div>
               <div className="flex gap-1 mt-0.5">
