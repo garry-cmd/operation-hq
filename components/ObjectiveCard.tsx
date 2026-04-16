@@ -38,6 +38,7 @@ interface Props {
 }
 
 export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, setRoadmapItems, setObjectives, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, toast }: Props) {
+  const [collapsed, setCollapsed] = useState(false)
   const [section, setSection] = useState<'notes' | 'links' | 'logs' | null>(null)
   const [notes, setNotes] = useState(obj.notes ?? '')
   const [notesSaved, setNotesSaved] = useState(true)
@@ -123,20 +124,32 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
       <div style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 14, border: `1px solid ${borderColor}`, background: bgColor }}>
 
         {/* Objective header */}
-        <div style={{ padding: '12px 14px', background: hdrBg, display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div onClick={() => { setCollapsed(c => !c); setSection(null) }}
+          style={{ padding: '12px 14px', background: hdrBg, display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: obj.color, flexShrink: 0, marginTop: 3 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)', lineHeight: 1.3, marginBottom: 5 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)', lineHeight: 1.3, marginBottom: collapsed ? 0 : 5 }}>
               {obj.name}
             </div>
-            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-              {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
-              {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
-              {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
-              {onTrack === 0 && offTrack === 0 && blocked === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>not started</span>}
-            </div>
+            {!collapsed && (
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
+                {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
+                {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
+                {onTrack === 0 && offTrack === 0 && blocked === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>not started</span>}
+              </div>
+            )}
+          </div>
+          {/* Chevron */}
+          <div style={{ flexShrink: 0, marginTop: 2, transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', color: 'var(--navy-400)' }}>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
           </div>
         </div>
+
+        {/* Body — hidden when collapsed */}
+        {!collapsed && (<>
 
         {/* KR rows */}
         {krs.map((kr, i) => {
@@ -320,6 +333,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
             ))}
           </div>
         )}
+        </>)}
       {editKR && (
         <EditKRModal kr={editKR} onClose={() => setEditKR(null)}
           onSave={updated => { setRoadmapItems(prev => prev.map(i => i.id === updated.id ? updated : i)); setEditKR(null); toast('Key result updated.') }} />
