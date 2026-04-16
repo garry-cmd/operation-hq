@@ -13,6 +13,19 @@ interface Props {
   toast: (m: string) => void
 }
 
+const S = {
+  card: { background: 'var(--navy-700)', border: '1px solid var(--navy-600)' },
+  cardActive: { background: 'var(--navy-700)', border: '1px solid var(--accent-dim)' },
+  chip: { background: 'var(--navy-600)', border: '1px solid var(--navy-500)', color: 'var(--navy-100)' },
+  chipActive: { background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' },
+  qHeader: { background: 'var(--navy-700)', color: 'var(--navy-300)' },
+  qHeaderActive: { background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' },
+  label: { color: 'var(--navy-400)', fontSize: 9, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '.5px' },
+  name: { color: 'var(--navy-50)', fontSize: 11, fontWeight: 500, lineHeight: 1.35 },
+  nameAbandoned: { color: 'var(--navy-500)', fontSize: 11, fontWeight: 500, textDecoration: 'line-through' },
+  muted: { color: 'var(--navy-400)', fontSize: 11 },
+}
+
 export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, toast }: Props) {
   const [modal, setModal] = useState<null | { type: string; obj?: AnnualObjective; item?: RoadmapItem; annualObjId?: string; quarter?: string }>(null)
 
@@ -33,8 +46,8 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     <div>
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Annual Roadmap</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Set milestones per quarter — active quarter flows into your OKRs</p>
+          <h1 className="text-base font-semibold" style={{ color: 'var(--navy-50)' }}>Annual Roadmap</h1>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Set milestones per quarter — active quarter flows into your OKRs</p>
         </div>
         <button className="btn-primary text-xs px-3 py-1.5" onClick={() => setModal({ type: 'add_obj' })}>
           + Add objective
@@ -44,27 +57,23 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       {/* Legend */}
       <div className="flex gap-4 mb-3">
         {[
-          ['bg-[#E1F5EE] border border-[#1D9E75]', 'Active quarter — flows to OKRs'],
-          ['bg-gray-50 border border-gray-200', 'Planned'],
-          ['opacity-40 bg-gray-50 border border-gray-200', 'Done'],
-        ].map(([cls, label]) => (
-          <div key={label} className="flex items-center gap-1.5 text-[11px] text-gray-500">
-            <div className={`w-3 h-3 rounded-sm ${cls}`} />
+          [S.chipActive, '→Q Active quarter'],
+          [S.chip, 'Planned'],
+          [{ ...S.chip, opacity: .4 }, 'Done'],
+        ].map(([style, label]) => (
+          <div key={label as string} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--navy-400)' }}>
+            <div className="w-3 h-3 rounded-sm" style={style as React.CSSProperties} />
             {label}
           </div>
         ))}
       </div>
 
-      {/* Grid */}
       <div className="grid gap-2" style={{ gridTemplateColumns: '176px repeat(4, 1fr)' }}>
         {/* Quarter headers */}
         <div />
         {QUARTERS.map(q => (
-          <div key={q} className={`text-[11px] font-medium text-center py-2 px-2 rounded-lg ${
-            q === ACTIVE_Q
-              ? 'bg-[#E1F5EE] text-[#0F6E56] border border-[#1D9E75] font-semibold'
-              : 'bg-gray-100 text-gray-500'
-          }`}>
+          <div key={q} className="text-[11px] font-semibold text-center py-2 px-2 rounded-xl"
+            style={q === ACTIVE_Q ? S.qHeaderActive : S.qHeader}>
             {q}{q === ACTIVE_Q ? ' — active' : ''}
           </div>
         ))}
@@ -72,89 +81,76 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
         {objectives.map((obj, idx) => (
           <div key={obj.id} className="contents">
             {/* Annual objective cell */}
-            <div className={`bg-white rounded-lg border border-gray-200 p-2.5 flex flex-col gap-1 ${obj.status === 'abandoned' ? 'opacity-45' : ''}`}>
+            <div className="rounded-xl p-3 flex flex-col gap-1.5" style={{ ...S.card, opacity: obj.status === 'abandoned' ? .45 : 1 }}>
               <div className="w-2 h-2 rounded-full" style={{ background: obj.color }} />
-              <div className="text-[9px] font-medium text-gray-400 uppercase tracking-wide">Annual objective</div>
-              <div className={`text-[11px] font-medium text-gray-900 leading-snug ${obj.status === 'abandoned' ? 'line-through text-gray-400' : ''}`}>
-                {obj.name}
-              </div>
-              <div className="flex gap-1 mt-1">
-                <button className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-                  onClick={() => setModal({ type: 'edit_obj', obj })}>edit</button>
-                <button className="text-[10px] px-1.5 py-0.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50"
-                  onClick={() => abandonObjective(obj)}>
+              <div style={S.label}>Annual objective</div>
+              <div style={obj.status === 'abandoned' ? S.nameAbandoned : S.name}>{obj.name}</div>
+              <div className="flex gap-1 mt-0.5">
+                <button onClick={() => setModal({ type: 'edit_obj', obj })}
+                  className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ ...S.chip, fontSize: 10 }}>edit</button>
+                <button onClick={() => abandonObjective(obj)}
+                  className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ ...S.chip, fontSize: 10 }}>
                   {obj.status === 'abandoned' ? 'restore' : 'abandon'}
                 </button>
               </div>
             </div>
 
-            {/* Quarter cells */}
             {QUARTERS.map(q => {
               const items = roadmapItems.filter(i => i.annual_objective_id === obj.id && i.quarter === q)
               return (
-                <div key={q} className={`bg-white rounded-lg border p-2 flex flex-col gap-1.5 min-h-[88px] ${
-                  q === ACTIVE_Q ? 'border-[#1D9E7555]' : 'border-gray-200'
-                }`}>
+                <div key={q} className="rounded-xl p-2 flex flex-col gap-1.5 min-h-[88px]"
+                  style={q === ACTIVE_Q ? S.cardActive : S.card}>
                   {items.map(item => (
-                    <div key={item.id} className={`text-[11px] px-2 py-1.5 rounded-lg border flex items-start gap-1.5 leading-snug group ${
-                      item.status === 'done' ? 'opacity-40 line-through bg-gray-50 border-gray-200' :
-                      item.status === 'abandoned' ? 'opacity-40 line-through bg-gray-50 border-gray-200' :
-                      q === ACTIVE_Q ? 'bg-[#E1F5EE] border-[#1D9E75] text-[#0F6E56]' :
-                      'bg-gray-50 border-gray-200 text-gray-800'
-                    }`}>
+                    <div key={item.id} className="text-[11px] px-2 py-1.5 rounded-lg flex items-start gap-1.5 leading-snug group"
+                      style={
+                        item.status === 'done' || item.status === 'abandoned'
+                          ? { ...S.chip, opacity: .4, textDecoration: 'line-through' }
+                          : q === ACTIVE_Q ? S.chipActive : S.chip
+                      }>
                       {q === ACTIVE_Q && item.status !== 'done' && item.status !== 'abandoned' && (
-                        <span className="text-[9px] opacity-70 mt-0.5 shrink-0">→Q</span>
+                        <span className="opacity-70 shrink-0 mt-0.5" style={{ fontSize: 9 }}>→Q</span>
                       )}
                       <span className="flex-1">{item.title}</span>
                       <span className="opacity-0 group-hover:opacity-100 flex gap-0.5 shrink-0">
-                        <button className="text-[10px] hover:opacity-80" onClick={() => setModal({ type: 'edit_item', item })}>✎</button>
-                        <button className="text-[10px] hover:opacity-80" onClick={() => toggleKRDone(item)}>
-                          {item.status === 'done' ? '↩' : '✓'}
-                        </button>
+                        <button className="hover:opacity-80" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                          onClick={() => setModal({ type: 'edit_item', item })}>✎</button>
+                        <button className="hover:opacity-80" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                          onClick={() => toggleKRDone(item)}>{item.status === 'done' ? '↩' : '✓'}</button>
                       </span>
                     </div>
                   ))}
-                  <button className="text-[11px] text-gray-400 hover:text-[#1D9E75] text-left px-1"
-                    onClick={() => setModal({ type: 'add_item', annualObjId: obj.id, quarter: q })}>
-                    + add
-                  </button>
+                  <button className="text-[11px] text-left px-1 transition-colors"
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--navy-500)' }}
+                    onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
+                    onMouseLeave={e => (e.currentTarget.style.color = 'var(--navy-500)')}
+                    onClick={() => setModal({ type: 'add_item', annualObjId: obj.id, quarter: q })}>+ add</button>
                 </div>
               )
             })}
 
             {idx < objectives.length - 1 && (
-              <div className="col-span-5 h-px bg-gray-100 my-1" />
+              <div className="col-span-5 h-px my-1" style={{ background: 'var(--navy-700)' }} />
             )}
           </div>
         ))}
 
         {objectives.length === 0 && (
-          <div className="col-span-5 text-center py-12 text-gray-400 text-sm">
+          <div className="col-span-5 text-center py-12 text-sm" style={{ color: 'var(--navy-400)' }}>
             <div className="text-3xl mb-2">🎯</div>
             No objectives yet — add your first annual objective to get started.
           </div>
         )}
       </div>
 
-      {/* Modals */}
       {(modal?.type === 'add_obj' || modal?.type === 'edit_obj') && (
-        <ObjModal
-          obj={modal.obj}
-          objectives={objectives}
-          onClose={() => setModal(null)}
-          onSave={(o) => { setObjectives(prev => modal.obj ? prev.map(x => x.id === o.id ? o : x) : [...prev, o]); setModal(null); toast(modal.obj ? 'Objective updated.' : 'Objective added!') }}
-        />
+        <ObjModal obj={modal.obj} objectives={objectives} onClose={() => setModal(null)}
+          onSave={(o) => { setObjectives(prev => modal.obj ? prev.map(x => x.id === o.id ? o : x) : [...prev, o]); setModal(null); toast(modal.obj ? 'Objective updated.' : 'Objective added!') }} />
       )}
       {(modal?.type === 'add_item' || modal?.type === 'edit_item') && (
-        <ItemModal
-          item={modal.item}
-          annualObjId={modal.annualObjId}
-          quarter={modal.quarter}
-          roadmapItems={roadmapItems}
-          onClose={() => setModal(null)}
+        <ItemModal item={modal.item} annualObjId={modal.annualObjId} quarter={modal.quarter}
+          roadmapItems={roadmapItems} onClose={() => setModal(null)}
           onSave={(i) => { setRoadmapItems(prev => modal.item ? prev.map(x => x.id === i.id ? i : x) : [...prev, i]); setModal(null); toast(modal.item ? 'Milestone updated.' : 'Milestone added!') }}
-          onDelete={(id) => { setRoadmapItems(prev => prev.filter(x => x.id !== id)); setModal(null) }}
-        />
+          onDelete={(id) => { setRoadmapItems(prev => prev.filter(x => x.id !== id)); setModal(null) }} />
       )}
     </div>
   )
@@ -184,22 +180,18 @@ function ObjModal({ obj, objectives, onClose, onSave }: {
 
   return (
     <Modal title={obj ? 'Edit objective' : 'Add annual objective'} onClose={onClose}
-      footer={<>
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
-      </>}>
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button></>}>
       <div className="field">
         <label>Objective name</label>
-        <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus
-          placeholder="e.g. Greek God — peak health & conditioning" />
+        <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="e.g. Greek God — peak health & conditioning" />
       </div>
       <div className="field">
         <label>Colour</label>
         <div className="flex gap-2 flex-wrap mt-1">
           {COLORS.map(c => (
             <div key={c} onClick={() => setColor(c)}
-              className={`w-6 h-6 rounded-full cursor-pointer border-2 transition-transform ${color === c ? 'border-gray-900 scale-110' : 'border-transparent'}`}
-              style={{ background: c }} />
+              className="w-6 h-6 rounded-full cursor-pointer transition-transform"
+              style={{ background: c, border: color === c ? '2px solid white' : '2px solid transparent', transform: color === c ? 'scale(1.15)' : 'scale(1)' }} />
           ))}
         </div>
       </div>
@@ -241,20 +233,18 @@ function ItemModal({ item, annualObjId, quarter, roadmapItems, onClose, onSave, 
   return (
     <Modal title={item ? 'Edit milestone' : `Add milestone — ${quarter}`} onClose={onClose}
       footer={<>
-        {item && <button className="btn mr-auto text-[#993C1D] border-[#FAECE7]" onClick={del}>Delete</button>}
+        {item && <button className="btn mr-auto" style={{ color: 'var(--red-text)', borderColor: 'var(--red-bg)' }} onClick={del}>Delete</button>}
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
       </>}>
       <div className="field">
         <label>Milestone title</label>
-        <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus
-          placeholder="e.g. Lose 40 lbs by end of quarter" />
+        <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus placeholder="e.g. Lose 40 lbs by end of quarter" />
       </div>
       {item && (
         <div className="field">
           <label>Status</label>
           <select className="input" value={status} onChange={e => setStatus(e.target.value as RoadmapItem['status'])}>
-
             <option value="planned">Planned</option>
             <option value="active">Active</option>
             <option value="done">Done</option>

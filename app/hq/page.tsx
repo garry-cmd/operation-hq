@@ -21,7 +21,6 @@ export default function HQPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [weekStart, setWeekStart] = useState(getMonday())
 
-  // Data
   const [objectives, setObjectives] = useState<AnnualObjective[]>([])
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([])
   const [krs, setKrs] = useState<QuarterlyKR[]>([])
@@ -29,15 +28,13 @@ export default function HQPage() {
   const [checkins, setCheckins] = useState<DailyCheckin[]>([])
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [shareToken, setShareToken] = useState('')
-
-  // Auth modals
+  const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [authError, setAuthError] = useState('')
   const [authLoading, setAuthLoading] = useState(false)
-  const [shareModalOpen, setShareModalOpen] = useState(false)
-  const [copied, setCopied] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -77,7 +74,7 @@ export default function HQPage() {
     } else {
       const { error } = await supabase.auth.signUp({ email, password })
       if (error) setAuthError(error.message)
-      else setAuthError('Check your email to confirm your account, then sign in.')
+      else setAuthError('Account created — sign in below.')
     }
     setAuthLoading(false)
   }
@@ -89,102 +86,115 @@ export default function HQPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Loading state
-  if (user === undefined) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="w-5 h-5 border-2 border-gray-200 border-t-[#1D9E75] rounded-full animate-spin" />
-      </div>
-    )
-  }
+  if (user === undefined) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy-900)' }}>
+      <div className="w-5 h-5 rounded-full border-2 animate-spin" style={{ borderColor: 'var(--navy-500)', borderTopColor: 'var(--accent)' }} />
+    </div>
+  )
 
-  // Login page
-  if (!user) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="bg-white rounded-2xl border border-gray-200 p-9 w-full max-w-sm shadow-sm">
-          <div className="text-lg font-bold uppercase tracking-widest text-gray-900 mb-1">
-            Operation <span className="text-[#1D9E75]">HQ</span>
-          </div>
-          <p className="text-sm text-gray-400 mb-7">
-            {authMode === 'login' ? 'Sign in to your mission control' : 'Create your account'}
-          </p>
-          {authError && (
-            <div className="bg-[#FAECE7] text-[#993C1D] text-xs px-3 py-2 rounded-lg mb-3">{authError}</div>
-          )}
-          <form onSubmit={authSubmit}>
-            <div className="field">
-              <label>Email</label>
-              <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
-            </div>
-            <div className="field">
-              <label>Password</label>
-              <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
-            </div>
-            <button className="btn-primary w-full py-2.5 mt-1" disabled={authLoading}>
-              {authLoading ? 'Please wait…' : authMode === 'login' ? 'Sign in' : 'Create account'}
-            </button>
-          </form>
-          <p className="text-xs text-gray-500 text-center mt-4">
-            {authMode === 'login' ? "New here? " : "Have an account? "}
-            <button className="text-[#1D9E75] underline" onClick={() => { setAuthMode(m => m === 'login' ? 'signup' : 'login'); setAuthError('') }}>
-              {authMode === 'login' ? 'Create account' : 'Sign in'}
-            </button>
-          </p>
+  if (!user) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--navy-900)' }}>
+      <div className="w-full max-w-sm p-9 rounded-2xl border" style={{ background: 'var(--navy-700)', borderColor: 'var(--navy-500)' }}>
+        <div className="text-lg font-bold uppercase tracking-widest mb-1" style={{ color: 'var(--navy-50)' }}>
+          Operation <span style={{ color: 'var(--accent)' }}>HQ</span>
         </div>
+        <p className="text-sm mb-7" style={{ color: 'var(--navy-300)' }}>
+          {authMode === 'login' ? 'Sign in to your mission control' : 'Create your account'}
+        </p>
+        {authError && (
+          <div className="text-xs px-3 py-2 rounded-lg mb-3" style={{ background: 'var(--red-bg)', color: 'var(--red-text)' }}>
+            {authError}
+          </div>
+        )}
+        <form onSubmit={authSubmit}>
+          <div className="field">
+            <label>Email</label>
+            <input className="input" type="email" value={email} onChange={e => setEmail(e.target.value)} required autoFocus />
+          </div>
+          <div className="field">
+            <label>Password</label>
+            <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} required />
+          </div>
+          <button className="btn-primary w-full py-2.5 mt-1" disabled={authLoading}>
+            {authLoading ? 'Please wait…' : authMode === 'login' ? 'Sign in' : 'Create account'}
+          </button>
+        </form>
+        <p className="text-xs text-center mt-4" style={{ color: 'var(--navy-300)' }}>
+          {authMode === 'login' ? 'New here? ' : 'Have an account? '}
+          <button className="underline" style={{ color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer' }}
+            onClick={() => { setAuthMode(m => m === 'login' ? 'signup' : 'login'); setAuthError('') }}>
+            {authMode === 'login' ? 'Create account' : 'Sign in'}
+          </button>
+        </p>
       </div>
-    )
-  }
+    </div>
+  )
 
   const initials = user.email?.slice(0, 2).toUpperCase() ?? 'HQ'
-  const NAV: [Screen, string][] = [['roadmap','Roadmap'],['okr',`${ACTIVE_Q} OKRs`],['weekly','Weekly'],['checkin','Check-in'],['history','History']]
+  const NAV: [Screen, string][] = [
+    ['roadmap', 'Roadmap'],
+    ['okr', `${ACTIVE_Q} OKRs`],
+    ['weekly', 'Weekly'],
+    ['checkin', 'Check-in'],
+    ['history', 'History'],
+  ]
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen" style={{ background: 'var(--navy-900)' }}>
       {/* Topbar */}
-      <header className="sticky top-0 z-40 flex items-center gap-0 bg-white border-b border-gray-200 px-5 h-13">
-        <div className="text-sm font-bold uppercase tracking-widest text-gray-900 pr-5 border-r border-gray-200 mr-4 shrink-0">
-          Operation <span className="text-[#1D9E75]">HQ</span>
+      <header className="sticky top-0 z-40 flex items-center gap-0 px-5 h-14 border-b"
+        style={{ background: 'var(--navy-800)', borderColor: 'var(--navy-600)' }}>
+        <div className="text-sm font-bold uppercase tracking-widest pr-5 mr-4 shrink-0 border-r"
+          style={{ color: 'var(--navy-50)', borderColor: 'var(--navy-600)' }}>
+          Operation <span style={{ color: 'var(--accent)' }}>HQ</span>
         </div>
-        <nav className="flex gap-0.5 flex-1 overflow-x-auto">
+        <nav className="flex gap-1.5 flex-1 overflow-x-auto">
           {NAV.map(([id, label]) => (
             <button key={id} onClick={() => setScreen(id)}
-              className={`text-xs px-3.5 py-1.5 rounded-lg whitespace-nowrap transition-all ${
-                screen === id ? 'bg-[#1D9E75] text-white font-medium' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-900'
-              }`}>
+              className="text-xs px-4 py-1.5 rounded-full whitespace-nowrap font-medium transition-all"
+              style={screen === id
+                ? { background: 'var(--accent)', color: '#fff', border: 'none' }
+                : { background: 'transparent', color: 'var(--navy-300)', border: '1px solid var(--navy-600)' }
+              }>
               {label}
             </button>
           ))}
         </nav>
         <div className="flex items-center gap-2 ml-auto pl-4">
-          <button className="flex items-center gap-1.5 text-xs border border-gray-200 px-3 py-1.5 rounded-lg text-gray-600 hover:bg-gray-50"
-            onClick={() => setShareModalOpen(true)}>
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="shrink-0">
-              <path d="M9 4a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM3 7.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM9 11a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM4.41 6.59l3.19 1.82M7.59 3.41L4.41 5.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+          <button onClick={() => setShareModalOpen(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium"
+            style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-500)', color: 'var(--navy-200)' }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <circle cx="9" cy="2.5" r="1.5" stroke="currentColor" strokeWidth="1.2"/>
+              <circle cx="3" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2"/>
+              <circle cx="9" cy="9.5" r="1.5" stroke="currentColor" strokeWidth="1.2"/>
+              <path d="M4.41 5.09l3.18-1.82M4.41 6.91l3.18 1.82" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
             </svg>
             Share with Melissa
           </button>
-          <button title={user.email} onClick={() => supabase.auth.signOut()}
-            className="w-8 h-8 rounded-full bg-[#E1F5EE] text-[#0F6E56] text-xs font-semibold flex items-center justify-center hover:bg-[#1D9E75] hover:text-white transition-colors">
+          <button title={user.email ?? ''} onClick={() => supabase.auth.signOut()}
+            className="w-8 h-8 rounded-full text-xs font-bold flex items-center justify-center transition-all"
+            style={{ background: 'var(--accent-dim)', color: 'var(--accent)' }}>
             {initials}
           </button>
         </div>
       </header>
 
-      {/* Content */}
+      {/* Main content */}
       <main className="flex-1 p-5 max-w-[1200px] w-full mx-auto">
         {loading ? (
-          <div className="flex items-center justify-center py-20 gap-2 text-gray-400 text-sm">
-            <div className="w-4 h-4 border-2 border-gray-200 border-t-[#1D9E75] rounded-full animate-spin" />
+          <div className="flex items-center justify-center py-20 gap-2 text-sm" style={{ color: 'var(--navy-400)' }}>
+            <div className="w-4 h-4 rounded-full border-2 animate-spin"
+              style={{ borderColor: 'var(--navy-600)', borderTopColor: 'var(--accent)' }} />
             Loading your data…
           </div>
         ) : (
           <>
             {screen === 'roadmap' && <Roadmap objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} toast={setToast} />}
-            {screen === 'okr' && <OKRs objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} toast={setToast} />}
-            {screen === 'weekly' && <Weekly objectives={objectives} roadmapItems={roadmapItems} krs={krs} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
-            {screen === 'checkin' && <Checkin objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
-            {screen === 'history' && <History reviews={reviews} />}
+            {screen === 'okr'      && <OKRs objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} toast={setToast} />}
+            {screen === 'weekly'   && <Weekly objectives={objectives} roadmapItems={roadmapItems} krs={krs} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
+            {screen === 'checkin'  && <Checkin objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
+            {screen === 'history'  && <History reviews={reviews} />}
           </>
         )}
       </main>
@@ -193,15 +203,15 @@ export default function HQPage() {
       {shareModalOpen && (
         <Modal title="Share with Melissa" onClose={() => setShareModalOpen(false)}
           footer={<button className="btn" onClick={() => setShareModalOpen(false)}>Close</button>}>
-          <p className="text-sm text-gray-500 mb-4">
-            Melissa gets a read-only view of your active quarter's OKRs. She can't edit anything.
+          <p className="text-sm mb-4" style={{ color: 'var(--navy-300)' }}>
+            Melissa gets a read-only view of your active quarter OKRs. She can&apos;t edit anything.
           </p>
-          <div className="flex gap-2 items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5">
-            <span className="text-xs text-gray-500 font-mono flex-1 truncate">
+          <div className="flex gap-2 items-center rounded-xl px-3 py-2.5"
+            style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-500)' }}>
+            <span className="text-xs flex-1 truncate font-mono" style={{ color: 'var(--navy-300)' }}>
               {typeof window !== 'undefined' ? `${window.location.origin}/share/${shareToken}` : ''}
             </span>
-            <button onClick={copyShareLink}
-              className="text-xs px-2.5 py-1 border border-gray-200 bg-white rounded-lg hover:bg-gray-50 shrink-0">
+            <button onClick={copyShareLink} className="btn text-xs px-2.5 py-1" style={{ fontSize: 11 }}>
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
