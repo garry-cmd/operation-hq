@@ -163,36 +163,16 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
               {obj.name}
             </div>
             {collapsed ? (
-              // Collapsed: show individual KR pills
-              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 2 }}>
-                {krs.map(kr => {
-                  const h = kr.health_status ?? 'not_started'
-                  const hs = HEALTH[h]
-                  return (
-                    <span key={kr.id} style={{ 
-                      fontSize: 8, 
-                      fontWeight: 700, 
-                      padding: '2px 6px', 
-                      borderRadius: 99, 
-                      background: hs.bg, 
-                      color: hs.color,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      maxWidth: 120
-                    }}>
-                      {kr.title}
-                    </span>
-                  )
-                })}
-                {krs.length === 0 && (
-                  <span style={{ fontSize: 8, fontWeight: 700, padding: '2px 6px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>
-                    No key results
-                  </span>
-                )}
+              // Collapsed: show clean status counts
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 2 }}>
+                {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
+                {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
+                {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
+                {onTrack === 0 && offTrack === 0 && blocked === 0 && krs.length > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{krs.length} not started</span>}
+                {krs.length === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>No key results</span>}
               </div>
             ) : (
-              // Expanded: show aggregate status counts
+              // Expanded: show same status counts (unchanged)
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                 {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
                 {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
