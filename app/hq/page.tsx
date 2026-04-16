@@ -8,6 +8,7 @@ import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
+import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import type { User } from '@supabase/supabase-js'
 
@@ -214,6 +215,18 @@ export default function HQPage() {
           </button>
         ))}
       </nav>
+
+      <FastCapture
+        objectives={objectives}
+        roadmapItems={roadmapItems}
+        krs={krs}
+        weekStart={weekStart}
+        setObjectives={setObjectives}
+        setRoadmapItems={setRoadmapItems}
+        setKrs={setKrs}
+        setActions={setActions}
+        toast={setToast}
+      />
 
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
 
