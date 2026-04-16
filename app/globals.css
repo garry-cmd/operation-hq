@@ -1,55 +1,56 @@
 @import "tailwindcss";
 
-/* ── Light theme (default) — warm cream & forest accents ── */
+/* ── Light theme (default) — cool grey-green mist ── */
 :root {
-  --navy-900: #f5f2eb;
+  --navy-900: #eef2f0;
   --navy-800: #ffffff;
   --navy-700: #ffffff;
-  --navy-600: #e8e2d8;
-  --navy-500: #cdc5b8;
-  --navy-400: #9a9080;
-  --navy-300: #6b6055;
-  --navy-200: #3d3428;
-  --navy-100: #1e1810;
-  --navy-50:  #0e0c08;
+  --navy-600: #dde8e2;
+  --navy-500: #baced2;
+  --navy-400: #8aa89a;
+  --navy-300: #5a7868;
+  --navy-200: #2e4438;
+  --navy-100: #162820;
+  --navy-50:  #0a1610;
 
-  --accent:       #8a5c1a;
-  --accent-dim:   #fdf2dc;
-  --teal:         #2a7848;
-  --teal-bg:      #e4f4ea;
-  --teal-text:    #185c30;
-  --red:          #8a3820;
-  --red-bg:       #fce8e0;
-  --red-text:     #6a2810;
-  --amber:        #9a6010;
-  --amber-bg:     #fdf2dc;
-  --amber-text:   #7a4410;
+  --accent:       #3d7055;
+  --accent-dim:   #e0ede7;
+  --teal:         #2a6e48;
+  --teal-bg:      #daeee4;
+  --teal-text:    #1a5234;
+  --red:          #6e3828;
+  --red-bg:       #eedede;
+  --red-text:     #5a2418;
+  --amber:        #7a6628;
+  --amber-bg:     #f0e8d0;
+  --amber-text:   #5e4c18;
 }
 
-/* ── Dark theme — deep forest ── */
+/* ── Dark theme — Alien Covenant landscape ── */
+/* Volcanic ash. Dead moss. Grey fog. Stone silence. */
 [data-theme="dark"] {
-  --navy-900: #080f08;
-  --navy-800: #0c160e;
-  --navy-700: #111f13;
-  --navy-600: #1a2e1d;
-  --navy-500: #2c4a30;
-  --navy-400: #4d7255;
-  --navy-300: #7aaa84;
-  --navy-200: #aad4b4;
-  --navy-100: #d4ecd8;
-  --navy-50:  #eef8f0;
+  --navy-900: #090d0b;
+  --navy-800: #0d1411;
+  --navy-700: #121c17;
+  --navy-600: #192620;
+  --navy-500: #243630;
+  --navy-400: #456056;
+  --navy-300: #7a9a8a;
+  --navy-200: #a8c0b4;
+  --navy-100: #ccddd4;
+  --navy-50:  #e4eeea;
 
-  --accent:       #d4922a;
-  --accent-dim:   #2e2008;
-  --teal:         #3a9e5c;
-  --teal-bg:      #091f0e;
-  --teal-text:    #68d48a;
-  --red:          #c05038;
-  --red-bg:       #2e0e08;
-  --red-text:     #e07a5a;
-  --amber:        #c89030;
-  --amber-bg:     #281c08;
-  --amber-text:   #e8c068;
+  --accent:       #5c9478;
+  --accent-dim:   #0c1e16;
+  --teal:         #3a7a58;
+  --teal-bg:      #0a1c12;
+  --teal-text:    #6aaa88;
+  --red:          #7a3830;
+  --red-bg:       #1c0c0a;
+  --red-text:     #a87870;
+  --amber:        #7a6830;
+  --amber-bg:     #1a1608;
+  --amber-text:   #b0983c;
 }
 
 *, *::before, *::after { box-sizing: border-box; }

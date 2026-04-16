@@ -1,4 +1,4 @@
-export const COLORS = ['#1D9E75','#378ADD','#D85A30','#7F77DD','#BA7517','#D4537E','#639922','#888780']
+export const COLORS = ['#4a8a68','#5a7aaa','#9a6040','#7a6aaa','#7a8a3a','#aa6060','#3a8a7a','#7a7a6a']
 export const ACTIVE_Q = '2Q2026'
 
 // Rolling 4 quarters starting from ACTIVE_Q
