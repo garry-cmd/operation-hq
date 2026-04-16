@@ -76,13 +76,13 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, krs, s
         </div>
       )}
 
-      {/* Group Key Results under their Objective — one header per objective */}
+      {/* One card per Objective, containing all its Key Results */}
       {objectives.map(obj => {
         const objItems = activeItems.filter(i => i.annual_objective_id === obj.id)
         if (!objItems.length) return null
         return (
-          <div key={obj.id} style={{ marginBottom: 22 }}>
-            {/* Objective — prominent section header */}
+          <div key={obj.id} style={{ marginBottom: 18 }}>
+            {/* Objective — prominent header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)', flex: 1, lineHeight: 1.3 }}>
@@ -90,72 +90,72 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, krs, s
               </div>
             </div>
 
-            {/* All Key Results for this objective */}
-            {objItems.map(item => {
-              const milestones = krs.filter(k => k.roadmap_item_id === item.id)
-              const doneMilestones = milestones.filter(k => k.status === 'done').length
-              const pct = milestones.length ? Math.round(doneMilestones / milestones.length * 100) : 0
-              const hs = item.health_status ?? 'not_started'
-              const st = HEALTH_STYLE[hs]
-              const isCollapsed = collapsed[item.id] ?? false
+            {/* Single card for all Key Results */}
+            <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, overflow: 'hidden', borderLeft: `4px solid ${obj.color}` }}>
+              {objItems.map((item, itemIdx) => {
+                const milestones = krs.filter(k => k.roadmap_item_id === item.id)
+                const doneMilestones = milestones.filter(k => k.status === 'done').length
+                const pct = milestones.length ? Math.round(doneMilestones / milestones.length * 100) : 0
+                const hs = item.health_status ?? 'not_started'
+                const st = HEALTH_STYLE[hs]
+                const isCollapsed = collapsed[item.id] ?? false
 
-              return (
-                <div key={item.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, overflow: 'hidden', borderLeft: `3px solid ${obj.color}`, marginBottom: 8 }}>
-                  {/* KR header */}
-                  <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 7 }}>{item.title}</div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ flex: 1, height: 3, background: 'var(--navy-600)', borderRadius: 2 }}>
-                          <div style={{ height: 3, borderRadius: 2, background: obj.color, width: `${pct}%`, transition: 'width .3s' }} />
+                return (
+                  <div key={item.id} style={{ borderTop: itemIdx > 0 ? '2px solid var(--navy-600)' : 'none' }}>
+                    {/* KR row */}
+                    <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 7 }}>{item.title}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ flex: 1, height: 3, background: 'var(--navy-600)', borderRadius: 2 }}>
+                            <div style={{ height: 3, borderRadius: 2, background: obj.color, width: `${pct}%`, transition: 'width .3s' }} />
+                          </div>
+                          <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600, flexShrink: 0 }}>{pct}%</span>
                         </div>
-                        <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600, flexShrink: 0 }}>{pct}%</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
+                        <button onClick={() => cycleStatus(item)}
+                          style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 99, border: 'none', cursor: 'pointer', background: st.bg, color: st.color, transition: 'all .12s', whiteSpace: 'nowrap' }}>
+                          {st.label}
+                        </button>
+                        {milestones.length > 0 && (
+                          <button onClick={() => toggleCollapse(item.id)}
+                            style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--navy-600)', background: 'var(--navy-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
+                            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+                              <path d="M2.5 4.5L6 8L9.5 4.5" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          </button>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
-                      <button onClick={() => cycleStatus(item)}
-                        style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 99, border: 'none', cursor: 'pointer', background: st.bg, color: st.color, transition: 'all .12s', whiteSpace: 'nowrap' }}>
-                        {st.label}
-                      </button>
-                      {/* Collapse chevron */}
-                      {milestones.length > 0 && (
-                        <button onClick={() => toggleCollapse(item.id)}
-                          style={{ width: 28, height: 28, borderRadius: 8, border: '1px solid var(--navy-600)', background: 'var(--navy-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                            <path d="M2.5 4.5L6 8L9.5 4.5" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                          </svg>
-                        </button>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Milestone rows — collapsible */}
-                  {!isCollapsed && milestones.length > 0 && (
-                    <div style={{ borderTop: '1px solid var(--navy-600)' }}>
-                      {milestones.map((ms, i) => (
-                        <div key={ms.id} style={{ padding: '9px 14px 9px 18px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < milestones.length - 1 ? '1px solid var(--navy-600)' : 'none', minHeight: 38 }}>
-                          <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--navy-500)', flexShrink: 0 }} />
-                          <span style={{ fontSize: 13, color: 'var(--navy-200)', flex: 1, lineHeight: 1.4 }}>{ms.title}</span>
-                          {ms.tag && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 6, background: 'var(--navy-700)', color: 'var(--navy-400)', flexShrink: 0 }}>{ms.tag}</span>}
-                        </div>
-                      ))}
-                      <button className="add-row-btn" onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
-                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                    {/* Milestones — collapsible */}
+                    {!isCollapsed && milestones.length > 0 && (
+                      <div style={{ borderTop: '1px solid var(--navy-600)' }}>
+                        {milestones.map((ms, i) => (
+                          <div key={ms.id} style={{ padding: '9px 14px 9px 18px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < milestones.length - 1 ? '1px solid var(--navy-600)' : 'none', minHeight: 38 }}>
+                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--navy-500)', flexShrink: 0 }} />
+                            <span style={{ fontSize: 13, color: 'var(--navy-200)', flex: 1, lineHeight: 1.4 }}>{ms.title}</span>
+                            {ms.tag && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 6, background: 'var(--navy-700)', color: 'var(--navy-400)', flexShrink: 0 }}>{ms.tag}</span>}
+                          </div>
+                        ))}
+                        <button className="add-row-btn" onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
+                          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+                          Add milestone
+                        </button>
+                      </div>
+                    )}
+
+                    {milestones.length === 0 && (
+                      <button className="add-row-btn" style={{ borderTop: '1px solid var(--navy-600)' }} onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
+                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
                         Add milestone
                       </button>
-                    </div>
-                  )}
-
-                  {/* Show add button when collapsed too, if no milestones yet */}
-                  {milestones.length === 0 && (
-                    <button className="add-row-btn" style={{ borderTop: '1px solid var(--navy-600)' }} onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-                      Add milestone
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           </div>
         )
       })}
