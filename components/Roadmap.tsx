@@ -13,6 +13,9 @@ interface Props {
   toast: (m: string) => void
 }
 
+// Key for identifying a specific quarter cell during drag
+type CellKey = string // `${objId}::${quarter}`
+
 const S = {
   card: { background: 'var(--navy-700)', border: '1px solid var(--navy-600)' },
   cardActive: { background: 'var(--navy-700)', border: '1px solid var(--accent-dim)' },
@@ -28,6 +31,17 @@ const S = {
 
 export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, toast }: Props) {
   const [modal, setModal] = useState<null | { type: string; obj?: AnnualObjective; item?: RoadmapItem; annualObjId?: string; quarter?: string }>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dragOverCell, setDragOverCell] = useState<CellKey | null>(null)
+
+  async function moveItem(itemId: string, targetQuarter: string) {
+    const item = roadmapItems.find(i => i.id === itemId)
+    if (!item || item.quarter === targetQuarter) return
+    const newStatus = targetQuarter === ACTIVE_Q ? 'active' : 'planned'
+    await supabase.from('roadmap_items').update({ quarter: targetQuarter, status: newStatus }).eq('id', itemId)
+    setRoadmapItems(prev => prev.map(i => i.id === itemId ? { ...i, quarter: targetQuarter, status: newStatus } : i))
+    toast(`Moved to ${targetQuarter}`)
+  }
 
   async function toggleKRDone(item: RoadmapItem) {
     const next = item.status === 'done' ? 'planned' : 'done'
@@ -97,16 +111,38 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
 
             {QUARTERS.map(q => {
               const items = roadmapItems.filter(i => i.annual_objective_id === obj.id && i.quarter === q)
+              const cellKey: CellKey = `${obj.id}::${q}`
+              const isOver = dragOverCell === cellKey
               return (
-                <div key={q} className="rounded-xl p-2 flex flex-col gap-1.5 min-h-[88px]"
-                  style={q === ACTIVE_Q ? S.cardActive : S.card}>
+                <div key={q}
+                  className="rounded-xl p-2 flex flex-col gap-1.5 min-h-[88px] transition-all"
+                  style={{
+                    ...(q === ACTIVE_Q ? S.cardActive : S.card),
+                    ...(isOver ? { border: '1px solid var(--accent)', background: 'var(--accent-dim)', outline: '2px solid var(--accent)', outlineOffset: '-2px' } : {}),
+                  }}
+                  onDragOver={e => { e.preventDefault(); setDragOverCell(cellKey) }}
+                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCell(null) }}
+                  onDrop={e => {
+                    e.preventDefault()
+                    const id = e.dataTransfer.getData('itemId')
+                    if (id) moveItem(id, q)
+                    setDragOverCell(null)
+                    setDraggingId(null)
+                  }}
+                >
                   {items.map(item => (
-                    <div key={item.id} className="text-[11px] px-2 py-1.5 rounded-lg flex items-start gap-1.5 leading-snug group"
-                      style={
-                        item.status === 'done' || item.status === 'abandoned'
-                          ? { ...S.chip, opacity: .4, textDecoration: 'line-through' }
-                          : q === ACTIVE_Q ? S.chipActive : S.chip
-                      }>
+                    <div key={item.id}
+                      draggable
+                      onDragStart={e => { e.dataTransfer.setData('itemId', item.id); setDraggingId(item.id) }}
+                      onDragEnd={() => { setDraggingId(null); setDragOverCell(null) }}
+                      className="text-[11px] px-2 py-1.5 rounded-lg flex items-start gap-1.5 leading-snug group"
+                      style={{
+                        cursor: 'grab',
+                        opacity: draggingId === item.id ? 0.4 : 1,
+                        ...(item.status === 'done' || item.status === 'abandoned'
+                          ? { ...S.chip, opacity: 0.4, textDecoration: 'line-through' }
+                          : q === ACTIVE_Q ? S.chipActive : S.chip),
+                      }}>
                       {q === ACTIVE_Q && item.status !== 'done' && item.status !== 'abandoned' && (
                         <span className="opacity-70 shrink-0 mt-0.5" style={{ fontSize: 9 }}>→Q</span>
                       )}
