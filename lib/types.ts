@@ -1,16 +1,15 @@
-export type ObjStatus = 'active' | 'abandoned'
 export type ItemStatus = 'planned' | 'active' | 'done' | 'abandoned'
 export type KRStatus = 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
 export type CheckinStatus = 'on_track' | 'off_track' | 'blocked'
 export type ReviewRating = 'strong' | 'steady' | 'rough'
+export type HealthStatus = 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
 
 export interface AnnualObjective {
   id: string
   name: string
   color: string
-  year: number
   sort_order: number
-  status: ObjStatus
+  status: 'active' | 'abandoned'
   created_at: string
 }
 
@@ -21,36 +20,28 @@ export interface RoadmapItem {
   quarter: string | null
   sort_order: number
   status: ItemStatus
-  health_status: 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
+  health_status: HealthStatus
+  progress: number
   is_parked: boolean
-  created_at: string
-}
-
-export interface QuarterlyKR {
-  id: string
-  roadmap_item_id: string
-  title: string
-  tag: string | null
-  sort_order: number
-  status: KRStatus
-  pinned_to_checkin: boolean
   created_at: string
 }
 
 export interface WeeklyAction {
   id: string
-  quarterly_kr_id: string
+  roadmap_item_id: string
+  quarterly_kr_id?: string | null
   title: string
   week_start: string
   completed: boolean
   carried_over: boolean
-  sort_order: number
+  created_at: string
 }
 
 export interface DailyCheckin {
   id: string
   checkin_date: string
-  quarterly_kr_id: string
+  roadmap_item_id: string
+  quarterly_kr_id?: string | null
   status: CheckinStatus
 }
 
@@ -58,9 +49,9 @@ export interface WeeklyReview {
   id: string
   week_start: string
   rating: ReviewRating
-  win: string | null
-  slipped: string | null
-  adjust_notes: string | null
+  win: string
+  slipped: string
+  adjust_notes: string
   krs_hit: number
   krs_total: number
 }

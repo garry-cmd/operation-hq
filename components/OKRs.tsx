@@ -1,46 +1,34 @@
 'use client'
-import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, QuarterlyKR } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
-import Modal from './Modal'
 
-type HealthStatus = 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
+type Props = {
+  objectives: AnnualObjective[]
+  roadmapItems: RoadmapItem[]
+  setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
+  actions: WeeklyAction[]
+  weekStart: string
+  toast: (m: string) => void
+}
 
 const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'on_track', 'off_track', 'blocked', 'done']
-
-const HEALTH_STYLE: Record<HealthStatus, { bg: string; color: string; label: string }> = {
+const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
   not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
   on_track:    { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'On track' },
   off_track:   { bg: 'var(--red-bg)',    color: 'var(--red-text)',  label: 'Off track' },
   blocked:     { bg: 'var(--amber-bg)',  color: 'var(--amber-text)', label: 'Blocked' },
-  done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done' },
+  done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done ✓' },
 }
 
-interface Props {
-  objectives: AnnualObjective[]
-  roadmapItems: RoadmapItem[]
-  setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
-  krs: QuarterlyKR[]
-  setKrs: (fn: (p: QuarterlyKR[]) => QuarterlyKR[]) => void
-  toast: (m: string) => void
-}
-
-export default function OKRs({ objectives, roadmapItems, setRoadmapItems, krs, setKrs, toast }: Props) {
-  const [addMilestoneModal, setAddMilestoneModal] = useState<null | { roadmapItemId: string }>(null)
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-
-  function toggleCollapse(id: string) {
-    setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
-  }
-
-  const activeItems = roadmapItems.filter(i => i.quarter === ACTIVE_Q && i.status !== 'abandoned' && !i.is_parked)
-  const allKrs = krs.filter(k => activeItems.some(i => i.id === k.roadmap_item_id))
-  const onTrack  = activeItems.filter(i => i.health_status === 'on_track').length
-  const offTrack = activeItems.filter(i => i.health_status === 'off_track').length
+export default function OKRs({ objectives, roadmapItems, setRoadmapItems, actions, weekStart, toast }: Props) {
+  const activeKRs = roadmapItems.filter(i => i.quarter === ACTIVE_Q && i.status !== 'abandoned' && !i.is_parked)
+  const weekActions = actions.filter(a => a.week_start === weekStart)
+  const onTrack = activeKRs.filter(i => i.health_status === 'on_track').length
+  const offTrack = activeKRs.filter(i => i.health_status === 'off_track').length
 
   async function cycleStatus(item: RoadmapItem) {
-    const idx = HEALTH_CYCLE.indexOf(item.health_status)
+    const idx = HEALTH_CYCLE.indexOf(item.health_status ?? 'not_started')
     const next = HEALTH_CYCLE[(idx + 1) % HEALTH_CYCLE.length]
     await supabase.from('roadmap_items').update({ health_status: next }).eq('id', item.id)
     setRoadmapItems(prev => prev.map(i => i.id === item.id ? { ...i, health_status: next } : i))
@@ -49,109 +37,76 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, krs, s
   return (
     <div>
       <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>
-        {ACTIVE_Q} — Objectives &amp; Key Results
+        {ACTIVE_Q} OKRs
       </h1>
       <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>Apr 1 – Jun 30</p>
 
-      {/* Summary cards */}
+      {/* Summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8, marginBottom: 20 }}>
         {[
-          ['Key Results',     activeItems.length,             'var(--accent)'],
-          ['Milestones done', `${allKrs.filter(k=>k.status==='done').length}/${allKrs.length}`, 'var(--teal-text)'],
-          ['On track',        onTrack,                        'var(--teal-text)'],
-          ['Off track',       offTrack,                       'var(--red-text)'],
+          ['Key Results',      activeKRs.length,        'var(--accent)'],
+          ['On track',         onTrack,                 'var(--teal-text)'],
+          ['Off track',        offTrack,                'var(--red-text)'],
+          ['Actions this week',weekActions.length,      'var(--navy-50)'],
         ].map(([l, v, c]) => (
-          <div key={l as string} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '12px 14px' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '.5px' }}>{l}</div>
-            <div style={{ fontSize: 24, fontWeight: 700, color: c as string }}>{v}</div>
+          <div key={l as string} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '11px 13px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.4px' }}>{l}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: c as string }}>{v}</div>
           </div>
         ))}
       </div>
 
-      {activeItems.length === 0 && (
+      {activeKRs.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
-          No active key results for {ACTIVE_Q}.<br />
-          <span style={{ fontSize: 13 }}>Add key results on the Roadmap screen.</span>
+          No active key results yet.<br />
+          <span style={{ fontSize: 13 }}>Use the + button to add key results.</span>
         </div>
       )}
 
-      {/* One card per Objective, containing all its Key Results */}
       {objectives.map(obj => {
-        const objItems = activeItems.filter(i => i.annual_objective_id === obj.id)
-        if (!objItems.length) return null
+        const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
+        if (!objKRs.length) return null
         return (
           <div key={obj.id} style={{ marginBottom: 18 }}>
-            {/* Objective — prominent header */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            {/* Objective header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 9 }}>
               <div style={{ width: 10, height: 10, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)', flex: 1, lineHeight: 1.3 }}>
-                {obj.name}
-              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)' }}>{obj.name}</div>
             </div>
 
-            {/* Single card for all Key Results */}
+            {/* Single card for all KRs under this objective */}
             <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, overflow: 'hidden', borderLeft: `4px solid ${obj.color}` }}>
-              {objItems.map((item, itemIdx) => {
-                const milestones = krs.filter(k => k.roadmap_item_id === item.id)
-                const doneMilestones = milestones.filter(k => k.status === 'done').length
-                const pct = milestones.length ? Math.round(doneMilestones / milestones.length * 100) : 0
-                const hs = item.health_status ?? 'not_started'
-                const st = HEALTH_STYLE[hs]
-                const isCollapsed = collapsed[item.id] ?? false
-
+              {objKRs.map((kr, i) => {
+                const actCount = weekActions.filter(a => a.roadmap_item_id === kr.id).length
+                const h = kr.health_status ?? 'not_started'
+                const hs = HEALTH[h]
                 return (
-                  <div key={item.id} style={{ borderTop: itemIdx > 0 ? '2px solid var(--navy-600)' : 'none' }}>
-                    {/* KR row */}
-                    <div style={{ padding: '12px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                  <div key={kr.id} style={{ borderTop: i > 0 ? '2px solid var(--navy-600)' : 'none' }}>
+                    <div style={{ padding: '13px 14px', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 7 }}>{item.title}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ flex: 1, height: 3, background: 'var(--navy-600)', borderRadius: 2 }}>
-                            <div style={{ height: 3, borderRadius: 2, background: obj.color, width: `${pct}%`, transition: 'width .3s' }} />
+                        {/* KR title */}
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 8 }}>
+                          {kr.title}
+                        </div>
+                        {/* Progress bar */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                          <div style={{ flex: 1, height: 4, background: 'var(--navy-600)', borderRadius: 2 }}>
+                            <div style={{ height: 4, borderRadius: 2, background: obj.color, width: `${kr.progress ?? 0}%`, transition: 'width .3s' }} />
                           </div>
-                          <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600, flexShrink: 0 }}>{pct}%</span>
+                          <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600, minWidth: 28, textAlign: 'right' }}>{kr.progress ?? 0}%</span>
+                        </div>
+                        {/* Action count */}
+                        <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                          {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
-                        <button onClick={() => cycleStatus(item)}
-                          style={{ fontSize: 11, fontWeight: 700, padding: '5px 12px', borderRadius: 99, border: 'none', cursor: 'pointer', background: st.bg, color: st.color, transition: 'all .12s', whiteSpace: 'nowrap' }}>
-                          {st.label}
-                        </button>
-                        {milestones.length > 0 && (
-                          <button onClick={() => toggleCollapse(item.id)}
-                            style={{ width: 26, height: 26, borderRadius: 8, border: '1px solid var(--navy-600)', background: 'var(--navy-700)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'transform .15s', transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}>
-                            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-                              <path d="M2.5 4.5L6 8L9.5 4.5" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Milestones — collapsible */}
-                    {!isCollapsed && milestones.length > 0 && (
-                      <div style={{ borderTop: '1px solid var(--navy-600)' }}>
-                        {milestones.map((ms, i) => (
-                          <div key={ms.id} style={{ padding: '9px 14px 9px 18px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: i < milestones.length - 1 ? '1px solid var(--navy-600)' : 'none', minHeight: 38 }}>
-                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--navy-500)', flexShrink: 0 }} />
-                            <span style={{ fontSize: 13, color: 'var(--navy-200)', flex: 1, lineHeight: 1.4 }}>{ms.title}</span>
-                            {ms.tag && <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 6, background: 'var(--navy-700)', color: 'var(--navy-400)', flexShrink: 0 }}>{ms.tag}</span>}
-                          </div>
-                        ))}
-                        <button className="add-row-btn" onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
-                          <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-                          Add milestone
-                        </button>
-                      </div>
-                    )}
-
-                    {milestones.length === 0 && (
-                      <button className="add-row-btn" style={{ borderTop: '1px solid var(--navy-600)' }} onClick={() => setAddMilestoneModal({ roadmapItemId: item.id })}>
-                        <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
-                        Add milestone
+                      {/* Status pill — tap to cycle */}
+                      <button onClick={() => cycleStatus(kr)}
+                        style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s', marginTop: 2 }}>
+                        {hs.label}
                       </button>
-                    )}
+                    </div>
                   </div>
                 )
               })}
@@ -159,34 +114,6 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, krs, s
           </div>
         )
       })}
-
-      {/* Add milestone modal */}
-      {addMilestoneModal && (
-        <Modal title="Add milestone" onClose={() => setAddMilestoneModal(null)}
-          footer={<>
-            <button className="btn" onClick={() => setAddMilestoneModal(null)}>Cancel</button>
-            <button className="btn-primary" onClick={async () => {
-              const titleEl = document.getElementById('ms-title') as HTMLTextAreaElement
-              const tagEl   = document.getElementById('ms-tag') as HTMLInputElement
-              if (!titleEl?.value.trim()) return
-              const count = krs.filter(k => k.roadmap_item_id === addMilestoneModal.roadmapItemId).length
-              const { data } = await supabase.from('quarterly_krs')
-                .insert({ roadmap_item_id: addMilestoneModal.roadmapItemId, title: titleEl.value.trim(), tag: tagEl?.value || null, sort_order: count })
-                .select().single()
-              if (data) { setKrs(prev => [...prev, data]); toast('Milestone added!') }
-              setAddMilestoneModal(null)
-            }}>Add milestone</button>
-          </>}>
-          <div className="field">
-            <label>Milestone</label>
-            <textarea id="ms-title" className="input" rows={3} autoFocus placeholder="e.g. 4 cardio + 2 strength sessions/week" />
-          </div>
-          <div className="field">
-            <label>Tag (optional)</label>
-            <input id="ms-tag" className="input" placeholder="e.g. Weekly, Nutrition…" />
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }

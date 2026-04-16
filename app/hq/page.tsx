@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, QuarterlyKR, WeeklyAction, DailyCheckin, WeeklyReview } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview } from '@/lib/types'
 import { getMonday, ACTIVE_Q } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -12,13 +12,13 @@ import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'okr' | 'focus' | 'roadmap' | 'reflect' | 'park'
+type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
 
 interface SearchResult { label: string; sub: string; screen: Screen }
 
 export default function HQPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [screen, setScreen] = useState<Screen>('focus')
+  const [screen, setScreen] = useState<Screen>('okr')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
   const [weekStart, setWeekStart] = useState(getMonday())
@@ -32,7 +32,6 @@ export default function HQPage() {
 
   const [objectives, setObjectives] = useState<AnnualObjective[]>([])
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([])
-  const [krs, setKrs] = useState<QuarterlyKR[]>([])
   const [actions, setActions] = useState<WeeklyAction[]>([])
   const [checkins, setCheckins] = useState<DailyCheckin[]>([])
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
@@ -56,30 +55,6 @@ export default function HQPage() {
     return () => subscription.unsubscribe()
   }, [])
 
-  const loadAll = useCallback(async () => {
-    setLoading(true)
-    const [o, r, k, a, rv, ci, st] = await Promise.all([
-      supabase.from('annual_objectives').select('*').order('sort_order'),
-      supabase.from('roadmap_items').select('*').order('sort_order'),
-      supabase.from('quarterly_krs').select('*').order('sort_order'),
-      supabase.from('weekly_actions').select('*').order('sort_order'),
-      supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
-      supabase.from('daily_checkins').select('*').order('checkin_date', { ascending: false }),
-      supabase.from('share_tokens').select('token').eq('label', 'Melissa').eq('active', true).single(),
-    ])
-    setObjectives(o.data ?? [])
-    setRoadmapItems(r.data ?? [])
-    setKrs(k.data ?? [])
-    setActions(a.data ?? [])
-    setReviews(rv.data ?? [])
-    setCheckins(ci.data ?? [])
-    if (st.data) setShareToken(st.data.token)
-    setLoading(false)
-  }, [])
-
-  useEffect(() => { if (user) loadAll() }, [user, loadAll])
-
-  // Close avatar menu on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) setAvatarOpen(false)
@@ -88,14 +63,34 @@ export default function HQPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // Search results
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    const [o, r, a, ci, rv, st] = await Promise.all([
+      supabase.from('annual_objectives').select('*').order('sort_order'),
+      supabase.from('roadmap_items').select('*').order('sort_order'),
+      supabase.from('weekly_actions').select('*').order('created_at'),
+      supabase.from('daily_checkins').select('*').order('checkin_date', { ascending: false }),
+      supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
+      supabase.from('share_tokens').select('token').eq('label', 'Melissa').eq('active', true).single(),
+    ])
+    setObjectives(o.data ?? [])
+    setRoadmapItems(r.data ?? [])
+    setActions(a.data ?? [])
+    setCheckins(ci.data ?? [])
+    setReviews(rv.data ?? [])
+    if (st.data) setShareToken(st.data.token)
+    setLoading(false)
+  }, [])
+
+  useEffect(() => { if (user) loadAll() }, [user, loadAll])
+
+  // Search
   const searchResults: SearchResult[] = searchQuery.trim().length < 2 ? [] : (() => {
     const q = searchQuery.toLowerCase()
     const results: SearchResult[] = []
-    objectives.forEach(o => { if (o.name.toLowerCase().includes(q)) results.push({ label: o.name, sub: 'Annual objective', screen: 'roadmap' }) })
-    roadmapItems.filter(i => !i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) { const obj = objectives.find(o => o.id === i.annual_objective_id); results.push({ label: i.title, sub: obj?.name ?? 'Roadmap milestone', screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap' }) } })
-    krs.forEach(k => { if (k.title.toLowerCase().includes(q)) results.push({ label: k.title, sub: 'Key result', screen: 'okr' }) })
-    actions.filter(a => a.week_start === weekStart).forEach(a => { if (a.title.toLowerCase().includes(q)) results.push({ label: a.title, sub: 'This week action', screen: 'focus' }) })
+    objectives.forEach(o => { if (o.name.toLowerCase().includes(q)) results.push({ label: o.name, sub: 'Objective', screen: 'roadmap' }) })
+    roadmapItems.filter(i => !i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Key Result', screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap' }) })
+    actions.filter(a => a.week_start === weekStart).forEach(a => { if (a.title.toLowerCase().includes(q)) results.push({ label: a.title, sub: 'Action this week', screen: 'focus' }) })
     roadmapItems.filter(i => i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Parking Lot', screen: 'park' }) })
     return results.slice(0, 6)
   })()
@@ -103,54 +98,46 @@ export default function HQPage() {
   function copyShareLink() {
     const link = `${window.location.origin}/share/${shareToken}`
     navigator.clipboard.writeText(link)
-    setCopied(true)
-    setAvatarOpen(false)
-    setToast('Share link copied!')
+    setCopied(true); setAvatarOpen(false); setToast('Share link copied!')
     setTimeout(() => setCopied(false), 2000)
   }
 
-  // Auth states
   if (user === undefined) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--navy-900)' }}>
       <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
     </div>
   )
-
   if (!user) return <LoginPage />
 
   const initials = user.email?.slice(0, 2).toUpperCase() ?? 'HQ'
   const parkedCount = roadmapItems.filter(i => i.is_parked).length
 
-  // Nav items
+  // Nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking
   const NAV: { id: Screen; label: string; icon: React.ReactNode; fab?: boolean }[] = [
-    { id: 'reflect', label: 'Reflect', icon: <ReflectIcon active={screen === 'reflect'} /> },
-    { id: 'okr', label: 'OKRs', icon: <OKRIcon active={screen === 'okr'} /> },
-    { id: 'focus', label: 'Focus', icon: <FocusIcon />, fab: true },
-    { id: 'roadmap', label: 'Roadmap', icon: <RoadmapIcon active={screen === 'roadmap'} /> },
-    { id: 'park', label: 'Parking', icon: <ParkIcon active={screen === 'park'} /> },
+    { id: 'reflect',  label: 'Reflect',  icon: <ReflectIcon  active={screen === 'reflect'} /> },
+    { id: 'focus',    label: 'Focus',    icon: <FocusIcon    active={screen === 'focus'} /> },
+    { id: 'okr',      label: 'OKRs',     icon: <OKRIcon />, fab: true },
+    { id: 'roadmap',  label: 'Roadmap',  icon: <RoadmapIcon  active={screen === 'roadmap'} /> },
+    { id: 'park',     label: 'Parking',  icon: <ParkIcon     active={screen === 'park'} /> },
   ]
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--navy-900)' }}>
-
       {/* Topbar */}
       <header style={{ position: 'sticky', top: 0, zIndex: 40, height: 54, background: 'var(--navy-800)', borderBottom: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12 }}>
         <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)', flexShrink: 0 }}>
           Op <span style={{ color: 'var(--accent)' }}>HQ</span>
         </div>
-
         {/* Search */}
         <div style={{ flex: 1, position: 'relative' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--navy-700)', border: `1px solid ${searchFocused ? 'var(--accent)' : 'var(--navy-500)'}`, borderRadius: 99, height: 34, padding: '0 12px', transition: 'border-color .15s' }}>
             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}><circle cx="5.5" cy="5.5" r="4" stroke="var(--navy-400)" strokeWidth="1.4"/><path d="M9 9l2.5 2.5" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round"/></svg>
             <input ref={searchRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
               onFocus={() => setSearchFocused(true)} onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-              placeholder="Search objectives, KRs, actions…"
+              placeholder="Search objectives, key results, actions…"
               style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: 12, color: 'var(--navy-100)', fontFamily: 'inherit' }} />
             {searchQuery && <button onClick={() => setSearchQuery('')} style={{ color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
           </div>
-
-          {/* Search dropdown */}
           {searchFocused && searchResults.length > 0 && (
             <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 12, overflow: 'hidden', zIndex: 50 }}>
               {searchResults.map((r, i) => (
@@ -165,11 +152,10 @@ export default function HQPage() {
             </div>
           )}
         </div>
-
-        {/* Avatar + menu */}
+        {/* Avatar */}
         <div ref={avatarRef} style={{ position: 'relative', flexShrink: 0 }}>
           <button onClick={() => setAvatarOpen(o => !o)}
-            style={{ width: 32, height: 32, borderRadius: '50%', background: avatarOpen ? 'var(--accent)' : 'var(--accent-dim)', color: avatarOpen ? '#fff' : 'var(--accent)', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s' }}>
+            style={{ width: 32, height: 32, borderRadius: '50%', background: avatarOpen ? 'var(--accent)' : 'var(--accent-dim)', color: avatarOpen ? '#fff' : 'var(--accent)', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {initials}
           </button>
           {avatarOpen && (
@@ -197,30 +183,30 @@ export default function HQPage() {
         </div>
       </header>
 
-      {/* Main content */}
+      {/* Main */}
       <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
-            Loading your data…
+            Loading…
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} krs={krs} setKrs={setKrs} toast={setToast} />}
-            {screen === 'focus'   && <Focus objectives={objectives} roadmapItems={roadmapItems} krs={krs} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} actions={actions} weekStart={weekStart} toast={setToast} />}
+            {screen === 'focus'   && <Focus objectives={objectives} roadmapItems={roadmapItems} actions={actions} setActions={setActions} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'roadmap' && <Roadmap objectives={objectives} roadmapItems={roadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} toast={setToast} />}
-            {screen === 'reflect' && <Reflect objectives={objectives} roadmapItems={roadmapItems} krs={krs} setKrs={setKrs} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
+            {screen === 'reflect' && <Reflect objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} checkins={checkins} setCheckins={setCheckins} reviews={reviews} setReviews={setReviews} weekStart={weekStart} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
       </main>
 
-      {/* Footer nav */}
+      {/* Footer nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 72, background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '0 8px', zIndex: 40 }}>
         {NAV.map(item => item.fab ? (
           <button key={item.id} onClick={() => setScreen(item.id)}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', marginTop: -20 }}>
-            <div style={{ width: 52, height: 52, borderRadius: '50%', background: screen === item.id ? 'var(--accent)' : 'var(--accent)', border: '3px solid var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: screen === item.id ? '0 0 0 3px var(--accent-dim)' : 'none', transition: 'box-shadow .2s' }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--accent)', border: '3px solid var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: screen === item.id ? '0 0 0 3px var(--accent-dim)' : 'none', transition: 'box-shadow .2s' }}>
               {item.icon}
             </div>
             <span style={{ fontSize: 10, fontWeight: 700, color: screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
@@ -240,11 +226,8 @@ export default function HQPage() {
       <FastCapture
         objectives={objectives}
         roadmapItems={roadmapItems}
-        krs={krs}
         weekStart={weekStart}
-        setObjectives={setObjectives}
         setRoadmapItems={setRoadmapItems}
-        setKrs={setKrs}
         setActions={setActions}
         toast={setToast}
       />
@@ -262,14 +245,14 @@ export default function HQPage() {
 // ── Icons ──────────────────────────────────────────────────────────
 function ReflectIcon({ active }: { active: boolean }) {
   const c = active ? 'var(--accent)' : 'var(--navy-400)'
-  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke={c} strokeWidth="1.5"/><path d="M11 6v5l3 2" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 18l14-14" stroke={c} strokeWidth="1" strokeDasharray="2 3" strokeLinecap="round"/></svg>
+  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke={c} strokeWidth="1.5"/><path d="M11 6v5l3 2" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
 }
-function OKRIcon({ active }: { active: boolean }) {
+function FocusIcon({ active }: { active: boolean }) {
   const c = active ? 'var(--accent)' : 'var(--navy-400)'
-  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="9" stroke={c} strokeWidth="1.5"/><circle cx="11" cy="11" r="5" stroke={c} strokeWidth="1.5"/><circle cx="11" cy="11" r="1.5" fill={c}/></svg>
+  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 2.5L7 11h4l-1 8.5 5.5-9.5H12L11 2.5Z" stroke={c} strokeWidth="1.5" strokeLinejoin="round"/></svg>
 }
-function FocusIcon() {
-  return <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><path d="M14 3L5.5 15H13L12 23L20.5 11H13L14 3Z" stroke="white" strokeWidth="1.8" strokeLinejoin="round"/></svg>
+function OKRIcon() {
+  return <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><circle cx="13" cy="13" r="10" stroke="white" strokeWidth="1.8"/><circle cx="13" cy="13" r="6" stroke="white" strokeWidth="1.8"/><circle cx="13" cy="13" r="2" fill="white"/></svg>
 }
 function RoadmapIcon({ active }: { active: boolean }) {
   const c = active ? 'var(--accent)' : 'var(--navy-400)'
@@ -280,7 +263,7 @@ function ParkIcon({ active }: { active: boolean }) {
   return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="4" stroke={c} strokeWidth="1.5"/><path d="M9 8h4a2.5 2.5 0 0 1 0 5H9V8Z" stroke={c} strokeWidth="1.5"/><path d="M9 13v4" stroke={c} strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
-// ── Login page ────────────────────────────────────────────────────
+// ── Login ──────────────────────────────────────────────────────────
 function LoginPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
@@ -289,8 +272,7 @@ function LoginPage() {
   const [loading, setLoading] = useState(false)
 
   async function submit(e: React.FormEvent) {
-    e.preventDefault()
-    setLoading(true); setError('')
+    e.preventDefault(); setLoading(true); setError('')
     if (mode === 'login') {
       const { error: err } = await supabase.auth.signInWithPassword({ email, password })
       if (err) setError(err.message)
