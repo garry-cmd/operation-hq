@@ -2,10 +2,10 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
-import { QUARTERS, ACTIVE_Q, COLORS } from '@/lib/utils'
+import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ } from '@/lib/utils'
 import Modal from './Modal'
 
-interface Props {
+type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
@@ -13,77 +13,86 @@ interface Props {
   toast: (m: string) => void
 }
 
-// Key for identifying a specific quarter cell during drag
-type CellKey = string // `${objId}::${quarter}`
+type ModalState =
+  | { type: 'add_obj' }
+  | { type: 'edit_obj'; obj: AnnualObjective }
+  | { type: 'add_kr'; objId: string; quarter: string | null }
+  | { type: 'edit_kr'; item: RoadmapItem }
+  | null
 
-const S = {
-  card: { background: 'var(--navy-700)', border: '1px solid var(--navy-600)' },
-  cardActive: { background: 'var(--navy-700)', border: '1px solid var(--accent-dim)' },
-  chip: { background: 'var(--navy-600)', border: '1px solid var(--navy-500)', color: 'var(--navy-100)' },
-  chipActive: { background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' },
-  qHeader: { background: 'var(--navy-700)', color: 'var(--navy-300)' },
-  qHeaderActive: { background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' },
-  label: { color: 'var(--navy-400)', fontSize: 9, fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '.5px' },
-  name: { color: 'var(--navy-50)', fontSize: 11, fontWeight: 500, lineHeight: 1.35 },
-  nameAbandoned: { color: 'var(--navy-500)', fontSize: 11, fontWeight: 500, textDecoration: 'line-through' },
-  muted: { color: 'var(--navy-400)', fontSize: 11 },
+const ROLLING = getRollingQuarters()
+
+// hex → rgba helper
+function hex2rgba(hex: string, a: number) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
+  return `rgba(${r},${g},${b},${a})`
 }
 
 export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, toast }: Props) {
-  const [modal, setModal] = useState<null | { type: string; obj?: AnnualObjective; item?: RoadmapItem; annualObjId?: string; quarter?: string }>(null)
+  const [modal, setModal] = useState<ModalState>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOverCell, setDragOverCell] = useState<CellKey | null>(null)
-  const [draggingObjId, setDraggingObjId] = useState<string | null>(null)
-  const [dragOverObjId, setDragOverObjId] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState<string | null>(null) // `${objId}::${quarter|null}`
 
-  async function reorderObjective(draggedId: string, targetId: string) {
-    if (draggedId === targetId) return
-    const list = [...objectives]
-    const fromIdx = list.findIndex(o => o.id === draggedId)
-    const toIdx = list.findIndex(o => o.id === targetId)
-    if (fromIdx === -1 || toIdx === -1) return
-    const reordered = [...list]
-    const [moved] = reordered.splice(fromIdx, 1)
-    reordered.splice(toIdx, 0, moved)
-    const updated = reordered.map((o, i) => ({ ...o, sort_order: i }))
-    setObjectives(() => updated)
-    await Promise.all(updated.map(o => supabase.from('annual_objectives').update({ sort_order: o.sort_order }).eq('id', o.id)))
+  const activeObjs = objectives.filter(o => o.status !== 'abandoned')
+
+  // Items that are NOT parked
+  const items = roadmapItems.filter(i => !i.is_parked)
+
+  async function moveKR(itemId: string, quarter: string | null) {
+    const newStatus = quarter === ACTIVE_Q ? 'active' : quarter ? 'planned' : 'planned'
+    await supabase.from('roadmap_items').update({ quarter, status: newStatus }).eq('id', itemId)
+    setRoadmapItems(prev => prev.map(i => i.id === itemId ? { ...i, quarter, status: newStatus } : i))
+    toast(quarter ? `Moved to ${formatQ(quarter)}` : 'Moved to Unscheduled')
   }
 
-  async function moveItem(itemId: string, targetQuarter: string) {
-    const item = roadmapItems.find(i => i.id === itemId)
-    if (!item || item.quarter === targetQuarter) return
-    const newStatus = targetQuarter === ACTIVE_Q ? 'active' : 'planned'
-    await supabase.from('roadmap_items').update({ quarter: targetQuarter, status: newStatus }).eq('id', itemId)
-    setRoadmapItems(prev => prev.map(i => i.id === itemId ? { ...i, quarter: targetQuarter, status: newStatus } : i))
-    toast(`Moved to ${targetQuarter}`)
-  }
-
-  async function parkItem(item: RoadmapItem) {
+  async function parkKR(item: RoadmapItem) {
     await supabase.from('roadmap_items').update({ is_parked: true, quarter: null, status: 'planned' }).eq('id', item.id)
     setRoadmapItems(prev => prev.map(i => i.id === item.id ? { ...i, is_parked: true, quarter: null, status: 'planned' } : i))
     toast('Moved to Parking Lot')
   }
 
-  async function toggleKRDone(item: RoadmapItem) {
-    const next = item.status === 'done' ? 'planned' : 'done'
-    await supabase.from('roadmap_items').update({ status: next }).eq('id', item.id)
-    setRoadmapItems(prev => prev.map(i => i.id === item.id ? { ...i, status: next } : i))
+  async function deleteKR(id: string) {
+    await supabase.from('roadmap_items').delete().eq('id', id)
+    setRoadmapItems(prev => prev.filter(i => i.id !== id))
+    setModal(null)
+    toast('Key result deleted.')
   }
 
-  async function abandonObjective(obj: AnnualObjective) {
-    const next = obj.status === 'abandoned' ? 'active' : 'abandoned'
-    await supabase.from('annual_objectives').update({ status: next }).eq('id', obj.id)
-    setObjectives(prev => prev.map(o => o.id === obj.id ? { ...o, status: next } : o))
-    toast(next === 'abandoned' ? 'Objective abandoned.' : 'Objective restored.')
+  function cellKey(objId: string, q: string | null) { return `${objId}::${q ?? 'null'}` }
+
+  function onDragStart(e: React.DragEvent, itemId: string) {
+    e.dataTransfer.setData('itemId', itemId)
+    setDraggingId(itemId)
   }
+
+  function onDragOver(e: React.DragEvent, key: string) {
+    e.preventDefault()
+    setDragOver(key)
+  }
+
+  function onDrop(e: React.DragEvent, objId: string, quarter: string | null) {
+    e.preventDefault()
+    const itemId = e.dataTransfer.getData('itemId')
+    setDragOver(null); setDraggingId(null)
+    if (!itemId) return
+    const item = items.find(i => i.id === itemId)
+    if (!item || item.annual_objective_id !== objId) {
+      toast('Can only move key results within the same objective')
+      return
+    }
+    moveKR(itemId, quarter)
+  }
+
+  // Column widths: Unscheduled + 4 quarters
+  const COLS = '120px repeat(4, 1fr)'
+  const MIN_W = 560
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h1 className="text-base font-semibold" style={{ color: 'var(--navy-50)' }}>Annual Roadmap</h1>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Plan your key results by quarter — drag to reorder or reschedule</p>
+          <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
+          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>Plan your key results by quarter — drag to schedule</p>
         </div>
         <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
           style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -92,167 +101,216 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
         </button>
       </div>
 
-      {/* Legend */}
-      <div className="flex gap-4 mb-3">
-        {([
-          [S.chipActive, '→Q Active quarter'],
-          [S.chip, 'Planned'],
-          [{ ...S.chip, opacity: 0.4 }, 'Done'],
-        ] as [React.CSSProperties, string][]).map(([style, label]) => (
-          <div key={label} className="flex items-center gap-1.5 text-[11px]" style={{ color: 'var(--navy-400)' }}>
-            <div className="w-3 h-3 rounded-sm" style={style} />
-            {label}
-          </div>
-        ))}
-      </div>
-
-      <div style={{ position: 'relative' }}>
-        {/* Right-fade scroll hint */}
-        <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 48, background: 'linear-gradient(to right, transparent, var(--navy-900))', pointerEvents: 'none', zIndex: 2, borderRadius: '0 12px 12px 0' }} />
-        <div style={{ fontSize: 10, color: 'var(--navy-500)', position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', zIndex: 3, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
-          <span style={{ fontSize: 14 }}>›</span>
+      {activeObjs.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>🗺</div>
+          No objectives yet.<br />
+          <span style={{ fontSize: 13 }}>Tap "Add Objective" to get started.</span>
         </div>
-        <div style={{ overflowX: 'auto', paddingBottom: 4 }}>
-          <div className="grid gap-2" style={{ gridTemplateColumns: '176px repeat(4, 1fr)', minWidth: 700 }}>
-        {/* Quarter headers */}
-        <div />
-        {QUARTERS.map(q => (
-          <div key={q} className="text-[11px] font-semibold text-center py-2 px-2 rounded-xl"
-            style={q === ACTIVE_Q ? S.qHeaderActive : S.qHeader}>
-            {q}{q === ACTIVE_Q ? ' — active' : ''}
-          </div>
-        ))}
+      ) : (
+        <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
+          <div style={{ minWidth: MIN_W }}>
 
-        {objectives.map((obj, idx) => (
-          <div key={obj.id} className="contents">
-            {/* Annual objective cell — draggable to reorder */}
-            <div
-              draggable
-              onDragStart={e => { e.dataTransfer.setData('objId', obj.id); setDraggingObjId(obj.id) }}
-              onDragEnd={() => { setDraggingObjId(null); setDragOverObjId(null) }}
-              onDragOver={e => { e.preventDefault(); setDragOverObjId(obj.id) }}
-              onDragLeave={() => setDragOverObjId(null)}
-              onDrop={e => {
-                e.preventDefault()
-                const draggedId = e.dataTransfer.getData('objId')
-                if (draggedId) reorderObjective(draggedId, obj.id)
-                setDraggingObjId(null); setDragOverObjId(null)
-              }}
-              className="rounded-xl p-3 flex flex-col gap-1.5"
-              style={{
-                ...S.card,
-                opacity: obj.status === 'abandoned' ? .45 : draggingObjId === obj.id ? 0.4 : 1,
-                cursor: 'grab',
-                outline: dragOverObjId === obj.id && draggingObjId !== obj.id ? '2px solid var(--accent)' : 'none',
-                outlineOffset: '-2px',
-                transition: 'outline .1s, opacity .1s',
-              }}>
-              <div className="flex items-center gap-1.5">
-                <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: obj.color }} />
-                <span style={{ color: 'var(--navy-600)', fontSize: 12, letterSpacing: 1, userSelect: 'none' as const }}>⠿</span>
+            {/* Quarter headers */}
+            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 8, paddingLeft: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '7px 6px', borderRadius: 8, background: 'var(--navy-700)', color: 'var(--navy-400)', border: '1px dashed var(--navy-500)' }}>
+                📥 Unscheduled
               </div>
-              <div style={S.label}>Annual objective</div>
-              <div style={obj.status === 'abandoned' ? S.nameAbandoned : S.name}>{obj.name}</div>
-              <div className="flex gap-1 mt-0.5">
-                <button onClick={() => setModal({ type: 'edit_obj', obj })}
-                  className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ ...S.chip, fontSize: 10 }}>edit</button>
-                <button onClick={() => abandonObjective(obj)}
-                  className="text-[10px] px-1.5 py-0.5 rounded-lg" style={{ ...S.chip, fontSize: 10 }}>
-                  {obj.status === 'abandoned' ? 'restore' : 'abandon'}
-                </button>
-              </div>
+              {ROLLING.map(q => (
+                <div key={q} style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '7px 6px', borderRadius: 8, lineHeight: 1.3,
+                  background: q === ACTIVE_Q ? 'var(--accent-dim)' : 'var(--navy-700)',
+                  color: q === ACTIVE_Q ? 'var(--accent)' : 'var(--navy-300)',
+                  border: q === ACTIVE_Q ? '1px solid var(--accent)' : '1px solid var(--navy-500)' }}>
+                  {formatQ(q)}{q === ACTIVE_Q ? <><br/><span style={{ fontWeight: 400, fontSize: 9 }}>⚡ Active</span></> : ''}
+                </div>
+              ))}
             </div>
 
-            {QUARTERS.map(q => {
-              const items = roadmapItems.filter(i => i.annual_objective_id === obj.id && i.quarter === q && !i.is_parked)
-              const cellKey: CellKey = `${obj.id}::${q}`
-              const isOver = dragOverCell === cellKey
+            {/* Swim lanes */}
+            {activeObjs.map(obj => {
+              const objItems = items.filter(i => i.annual_objective_id === obj.id)
               return (
-                <div key={q}
-                  className="rounded-xl p-2 flex flex-col gap-1.5 min-h-[88px] transition-all"
-                  style={{
-                    ...(q === ACTIVE_Q ? S.cardActive : S.card),
-                    ...(isOver ? { border: '1px solid var(--accent)', background: 'var(--accent-dim)', outline: '2px solid var(--accent)', outlineOffset: '-2px' } : {}),
-                  }}
-                  onDragOver={e => { e.preventDefault(); setDragOverCell(cellKey) }}
-                  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverCell(null) }}
-                  onDrop={e => {
-                    e.preventDefault()
-                    const id = e.dataTransfer.getData('itemId')
-                    if (id) moveItem(id, q)
-                    setDragOverCell(null)
-                    setDraggingId(null)
-                  }}
-                >
-                  {items.map(item => (
-                    <div key={item.id}
-                      draggable
-                      onDragStart={e => { e.dataTransfer.setData('itemId', item.id); setDraggingId(item.id) }}
-                      onDragEnd={() => { setDraggingId(null); setDragOverCell(null) }}
-                      className="text-[11px] px-2 py-1.5 rounded-lg flex items-start gap-1.5 leading-snug group"
-                      style={{
-                        cursor: 'grab',
-                        opacity: draggingId === item.id ? 0.4 : 1,
-                        ...(item.status === 'done' || item.status === 'abandoned'
-                          ? { ...S.chip, opacity: 0.4, textDecoration: 'line-through' }
-                          : q === ACTIVE_Q ? S.chipActive : S.chip),
-                      }}>
-                      {q === ACTIVE_Q && item.status !== 'done' && item.status !== 'abandoned' && (
-                        <span className="opacity-70 shrink-0 mt-0.5" style={{ fontSize: 9 }}>→Q</span>
-                      )}
-                      <span className="flex-1">{item.title}</span>
-                      <span className="opacity-0 group-hover:opacity-100 flex gap-0.5 shrink-0">
-                        <button className="hover:opacity-80" title="Edit" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
-                          onClick={() => setModal({ type: 'edit_item', item })}>✎</button>
-                        <button className="hover:opacity-80" title="Park it" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
-                          onClick={() => parkItem(item)}>🅿</button>
-                        <button className="hover:opacity-80" title={item.status === 'done' ? 'Undo' : 'Done'} style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
-                          onClick={() => toggleKRDone(item)}>{item.status === 'done' ? '↩' : '✓'}</button>
-                      </span>
+                <div key={obj.id} style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 10, background: hex2rgba(obj.color, 0.07), border: `1px solid ${hex2rgba(obj.color, 0.25)}` }}>
+
+                  {/* Lane header — full width */}
+                  <div style={{ padding: '9px 14px', background: hex2rgba(obj.color, 0.14), display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 9, height: 9, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-50)', flex: 1, textTransform: 'uppercase', letterSpacing: '.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {obj.name}
                     </div>
-                  ))}
-                  <button className="add-row-btn" style={{ borderTop: 'none', fontSize: 12, minHeight: 36, padding: '8px 10px' }}
-                    onClick={() => setModal({ type: 'add_item', annualObjId: obj.id, quarter: q })}>+ add</button>
+                    <button onClick={() => setModal({ type: 'edit_obj', obj })}
+                      style={{ fontSize: 11, color: hex2rgba(obj.color, 0.7), background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', flexShrink: 0 }}>
+                      Edit
+                    </button>
+                  </div>
+
+                  {/* KR chips row — 5 columns */}
+                  <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, padding: '8px 8px 10px' }}>
+                    {/* Unscheduled cell */}
+                    <DropsCell
+                      cellKey={cellKey(obj.id, null)}
+                      dragOver={dragOver}
+                      isActive={false}
+                      objColor={obj.color}
+                      onDragOver={e => onDragOver(e, cellKey(obj.id, null))}
+                      onDragLeave={() => setDragOver(null)}
+                      onDrop={e => onDrop(e, obj.id, null)}
+                    >
+                      {objItems.filter(i => !i.quarter).map(item => (
+                        <KRChip key={item.id} item={item} objColor={obj.color} quarter={null}
+                          dragging={draggingId === item.id}
+                          onDragStart={e => onDragStart(e, item.id)}
+                          onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
+                          onClick={() => setModal({ type: 'edit_kr', item })} />
+                      ))}
+                      <AddKRBtn onClick={() => setModal({ type: 'add_kr', objId: obj.id, quarter: null })} color={obj.color} />
+                    </DropsCell>
+
+                    {/* Quarter cells */}
+                    {ROLLING.map(q => (
+                      <DropsCell key={q}
+                        cellKey={cellKey(obj.id, q)}
+                        dragOver={dragOver}
+                        isActive={q === ACTIVE_Q}
+                        objColor={obj.color}
+                        onDragOver={e => onDragOver(e, cellKey(obj.id, q))}
+                        onDragLeave={() => setDragOver(null)}
+                        onDrop={e => onDrop(e, obj.id, q)}
+                      >
+                        {objItems.filter(i => i.quarter === q).map(item => (
+                          <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
+                            dragging={draggingId === item.id}
+                            onDragStart={e => onDragStart(e, item.id)}
+                            onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
+                            onClick={() => setModal({ type: 'edit_kr', item })} />
+                        ))}
+                        <AddKRBtn onClick={() => setModal({ type: 'add_kr', objId: obj.id, quarter: q })} color={obj.color} />
+                      </DropsCell>
+                    ))}
+                  </div>
                 </div>
               )
             })}
-
-            {idx < objectives.length - 1 && (
-              <div className="col-span-5 h-px my-1" style={{ background: 'var(--navy-700)' }} />
-            )}
           </div>
-        ))}
-
-        {objectives.length === 0 && (
-          <div className="col-span-5 text-center py-12 text-sm" style={{ color: 'var(--navy-400)' }}>
-            <div className="text-3xl mb-2">🎯</div>
-            No objectives yet — add your first annual objective to get started.
-          </div>
-        )}
-      </div>{/* grid */}
-        </div>{/* overflow-x scroll */}
-      </div>{/* relative position wrapper */}
-
-      {(modal?.type === 'add_obj' || modal?.type === 'edit_obj') && (
-        <ObjModal obj={modal.obj} objectives={objectives} onClose={() => setModal(null)}
-          onSave={(o) => { setObjectives(prev => modal.obj ? prev.map(x => x.id === o.id ? o : x) : [...prev, o]); setModal(null); toast(modal.obj ? 'Objective updated.' : 'Objective added!') }} />
+        </div>
       )}
-      {(modal?.type === 'add_item' || modal?.type === 'edit_item') && (
-        <ItemModal item={modal.item} annualObjId={modal.annualObjId} quarter={modal.quarter}
-          roadmapItems={roadmapItems} onClose={() => setModal(null)}
-          onSave={(i) => { setRoadmapItems(prev => modal.item ? prev.map(x => x.id === i.id ? i : x) : [...prev, i]); setModal(null); toast(modal.item ? 'Key result updated.' : 'Key result added!') }}
-          onDelete={(id) => { setRoadmapItems(prev => prev.filter(x => x.id !== id)); setModal(null) }} />
+
+      {/* Modals */}
+      {(modal?.type === 'add_obj' || modal?.type === 'edit_obj') && (
+        <ObjModal
+          obj={modal.type === 'edit_obj' ? modal.obj : undefined}
+          objectives={objectives}
+          onClose={() => setModal(null)}
+          onSave={o => {
+            setObjectives(prev => modal.type === 'edit_obj' ? prev.map(x => x.id === o.id ? o : x) : [...prev, o])
+            setModal(null)
+            toast(modal.type === 'edit_obj' ? 'Objective updated.' : 'Objective added!')
+          }}
+          onAbandon={modal.type === 'edit_obj' ? async (obj) => {
+            const next = obj.status === 'abandoned' ? 'active' : 'abandoned'
+            await supabase.from('annual_objectives').update({ status: next }).eq('id', obj.id)
+            setObjectives(prev => prev.map(o => o.id === obj.id ? { ...o, status: next } : o))
+            setModal(null)
+            toast(next === 'abandoned' ? 'Objective abandoned.' : 'Objective restored.')
+          } : undefined}
+        />
+      )}
+
+      {modal?.type === 'add_kr' && (
+        <KRModal
+          objId={modal.objId}
+          defaultQuarter={modal.quarter}
+          objectives={objectives}
+          quarters={ROLLING}
+          onClose={() => setModal(null)}
+          onSave={item => {
+            setRoadmapItems(prev => [...prev, item])
+            setModal(null)
+            toast('Key result added!')
+          }}
+        />
+      )}
+
+      {modal?.type === 'edit_kr' && (
+        <KRModal
+          item={modal.item}
+          objId={modal.item.annual_objective_id}
+          defaultQuarter={modal.item.quarter}
+          objectives={objectives}
+          quarters={ROLLING}
+          onClose={() => setModal(null)}
+          onSave={item => {
+            setRoadmapItems(prev => prev.map(x => x.id === item.id ? item : x))
+            setModal(null)
+            toast('Key result updated.')
+          }}
+          onDelete={() => deleteKR(modal.item.id)}
+          onPark={() => { parkKR(modal.item); setModal(null) }}
+        />
       )}
     </div>
   )
 }
 
-function ObjModal({ obj, objectives, onClose, onSave }: {
+/* ── Drop cell ── */
+function DropsCell({ cellKey, dragOver, isActive, objColor, onDragOver, onDragLeave, onDrop, children }: {
+  cellKey: string; dragOver: string | null; isActive: boolean; objColor: string
+  onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
+  children: React.ReactNode
+}) {
+  const isOver = dragOver === cellKey
+  return (
+    <div
+      onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
+      style={{ minHeight: 52, borderRadius: 9, padding: '5px 5px 3px',
+        background: isOver ? hex2rgba(objColor, 0.18) : isActive ? hex2rgba(objColor, 0.1) : 'transparent',
+        border: isOver ? `1.5px solid ${objColor}` : isActive ? `1px dashed ${hex2rgba(objColor, 0.4)}` : '1px dashed var(--navy-600)',
+        transition: 'background .12s, border .12s' }}>
+      {children}
+    </div>
+  )
+}
+
+/* ── KR chip ── */
+function KRChip({ item, objColor, quarter, dragging, onDragStart, onDragEnd, onClick }: {
+  item: RoadmapItem; objColor: string; quarter: string | null
+  dragging: boolean; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void; onClick: () => void
+}) {
+  const isActive = quarter === ACTIVE_Q
+  const isUnscheduled = !quarter
+  return (
+    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}
+      style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '5px 8px', borderRadius: 7, marginBottom: 4,
+        cursor: 'grab', userSelect: 'none', lineHeight: 1.35, opacity: dragging ? 0.3 : 1, transition: 'opacity .12s',
+        background: isUnscheduled ? 'var(--navy-700)' : isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
+        border: isUnscheduled ? '1.5px dashed var(--navy-500)' : isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
+        color: isUnscheduled ? 'var(--navy-400)' : isActive ? 'var(--navy-50)' : 'var(--navy-200)' }}>
+      {isActive && <span style={{ marginRight: 4 }}>⚡</span>}{item.title}
+    </div>
+  )
+}
+
+/* ── Add KR button ── */
+function AddKRBtn({ onClick, color }: { onClick: () => void; color: string }) {
+  return (
+    <button onClick={onClick}
+      style={{ width: '100%', padding: '4px 0', fontSize: 10, fontWeight: 600, color: hex2rgba(color, 0.6),
+        background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
+        justifyContent: 'center', gap: 3, opacity: .7, marginTop: 2 }}>
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+      add KR
+    </button>
+  )
+}
+
+/* ── Objective modal ── */
+function ObjModal({ obj, objectives, onClose, onSave, onAbandon }: {
   obj?: AnnualObjective; objectives: AnnualObjective[]
   onClose: () => void; onSave: (o: AnnualObjective) => void
+  onAbandon?: (obj: AnnualObjective) => void
 }) {
   const [name, setName] = useState(obj?.name ?? '')
-  const [color, setColor] = useState(obj?.color ?? COLORS[0])
+  const [color, setColor] = useState(obj?.color ?? COLORS[objectives.length % COLORS.length])
   const [saving, setSaving] = useState(false)
 
   async function save() {
@@ -263,26 +321,37 @@ function ObjModal({ obj, objectives, onClose, onSave }: {
       onSave({ ...obj, name, color })
     } else {
       const { data } = await supabase.from('annual_objectives')
-        .insert({ name, color, sort_order: objectives.length }).select().single()
+        .insert({ name, color, sort_order: objectives.length, status: 'active' }).select().single()
       if (data) onSave(data)
     }
     setSaving(false)
   }
 
   return (
-    <Modal title={obj ? 'Edit objective' : 'Add annual objective'} onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button></>}>
+    <Modal title={obj ? 'Edit Objective' : 'New Objective'} onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        {obj && onAbandon && (
+          <button className="btn" onClick={() => onAbandon(obj)}
+            style={{ color: 'var(--red-text)', background: 'var(--red-bg)' }}>
+            {obj.status === 'abandoned' ? 'Restore' : 'Abandon'}
+          </button>
+        )}
+        <button className="btn-primary" onClick={save} disabled={saving || !name.trim()}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </>}>
       <div className="field">
-        <label>Objective name</label>
-        <input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus placeholder="e.g. Greek God — peak health & conditioning" />
+        <label>Objective</label>
+        <textarea className="input" rows={3} value={name} onChange={e => setName(e.target.value)} autoFocus
+          placeholder="e.g. Greek God — peak conditioning" />
       </div>
       <div className="field">
-        <label>Colour</label>
-        <div className="flex gap-2 flex-wrap mt-1">
+        <label>Color</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {COLORS.map(c => (
-            <div key={c} onClick={() => setColor(c)}
-              className="w-6 h-6 rounded-full cursor-pointer transition-transform"
-              style={{ background: c, border: color === c ? '2px solid white' : '2px solid transparent', transform: color === c ? 'scale(1.15)' : 'scale(1)' }} />
+            <button key={c} onClick={() => setColor(c)}
+              style={{ width: 32, height: 32, borderRadius: '50%', background: c, border: color === c ? '3px solid var(--navy-50)' : '2px solid transparent', cursor: 'pointer', outline: color === c ? '2px solid ' + c : 'none', outlineOffset: 2 }} />
           ))}
         </div>
       </div>
@@ -290,59 +359,67 @@ function ObjModal({ obj, objectives, onClose, onSave }: {
   )
 }
 
-function ItemModal({ item, annualObjId, quarter, roadmapItems, onClose, onSave, onDelete }: {
-  item?: RoadmapItem; annualObjId?: string; quarter?: string
-  roadmapItems: RoadmapItem[]
-  onClose: () => void; onSave: (i: RoadmapItem) => void; onDelete: (id: string) => void
+/* ── KR modal (add or edit) ── */
+function KRModal({ item, objId, defaultQuarter, objectives, quarters, onClose, onSave, onDelete, onPark }: {
+  item?: RoadmapItem; objId: string; defaultQuarter: string | null
+  objectives: AnnualObjective[]; quarters: string[]
+  onClose: () => void; onSave: (i: RoadmapItem) => void
+  onDelete?: () => void; onPark?: () => void
 }) {
   const [title, setTitle] = useState(item?.title ?? '')
-  const [status, setStatus] = useState(item?.status ?? 'planned')
+  const [quarter, setQuarter] = useState<string | null>(defaultQuarter)
   const [saving, setSaving] = useState(false)
 
   async function save() {
     if (!title.trim()) return
     setSaving(true)
+    const status = quarter === ACTIVE_Q ? 'active' : 'planned'
     if (item) {
-      await supabase.from('roadmap_items').update({ title, status }).eq('id', item.id)
-      onSave({ ...item, title, status: status as RoadmapItem['status'] })
+      await supabase.from('roadmap_items').update({ title, quarter, status }).eq('id', item.id)
+      onSave({ ...item, title, quarter, status })
     } else {
-      const count = roadmapItems.filter(i => i.annual_objective_id === annualObjId && i.quarter === quarter).length
+      const count = (await supabase.from('roadmap_items').select('id').eq('annual_objective_id', objId)).data?.length ?? 0
       const { data } = await supabase.from('roadmap_items')
-        .insert({ annual_objective_id: annualObjId, quarter, title, status: quarter === ACTIVE_Q ? 'active' : 'planned', sort_order: count })
+        .insert({ annual_objective_id: objId, title, quarter, status, sort_order: count, health_status: 'not_started', progress: 0 })
         .select().single()
       if (data) onSave(data)
     }
     setSaving(false)
   }
 
-  async function del() {
-    if (!item || !confirm('Delete this key result?')) return
-    await supabase.from('roadmap_items').delete().eq('id', item.id)
-    onDelete(item.id)
-  }
+  const obj = objectives.find(o => o.id === objId)
 
   return (
-    <Modal title={item ? 'Edit key result' : `Add key result — ${quarter}`} onClose={onClose}
+    <Modal title={item ? 'Edit Key Result' : 'Add Key Result'} onClose={onClose}
       footer={<>
-        {item && <button className="btn mr-auto" style={{ color: 'var(--red-text)', borderColor: 'var(--red-bg)' }} onClick={del}>Delete</button>}
         <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+        {item && onPark && <button className="btn" onClick={onPark}>Park it</button>}
+        {item && onDelete && (
+          <button className="btn" onClick={onDelete} style={{ color: 'var(--red-text)', background: 'var(--red-bg)' }}>Delete</button>
+        )}
+        <button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
       </>}>
-      <div className="field">
-        <label>Key result title</label>
-        <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus placeholder="e.g. Lose 40 lbs by end of quarter" />
-      </div>
-      {item && (
-        <div className="field">
-          <label>Status</label>
-          <select className="input" value={status} onChange={e => setStatus(e.target.value as RoadmapItem['status'])}>
-            <option value="planned">Planned</option>
-            <option value="active">Active</option>
-            <option value="done">Done</option>
-            <option value="abandoned">Abandoned</option>
-          </select>
+      {obj && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 14px', background: 'var(--navy-700)', borderRadius: 10, marginBottom: 12 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: obj.color }} />
+          <span style={{ fontSize: 12, color: 'var(--navy-200)', fontWeight: 600 }}>{obj.name}</span>
         </div>
       )}
+      <div className="field">
+        <label>Key Result</label>
+        <textarea className="input" rows={3} value={title} onChange={e => setTitle(e.target.value)} autoFocus
+          placeholder="e.g. Lose 40 lbs by end of quarter" />
+      </div>
+      <div className="field">
+        <label>Quarter</label>
+        <select className="input" value={quarter ?? ''} onChange={e => setQuarter(e.target.value || null)}>
+          <option value="">Unscheduled</option>
+          {quarters.map(q => <option key={q} value={q}>{formatQ(q)}{q === ACTIVE_Q ? ' ⚡ Active' : ''}</option>)}
+        </select>
+      </div>
     </Modal>
   )
 }
+

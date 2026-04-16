@@ -37,9 +37,9 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, action
   return (
     <div>
       <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>
-        {ACTIVE_Q} OKRs
+        My OKRs
       </h1>
-      <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>Apr 1 – Jun 30</p>
+      <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>What you're working on right now</p>
 
       {/* Summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8, marginBottom: 20 }}>
@@ -60,7 +60,7 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, action
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
           No active key results yet.<br />
-          <span style={{ fontSize: 13 }}>Use the + button to add key results.</span>
+          <span style={{ fontSize: 13 }}>Add objectives on Roadmap, then schedule key results to the active quarter.</span>
         </div>
       )}
 

@@ -1,6 +1,25 @@
 export const COLORS = ['#1D9E75','#378ADD','#D85A30','#7F77DD','#BA7517','#D4537E','#639922','#888780']
-export const QUARTERS = ['1Q2026','2Q2026','3Q2026','4Q2026']
 export const ACTIVE_Q = '2Q2026'
+
+// Rolling 4 quarters starting from ACTIVE_Q
+export function getRollingQuarters(): string[] {
+  const m = ACTIVE_Q.match(/(\d)Q(\d{4})/)
+  if (!m) return []
+  let q = parseInt(m[1]), y = parseInt(m[2])
+  const out: string[] = []
+  for (let i = 0; i < 4; i++) {
+    out.push(`${q}Q${y}`)
+    q++; if (q > 4) { q = 1; y++ }
+  }
+  return out
+}
+
+export function formatQ(q: string): string {
+  const m = q.match(/(\d)Q(\d{4})/)
+  return m ? `${m[1]}Q ${m[2]}` : q
+}
+
+export const QUARTERS = getRollingQuarters()
 
 export function getMonday(d: Date = new Date()): string {
   const dt = new Date(d)
