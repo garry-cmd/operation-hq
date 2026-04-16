@@ -104,7 +104,14 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
         ))}
       </div>
 
-      <div className="grid gap-2" style={{ gridTemplateColumns: '176px repeat(4, 1fr)' }}>
+      <div style={{ position: 'relative' }}>
+        {/* Right-fade scroll hint */}
+        <div style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: 48, background: 'linear-gradient(to right, transparent, var(--navy-900))', pointerEvents: 'none', zIndex: 2, borderRadius: '0 12px 12px 0' }} />
+        <div style={{ fontSize: 10, color: 'var(--navy-500)', position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', zIndex: 3, pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+          <span style={{ fontSize: 14 }}>›</span>
+        </div>
+        <div style={{ overflowX: 'auto', paddingBottom: 4 }}>
+          <div className="grid gap-2" style={{ gridTemplateColumns: '176px repeat(4, 1fr)', minWidth: 700 }}>
         {/* Quarter headers */}
         <div />
         {QUARTERS.map(q => (
@@ -223,7 +230,9 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
             No objectives yet — add your first annual objective to get started.
           </div>
         )}
-      </div>
+      </div>{/* grid */}
+        </div>{/* overflow-x scroll */}
+      </div>{/* relative position wrapper */}
 
       {(modal?.type === 'add_obj' || modal?.type === 'edit_obj') && (
         <ObjModal obj={modal.obj} objectives={objectives} onClose={() => setModal(null)}

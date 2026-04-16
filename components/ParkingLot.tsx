@@ -5,42 +5,32 @@ import { AnnualObjective, RoadmapItem } from '@/lib/types'
 import { QUARTERS, ACTIVE_Q } from '@/lib/utils'
 
 interface Props {
-  open: boolean
-  onClose: () => void
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   toast: (m: string) => void
 }
 
-const N = {
-  bg:      'var(--navy-800)',
-  bg2:     'var(--navy-700)',
-  bg3:     'var(--navy-600)',
-  border:  '1px solid var(--navy-600)',
-  border2: '1px solid var(--navy-500)',
-  t1:      'var(--navy-50)',
-  t2:      'var(--navy-200)',
-  t3:      'var(--navy-300)',
-  t4:      'var(--navy-400)',
-  t5:      'var(--navy-500)',
-  acc:     'var(--accent)',
-  accDim:  'var(--accent-dim)',
-  amb:     'var(--amber)',
-  ambBg:   'var(--amber-bg)',
-  ambT:    'var(--amber-text)',
-}
-
-export default function ParkingLot({ open, onClose, objectives, roadmapItems, setRoadmapItems, toast }: Props) {
-  const [addOpen, setAddOpen] = useState(false)
+export default function ParkingLot({ objectives, roadmapItems, setRoadmapItems, toast }: Props) {
   const [newTitle, setNewTitle] = useState('')
-  const [newObjId, setNewObjId] = useState(objectives[0]?.id ?? '')
+  const [newObjId, setNewObjId] = useState(objectives.find(o => o.status === 'active')?.id ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { if (addOpen) inputRef.current?.focus() }, [addOpen])
-  useEffect(() => { if (objectives.length && !newObjId) setNewObjId(objectives[0].id) }, [objectives])
+  useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => { if (!newObjId) setNewObjId(objectives.find(o => o.status === 'active')?.id ?? '') }, [objectives])
 
   const parked = roadmapItems.filter(i => i.is_parked)
+
+  async function parkIdea(e: React.FormEvent) {
+    e.preventDefault()
+    if (!newTitle.trim() || !newObjId) return
+    const { data } = await supabase.from('roadmap_items')
+      .insert({ annual_objective_id: newObjId, title: newTitle, quarter: null, status: 'planned', is_parked: true, sort_order: parked.length })
+      .select().single()
+    if (data) { setRoadmapItems(prev => [...prev, data]); toast('Idea parked!') }
+    setNewTitle('')
+    inputRef.current?.focus()
+  }
 
   async function schedule(item: RoadmapItem, quarter: string) {
     const newStatus = quarter === ACTIVE_Q ? 'active' : 'planned'
@@ -49,129 +39,79 @@ export default function ParkingLot({ open, onClose, objectives, roadmapItems, se
     toast(`Scheduled to ${quarter}`)
   }
 
-  async function removeItem(item: RoadmapItem) {
-    if (!confirm('Remove this idea from the Parking Lot?')) return
+  async function removeIdea(item: RoadmapItem) {
+    if (!confirm('Remove this idea?')) return
     await supabase.from('roadmap_items').delete().eq('id', item.id)
     setRoadmapItems(prev => prev.filter(i => i.id !== item.id))
   }
 
-  async function addIdea(e: React.FormEvent) {
-    e.preventDefault()
-    if (!newTitle.trim() || !newObjId) return
-    const { data } = await supabase.from('roadmap_items')
-      .insert({ annual_objective_id: newObjId, title: newTitle, quarter: null, status: 'planned', is_parked: true, sort_order: parked.length })
-      .select().single()
-    if (data) {
-      setRoadmapItems(prev => [...prev, data])
-      toast('Added to Parking Lot')
-    }
-    setNewTitle('')
-    setAddOpen(false)
-  }
-
-  if (!open) return null
+  const activeObjs = objectives.filter(o => o.status === 'active')
 
   return (
-    <>
-      {/* Backdrop */}
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 40, background: 'transparent' }} />
+    <div>
+      <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 4 }}>Parking Lot</h1>
+      <p style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 18 }}>Capture ideas — schedule them when the time is right</p>
 
-      {/* Panel */}
-      <div style={{
-        position: 'fixed', top: 56, right: 16, zIndex: 50,
-        width: 300, maxHeight: 'calc(100vh - 80px)',
-        background: 'var(--navy-800)', border: `1px solid var(--navy-500)`,
-        borderRadius: 16, display: 'flex', flexDirection: 'column',
-        boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-        animation: 'slideDown .18s ease',
-      }}>
-        {/* Header */}
-        <div style={{ padding: '14px 16px', borderBottom: N.border, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: N.t1, display: 'flex', alignItems: 'center', gap: 7 }}>
-              <span style={{ fontSize: 14 }}>🅿</span> Parking Lot
-            </div>
-            <div style={{ fontSize: 11, color: N.t4, marginTop: 2 }}>Ideas not yet assigned to a quarter</div>
-          </div>
-          <button onClick={onClose} style={{ fontSize: 18, color: N.t4, background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1, padding: '2px 4px' }}>×</button>
+      {/* Capture box — prominent at top */}
+      <div style={{ background: 'var(--navy-700)', border: '2px solid var(--amber)', borderRadius: 16, padding: 16, marginBottom: 20 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--amber-text)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1v12M1 7h12" stroke="var(--amber)" strokeWidth="1.8" strokeLinecap="round"/></svg>
+          Capture an idea
         </div>
-
-        {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
-          {parked.length === 0 && !addOpen && (
-            <div style={{ padding: '28px 16px', textAlign: 'center', color: N.t5, fontSize: 12, lineHeight: 1.6 }}>
-              No ideas parked yet.<br />Add something you might tackle later.
-            </div>
-          )}
-
-          {objectives.map(obj => {
-            const items = parked.filter(i => i.annual_objective_id === obj.id)
-            if (!items.length) return null
-            return (
-              <div key={obj.id} style={{ padding: '10px 16px', borderBottom: `1px solid var(--navy-900)` }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
-                  <div style={{ fontSize: 10, fontWeight: 700, color: N.t3, textTransform: 'uppercase', letterSpacing: '.5px' }}>{obj.name}</div>
-                </div>
-                {items.map(item => (
-                  <div key={item.id} style={{ background: N.bg2, border: N.border, borderRadius: 10, padding: '9px 10px', marginBottom: 6 }}>
-                    <div style={{ fontSize: 12, color: N.t2, marginBottom: 7, lineHeight: 1.35 }}>{item.title}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <select
-                        defaultValue=""
-                        onChange={e => { if (e.target.value) schedule(item, e.target.value) }}
-                        style={{ flex: 1, fontSize: 11, background: 'var(--navy-900)', border: `1px solid ${N.t5}`, borderRadius: 7, padding: '4px 8px', color: N.t3, fontFamily: 'inherit', cursor: 'pointer' }}>
-                        <option value="">Move to quarter…</option>
-                        {QUARTERS.map(q => <option key={q} value={q}>{q}{q === ACTIVE_Q ? ' — active' : ''}</option>)}
-                      </select>
-                      <button onClick={() => removeItem(item)}
-                        style={{ fontSize: 14, color: N.t5, background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1, padding: '2px 4px', flexShrink: 0 }}
-                        title="Remove idea">×</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          })}
-        </div>
-
-        {/* Footer — add idea */}
-        <div style={{ padding: '10px 16px', borderTop: N.border }}>
-          {!addOpen ? (
-            <button onClick={() => setAddOpen(true)}
-              style={{ fontSize: 11, color: N.t4, background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, padding: 0 }}
-              onMouseEnter={e => (e.currentTarget.style.color = N.acc)}
-              onMouseLeave={e => (e.currentTarget.style.color = N.t4)}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-              Add idea to Parking Lot
-            </button>
-          ) : (
-            <form onSubmit={addIdea}>
-              <input ref={inputRef} value={newTitle} onChange={e => setNewTitle(e.target.value)}
-                placeholder="What's the idea?"
-                style={{ width: '100%', background: 'var(--navy-700)', border: `1px solid ${N.t5}`, borderRadius: 8, padding: '7px 10px', fontSize: 12, color: N.t1, fontFamily: 'inherit', marginBottom: 7, outline: 'none' }} />
-              <select value={newObjId} onChange={e => setNewObjId(e.target.value)}
-                style={{ width: '100%', background: 'var(--navy-700)', border: `1px solid ${N.t5}`, borderRadius: 8, padding: '7px 10px', fontSize: 12, color: N.t2, fontFamily: 'inherit', marginBottom: 8 }}>
-                {objectives.filter(o => o.status === 'active').map(o => (
-                  <option key={o.id} value={o.id}>{o.name}</option>
-                ))}
-              </select>
-              <div style={{ display: 'flex', gap: 7 }}>
-                <button type="submit"
-                  style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 8, background: N.acc, color: '#fff', border: 'none', cursor: 'pointer' }}>
-                  Save to Parking Lot
-                </button>
-                <button type="button" onClick={() => { setAddOpen(false); setNewTitle('') }}
-                  style={{ fontSize: 12, padding: '6px 12px', borderRadius: 8, background: 'transparent', color: N.t4, border: `1px solid ${N.t5}`, cursor: 'pointer' }}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
+        <form onSubmit={parkIdea}>
+          <input ref={inputRef} value={newTitle} onChange={e => setNewTitle(e.target.value)}
+            placeholder="What's on your mind?"
+            style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 10, padding: '11px 14px', fontSize: 14, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 10, outline: 'none' }} />
+          <select value={newObjId} onChange={e => setNewObjId(e.target.value)}
+            style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: 'var(--navy-200)', fontFamily: 'inherit', marginBottom: 12 }}>
+            {activeObjs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+          </select>
+          <button type="submit"
+            style={{ width: '100%', padding: 13, background: 'var(--amber)', color: '#0b1520', fontSize: 14, fontWeight: 700, border: 'none', borderRadius: 12, cursor: 'pointer' }}>
+            Park it
+          </button>
+        </form>
       </div>
 
-      <style>{`@keyframes slideDown { from { transform: translateY(-8px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }`}</style>
-    </>
+      {/* Parked ideas */}
+      {parked.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--navy-500)', fontSize: 13 }}>
+          Nothing parked yet. Ideas captured here will wait until you're ready to schedule them.
+        </div>
+      )}
+
+      {parked.length > 0 && (
+        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 10 }}>
+          {parked.length} idea{parked.length > 1 ? 's' : ''} parked
+        </div>
+      )}
+
+      {objectives.map(obj => {
+        const items = parked.filter(i => i.annual_objective_id === obj.id)
+        if (!items.length) return null
+        return (
+          <div key={obj.id} style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+              <div style={{ width: 8, height: 8, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{obj.name}</div>
+            </div>
+            {items.map(item => (
+              <div key={item.id} style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 12, padding: '12px 14px', marginBottom: 8, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, color: 'var(--navy-100)', marginBottom: 8, lineHeight: 1.4 }}>{item.title}</div>
+                  <select defaultValue="" onChange={e => { if (e.target.value) schedule(item, e.target.value) }}
+                    style={{ fontSize: 11, background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 8, padding: '5px 10px', color: 'var(--navy-300)', fontFamily: 'inherit', cursor: 'pointer' }}>
+                    <option value="">Schedule to quarter…</option>
+                    {QUARTERS.map(q => <option key={q} value={q}>{q}{q === ACTIVE_Q ? ' — active' : ''}</option>)}
+                  </select>
+                </div>
+                <button onClick={() => removeIdea(item)}
+                  style={{ fontSize: 18, color: 'var(--navy-500)', background: 'none', border: 'none', cursor: 'pointer', lineHeight: 1, flexShrink: 0, padding: '0 4px' }}>×</button>
+              </div>
+            ))}
+          </div>
+        )
+      })}
+    </div>
   )
 }
