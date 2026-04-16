@@ -24,11 +24,13 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
       setValid(!!data)
       if (!data) return
       const [o, r] = await Promise.all([
-        supabase.from('annual_objectives').select('*').order('sort_order'),
+        supabase.from('annual_objectives').select('*').eq('space_id', data.space_id).order('sort_order'),
         supabase.from('roadmap_items').select('*').eq('quarter', ACTIVE_Q).order('sort_order'),
       ])
       setObjectives(o.data ?? [])
-      setItems(r.data ?? [])
+      // Filter roadmap items to only those belonging to objectives in this space
+      const objectiveIds = o.data?.map(obj => obj.id) ?? []
+      setItems((r.data ?? []).filter(item => objectiveIds.includes(item.annual_objective_id)))
     }
     load()
   }, [token])
