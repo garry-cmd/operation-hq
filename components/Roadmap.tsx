@@ -59,6 +59,12 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     toast(`Moved to ${targetQuarter}`)
   }
 
+  async function parkItem(item: RoadmapItem) {
+    await supabase.from('roadmap_items').update({ is_parked: true, quarter: null, status: 'planned' }).eq('id', item.id)
+    setRoadmapItems(prev => prev.map(i => i.id === item.id ? { ...i, is_parked: true, quarter: null, status: 'planned' } : i))
+    toast('Moved to Parking Lot')
+  }
+
   async function toggleKRDone(item: RoadmapItem) {
     const next = item.status === 'done' ? 'planned' : 'done'
     await supabase.from('roadmap_items').update({ status: next }).eq('id', item.id)
@@ -149,7 +155,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
             </div>
 
             {QUARTERS.map(q => {
-              const items = roadmapItems.filter(i => i.annual_objective_id === obj.id && i.quarter === q)
+              const items = roadmapItems.filter(i => i.annual_objective_id === obj.id && i.quarter === q && !i.is_parked)
               const cellKey: CellKey = `${obj.id}::${q}`
               const isOver = dragOverCell === cellKey
               return (
@@ -187,9 +193,11 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                       )}
                       <span className="flex-1">{item.title}</span>
                       <span className="opacity-0 group-hover:opacity-100 flex gap-0.5 shrink-0">
-                        <button className="hover:opacity-80" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                        <button className="hover:opacity-80" title="Edit" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
                           onClick={() => setModal({ type: 'edit_item', item })}>✎</button>
-                        <button className="hover:opacity-80" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                        <button className="hover:opacity-80" title="Park it" style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
+                          onClick={() => parkItem(item)}>🅿</button>
+                        <button className="hover:opacity-80" title={item.status === 'done' ? 'Undo' : 'Done'} style={{ fontSize: 10, background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}
                           onClick={() => toggleKRDone(item)}>{item.status === 'done' ? '↩' : '✓'}</button>
                       </span>
                     </div>

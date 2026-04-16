@@ -18,9 +18,10 @@ export interface RoadmapItem {
   id: string
   annual_objective_id: string
   title: string
-  quarter: string
+  quarter: string | null
   sort_order: number
   status: ItemStatus
+  is_parked: boolean
   created_at: string
 }
 

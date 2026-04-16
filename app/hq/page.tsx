@@ -6,6 +6,7 @@ import { getMonday, ACTIVE_Q } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
 import Checkin from '@/components/Checkin'
+import ParkingLot from '@/components/ParkingLot'
 import History from '@/components/History'
 import Toast from '@/components/Toast'
 import Modal from '@/components/Modal'
@@ -28,6 +29,7 @@ export default function HQPage() {
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [shareToken, setShareToken] = useState('')
   const [shareModalOpen, setShareModalOpen] = useState(false)
+  const [parkingOpen, setParkingOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
@@ -159,6 +161,18 @@ export default function HQPage() {
           ))}
         </nav>
         <div className="flex items-center gap-2 ml-auto pl-4">
+          <button onClick={() => setParkingOpen(o => !o)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium relative"
+            style={parkingOpen
+              ? { background: 'var(--amber-bg)', border: '1px solid var(--amber)', color: 'var(--amber-text)' }
+              : { background: 'var(--navy-700)', border: '1px solid var(--navy-500)', color: 'var(--navy-300)' }}>
+            🅿 Parking Lot
+            {roadmapItems.filter(i => i.is_parked).length > 0 && (
+              <span style={{ background: 'var(--amber)', color: '#000', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99 }}>
+                {roadmapItems.filter(i => i.is_parked).length}
+              </span>
+            )}
+          </button>
           <button onClick={() => setShareModalOpen(true)}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium"
             style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-500)', color: 'var(--navy-200)' }}>
@@ -216,6 +230,15 @@ export default function HQPage() {
       )}
 
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+
+      <ParkingLot
+        open={parkingOpen}
+        onClose={() => setParkingOpen(false)}
+        objectives={objectives}
+        roadmapItems={roadmapItems}
+        setRoadmapItems={setRoadmapItems}
+        toast={setToast}
+      />
     </div>
   )
 }
