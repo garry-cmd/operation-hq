@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import PlanWeek from './PlanWeek'
+import Modal from './Modal'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -17,6 +18,7 @@ type Props = {
 
 export default function Focus({ objectives, roadmapItems, actions, setActions, weekStart, setWeekStart, toast }: Props) {
   const [planning, setPlanning] = useState(false)
+  const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const taskDone = weekActions.filter(a => a.completed).length
@@ -29,6 +31,20 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
     const next = !action.completed
     await supabase.from('weekly_actions').update({ completed: next }).eq('id', action.id)
     setActions(prev => prev.map(a => a.id === action.id ? { ...a, completed: next } : a))
+  }
+
+  async function saveEdit(action: WeeklyAction, title: string) {
+    await supabase.from('weekly_actions').update({ title }).eq('id', action.id)
+    setActions(prev => prev.map(a => a.id === action.id ? { ...a, title } : a))
+    setEditAction(null)
+    toast('Action updated.')
+  }
+
+  async function deleteAction(id: string) {
+    await supabase.from('weekly_actions').delete().eq('id', id)
+    setActions(prev => prev.filter(a => a.id !== id))
+    setEditAction(null)
+    toast('Action deleted.')
   }
 
   async function goToWeek(dir: number) {
@@ -145,8 +161,22 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
                 </div>
               )}
             </div>
+            <button onClick={() => setEditAction(action)}
+              style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+            </button>
           </div>
         ))}
+
+        {/* Edit action modal */}
+        {editAction && (
+          <EditActionModal
+            action={editAction}
+            onClose={() => setEditAction(null)}
+            onSave={title => saveEdit(editAction, title)}
+            onDelete={() => deleteAction(editAction.id)}
+          />
+        )}
 
         {/* Fallback: unplanned KRs */}
         {taskTotal > 0 && unplanned.length > 0 && (
@@ -213,5 +243,42 @@ function UnplannedRow({ kr, objective, onAdd }: { kr: RoadmapItem; objective?: A
         </form>
       )}
     </div>
+  )
+}
+
+function EditActionModal({ action, onClose, onSave, onDelete }: {
+  action: WeeklyAction
+  onClose: () => void
+  onSave: (title: string) => void
+  onDelete: () => void
+}) {
+  const [title, setTitle] = useState(action.title)
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!title.trim()) return
+    setSaving(true)
+    await onSave(title.trim())
+    setSaving(false)
+  }
+
+  return (
+    <Modal title="Edit Action" onClose={onClose}
+      footer={<>
+        <button className="btn" onClick={onDelete}
+          style={{ color: 'var(--red-text)', background: 'var(--red-bg)', border: 'none' }}>
+          Delete
+        </button>
+        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+      </>}>
+      <div className="field">
+        <label>Action</label>
+        <textarea className="input" rows={3} value={title}
+          onChange={e => setTitle(e.target.value)} autoFocus />
+      </div>
+    </Modal>
   )
 }
