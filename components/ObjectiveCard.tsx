@@ -288,7 +288,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
             </div>
           </div>
         )}
-      </div>
 
         {/* Logs section */}
         {section === 'logs' && (
@@ -334,6 +333,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
           </div>
         )}
         </>)}
+      </div>
       {editKR && (
         <EditKRModal kr={editKR} onClose={() => setEditKR(null)}
           onSave={updated => { setRoadmapItems(prev => prev.map(i => i.id === updated.id ? updated : i)); setEditKR(null); toast('Key result updated.') }} />
