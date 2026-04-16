@@ -253,7 +253,8 @@ function ItemModal({ item, annualObjId, quarter, roadmapItems, onClose, onSave, 
       {item && (
         <div className="field">
           <label>Status</label>
-          <select className="input" value={status} onChange={e => setStatus(e.target.value)}>
+          <select className="input" value={status} onChange={e => setStatus(e.target.value as RoadmapItem['status'])}>
+
             <option value="planned">Planned</option>
             <option value="active">Active</option>
             <option value="done">Done</option>
