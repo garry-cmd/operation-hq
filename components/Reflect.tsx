@@ -118,7 +118,7 @@ function CheckinView({ objectives, roadmapItems, krs, setKrs, checkins, setCheck
 
       {allKrs.length > 0 && (
         <div style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 16, padding: '14px 16px', marginTop: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-300)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '.5px' }}>Pin KRs to daily check-in</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-300)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '.5px' }}>Pin milestones to daily check-in</div>
           {allKrs.map(kr => (
             <label key={kr.id} style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 44, cursor: 'pointer', padding: '4px 0', borderBottom: '1px solid var(--navy-600)' }}>
               <input type="checkbox" checked={!!kr.pinned_to_checkin} onChange={() => togglePin(kr)}
@@ -165,7 +165,7 @@ function ReviewView({ objectives, roadmapItems, krs, reviews, setReviews, weekSt
   const FIELDS: { key: keyof typeof rv; label: string; placeholder: string }[] = [
     { key: 'win',          label: 'Win of the week',       placeholder: 'What moved the needle?' },
     { key: 'slipped',      label: 'What slipped?',         placeholder: 'One honest line…' },
-    { key: 'adjust_notes', label: 'Adjust for next week?', placeholder: 'Drop a KR, shift a deadline…' },
+    { key: 'adjust_notes', label: 'Adjust for next week?', placeholder: 'Drop a milestone, shift a deadline…' },
   ]
 
   return (
@@ -220,7 +220,7 @@ function HistoryView({ reviews }: { reviews: WeeklyReview[] }) {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: r.win || r.slipped ? 10 : 0 }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)' }}>Week of {formatWeek(r.week_start)}</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal-text)' }}>{r.krs_hit}/{r.krs_total} KRs</span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal-text)' }}>{r.krs_hit}/{r.krs_total} milestones</span>
               <StatusPill status={r.rating} />
             </div>
           </div>

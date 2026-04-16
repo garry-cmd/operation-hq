@@ -21,7 +21,7 @@ type CaptureType = 'objective' | 'keyresult' | 'task' | 'parking'
 const TYPES: { id: CaptureType; label: string; color: string; icon: string }[] = [
   { id: 'parking',   label: 'Parking Lot', color: '#f5a623', icon: 'P' },
   { id: 'task',      label: 'Task',        color: '#4db8ff', icon: '✓' },
-  { id: 'keyresult', label: 'Key Result',  color: '#1D9E75', icon: 'KR' },
+  { id: 'keyresult', label: 'Milestone',   color: '#1D9E75', icon: 'M' },
   { id: 'objective', label: 'Objective',   color: '#7F77DD', icon: 'O' },
 ]
 
@@ -78,7 +78,7 @@ export default function FastCapture({ objectives, roadmapItems, krs, weekStart, 
         const { data } = await supabase.from('quarterly_krs')
           .insert({ roadmap_item_id: secondVal, title, sort_order: count })
           .select().single()
-        if (data) { setKrs(prev => [...prev, data]); toast('Key result added!') }
+        if (data) { setKrs(prev => [...prev, data]); toast('Milestone added!') }
       }
 
       if (active === 'task' && secondVal) {
@@ -104,7 +104,7 @@ export default function FastCapture({ objectives, roadmapItems, krs, weekStart, 
   // Second field config per type
   const secondField: { label: string; options: { value: string; label: string }[] } | null =
     active === 'keyresult' ? { label: 'For which quarterly objective?', options: activeItems.map(i => ({ value: i.id, label: i.title })) } :
-    active === 'task'      ? { label: 'Which KR does this drive?',       options: activeKrs.map(k => ({ value: k.id, label: k.title })) } :
+    active === 'task'      ? { label: 'Which milestone does this drive?',  options: activeKrs.map(k => ({ value: k.id, label: k.title })) } :
     active === 'parking'   ? { label: 'Which objective does this belong to?', options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
     null
 
@@ -197,8 +197,8 @@ export default function FastCapture({ objectives, roadmapItems, krs, weekStart, 
 
             {secondField && secondField.options.length === 0 && (
               <div style={{ fontSize: 12, color: 'var(--amber-text)', background: 'var(--amber-bg)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
-                {active === 'keyresult' ? 'Add active roadmap milestones first on the Roadmap screen.' :
-                 active === 'task' ? 'Add key results first on the OKRs screen.' :
+                {active === 'keyresult' ? 'Add active key results first on the Roadmap screen.' :
+                 active === 'task' ? 'Add milestones first on the OKRs screen.' :
                  'Add an objective first.'}
               </div>
             )}

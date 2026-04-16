@@ -51,7 +51,7 @@ export default function OKRs({ objectives, roadmapItems, krs, setKrs, toast }: P
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 20 }}>
         {[
           ['Objectives',   activeItems.length,                  'var(--accent)'],
-          ['KRs complete', `${doneCount}/${allKrs.length}`,     'var(--teal-text)'],
+          ['Milestones done', `${doneCount}/${allKrs.length}`,     'var(--teal-text)'],
           ['On track',     onTrack,                             'var(--teal-text)'],
           ['Off track',    offTrack,                            'var(--red-text)'],
         ].map(([l, v, c]) => (
@@ -65,7 +65,7 @@ export default function OKRs({ objectives, roadmapItems, krs, setKrs, toast }: P
       {activeItems.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
-          No active objectives for {ACTIVE_Q}.<br />Add milestones on the Roadmap screen.
+          No active objectives for {ACTIVE_Q}.<br />Add key results on the Roadmap screen.
         </div>
       )}
 
@@ -125,7 +125,7 @@ export default function OKRs({ objectives, roadmapItems, krs, setKrs, toast }: P
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                   <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
                 </svg>
-                Add key result
+                Add milestone
               </button>
             </div>
           </div>
@@ -133,7 +133,7 @@ export default function OKRs({ objectives, roadmapItems, krs, setKrs, toast }: P
       })}
 
       {addKRModal && (
-        <Modal title="Add key result" onClose={() => setAddKRModal(null)}
+        <Modal title="Add milestone" onClose={() => setAddKRModal(null)}
           footer={<>
             <button className="btn" onClick={() => setAddKRModal(null)}>Cancel</button>
             <button className="btn-primary" onClick={async () => {
@@ -142,12 +142,12 @@ export default function OKRs({ objectives, roadmapItems, krs, setKrs, toast }: P
               if (!el?.value.trim()) return
               const count = krs.filter(k => k.roadmap_item_id === addKRModal.roadmapItemId).length
               const { data } = await supabase.from('quarterly_krs').insert({ roadmap_item_id: addKRModal.roadmapItemId, title: el.value, tag: tagEl?.value || null, sort_order: count }).select().single()
-              if (data) { setKrs(prev => [...prev, data]); toast('Key result added!') }
+              if (data) { setKrs(prev => [...prev, data]); toast('Milestone added!') }
               setAddKRModal(null)
-            }}>Add KR</button>
+            }}>Add milestone</button>
           </>}>
           <div className="field">
-            <label>Key result</label>
+            <label>Milestone</label>
             <textarea id="new-kr-title" className="input" rows={3} autoFocus placeholder="e.g. Maintain 500–750 kcal deficit, logged 6 days/week" />
           </div>
           <div className="field">

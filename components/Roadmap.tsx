@@ -83,7 +83,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-base font-semibold" style={{ color: 'var(--navy-50)' }}>Annual Roadmap</h1>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Set milestones per quarter — active quarter flows into your OKRs</p>
+          <p className="text-xs mt-0.5" style={{ color: 'var(--navy-400)' }}>Set key results per quarter — active quarter flows into your OKRs</p>
         </div>
       </div>
 
@@ -235,7 +235,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       {(modal?.type === 'add_item' || modal?.type === 'edit_item') && (
         <ItemModal item={modal.item} annualObjId={modal.annualObjId} quarter={modal.quarter}
           roadmapItems={roadmapItems} onClose={() => setModal(null)}
-          onSave={(i) => { setRoadmapItems(prev => modal.item ? prev.map(x => x.id === i.id ? i : x) : [...prev, i]); setModal(null); toast(modal.item ? 'Milestone updated.' : 'Milestone added!') }}
+          onSave={(i) => { setRoadmapItems(prev => modal.item ? prev.map(x => x.id === i.id ? i : x) : [...prev, i]); setModal(null); toast(modal.item ? 'Key result updated.' : 'Key result added!') }}
           onDelete={(id) => { setRoadmapItems(prev => prev.filter(x => x.id !== id)); setModal(null) }} />
       )}
     </div>
@@ -311,20 +311,20 @@ function ItemModal({ item, annualObjId, quarter, roadmapItems, onClose, onSave, 
   }
 
   async function del() {
-    if (!item || !confirm('Delete this milestone?')) return
+    if (!item || !confirm('Delete this key result?')) return
     await supabase.from('roadmap_items').delete().eq('id', item.id)
     onDelete(item.id)
   }
 
   return (
-    <Modal title={item ? 'Edit milestone' : `Add milestone — ${quarter}`} onClose={onClose}
+    <Modal title={item ? 'Edit key result' : `Add key result — ${quarter}`} onClose={onClose}
       footer={<>
         {item && <button className="btn mr-auto" style={{ color: 'var(--red-text)', borderColor: 'var(--red-bg)' }} onClick={del}>Delete</button>}
         <button className="btn" onClick={onClose}>Cancel</button>
         <button className="btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
       </>}>
       <div className="field">
-        <label>Milestone title</label>
+        <label>Key result title</label>
         <input className="input" value={title} onChange={e => setTitle(e.target.value)} autoFocus placeholder="e.g. Lose 40 lbs by end of quarter" />
       </div>
       {item && (
