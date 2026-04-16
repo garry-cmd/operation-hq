@@ -44,38 +44,34 @@ export default function Focus({ objectives, roadmapItems, krs, actions, setActio
     if (data) { setActions(prev => [...prev, ...data]); toast(`${data.length} action${data.length > 1 ? 's' : ''} carried forward.`) }
   }
 
-  const navBtnStyle: React.CSSProperties = {
-    width: 28, height: 28, borderRadius: '50%', background: 'var(--navy-700)',
-    border: '1px solid var(--navy-500)', color: 'var(--navy-300)',
-    fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-  }
-
   return (
     <div>
-      <h1 style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 4 }}>Focus this week</h1>
-      <p style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 16 }}>Actions driving your active KRs</p>
+      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Focus this week</h1>
+      <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>Actions driving your active KRs</p>
 
-      {/* Week header + task KPI */}
-      <div style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: 14, marginBottom: 14 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-50)' }}>Week of {formatWeek(weekStart)}</div>
+      {/* Week header */}
+      <div style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '14px 16px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)' }}>Week of {formatWeek(weekStart)}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button style={navBtnStyle} onClick={() => setWeekStart(s => addWeeks(s, -1))}>‹</button>
-            <button style={navBtnStyle} onClick={() => setWeekStart(s => addWeeks(s, 1))}>›</button>
+            <button style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--navy-600)', border: '1px solid var(--navy-500)', color: 'var(--navy-200)', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              onClick={() => setWeekStart(s => addWeeks(s, -1))}>‹</button>
+            <button style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--navy-600)', border: '1px solid var(--navy-500)', color: 'var(--navy-200)', fontSize: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              onClick={() => setWeekStart(s => addWeeks(s, 1))}>›</button>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ flex: 1, height: 5, background: 'var(--navy-600)', borderRadius: 3 }}>
-            <div style={{ height: 5, borderRadius: 3, background: taskDone === taskTotal && taskTotal > 0 ? 'var(--teal)' : 'var(--accent)', width: `${taskPct}%`, transition: 'width .3s, background .3s' }} />
+          <div style={{ flex: 1, height: 6, background: 'var(--navy-600)', borderRadius: 3 }}>
+            <div style={{ height: 6, borderRadius: 3, background: taskDone === taskTotal && taskTotal > 0 ? 'var(--teal)' : 'var(--accent)', width: `${taskPct}%`, transition: 'width .3s, background .3s' }} />
           </div>
-          <span style={{ fontSize: 11, color: 'var(--navy-400)', flexShrink: 0 }}>{taskDone}/{taskTotal} done</span>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy-300)', flexShrink: 0, minWidth: 60, textAlign: 'right' }}>{taskDone}/{taskTotal} done</span>
         </div>
       </div>
 
       {activeItems.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--navy-500)', fontSize: 13 }}>
-          <div style={{ fontSize: 32, marginBottom: 8 }}>⚡</div>
-          Add objectives and KRs first, then build your weekly actions here.
+        <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14 }}>
+          <div style={{ fontSize: 36, marginBottom: 10 }}>⚡</div>
+          Add objectives on the Roadmap, then build your weekly actions here.
         </div>
       )}
 
@@ -86,47 +82,72 @@ export default function Focus({ objectives, roadmapItems, krs, actions, setActio
         const groupDone = itemActions.filter(a => a.completed).length
 
         return (
-          <div key={item.id} style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 14, marginBottom: 10, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 8, height: 8, borderRadius: '50%', background: obj?.color ?? '#888', flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, color: 'var(--navy-400)' }}>{obj?.name} ↑</div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy-50)' }}>{item.title}</div>
+          <div key={item.id} style={{ background: 'var(--navy-700)', borderRadius: 16, marginBottom: 12, overflow: 'hidden', border: '1px solid var(--navy-600)', borderLeft: `4px solid ${obj?.color ?? 'var(--accent)'}` }}>
+            {/* Group header */}
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--navy-600)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {/* Breadcrumb */}
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {obj?.name}
+                </div>
+                {/* Objective title */}
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)', lineHeight: 1.35 }}>
+                  {item.title}
+                </div>
               </div>
-              <span style={{ fontSize: 10, color: 'var(--navy-500)' }}>{groupDone}/{itemActions.length}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: groupDone > 0 ? 'var(--teal-text)' : 'var(--navy-400)', flexShrink: 0, background: 'var(--navy-600)', padding: '3px 8px', borderRadius: 8 }}>
+                {groupDone}/{itemActions.length}
+              </span>
             </div>
+
+            {/* Actions */}
+            {itemActions.length === 0 && (
+              <div style={{ padding: '12px 16px', fontSize: 13, color: 'var(--navy-400)', fontStyle: 'italic' }}>
+                No actions yet — add one below
+              </div>
+            )}
 
             {itemActions.map(action => {
               const kr = krs.find(k => k.id === action.quarterly_kr_id)
               return (
-                <div key={action.id} style={{ padding: '8px 14px 8px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderBottom: '1px solid var(--navy-800)' }}>
+                <div key={action.id}
+                  style={{ padding: '12px 16px', display: 'flex', alignItems: 'flex-start', gap: 14, borderBottom: '1px solid var(--navy-600)', minHeight: 56 }}>
+                  {/* Checkbox circle */}
                   <button onClick={() => toggleAction(action)}
-                    style={{ width: 18, height: 18, borderRadius: '50%', border: `1.5px solid ${action.completed ? 'var(--teal)' : 'var(--navy-500)'}`, background: action.completed ? 'var(--teal)' : 'transparent', flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .12s' }}>
-                    {action.completed && <svg width="9" height="7" viewBox="0 0 9 7" fill="none"><path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                    style={{ width: 26, height: 26, borderRadius: '50%', border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', flexShrink: 0, marginTop: 1, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all .15s', padding: 0 }}>
+                    {action.completed && (
+                      <svg width="12" height="10" viewBox="0 0 12 10" fill="none">
+                        <path d="M1 5L4.5 8.5L11 1.5" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
                   </button>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, color: action.completed ? 'var(--navy-500)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 14, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {action.title}
-                      {action.carried_over && <span style={{ fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
+                      {action.carried_over && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>
+                      )}
                     </div>
-                    {kr && <div style={{ fontSize: 10, color: 'var(--navy-500)', marginTop: 2 }}>↑ {kr.title}</div>}
+                    {kr && (
+                      <div style={{ fontSize: 11, color: 'var(--navy-300)', marginTop: 3 }}>↑ {kr.title}</div>
+                    )}
                   </div>
                 </div>
               )
             })}
 
+            {/* Add action button */}
             <InlineAddAction krs={itemKrs} onAdd={(krId, title) => addAction(krId, title)} />
           </div>
         )
       })}
 
       {activeItems.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4 }}>
-          <button onClick={carryForward}
-            style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'none', border: '1px solid var(--accent-dim)', borderRadius: 10, padding: '7px 16px', cursor: 'pointer' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, flexWrap: 'wrap', gap: 10 }}>
+          <button onClick={carryForward} className="btn" style={{ fontSize: 13 }}>
             Carry incomplete to next week →
           </button>
-          <span style={{ fontSize: 11, color: 'var(--navy-500)' }}>{taskDone} of {taskTotal} done</span>
+          <span style={{ fontSize: 13, color: 'var(--navy-300)', fontWeight: 500 }}>{taskDone} of {taskTotal} done</span>
         </div>
       )}
     </div>
@@ -150,24 +171,27 @@ function InlineAddAction({ krs, onAdd }: { krs: QuarterlyKR[]; onAdd: (krId: str
   }
 
   if (!open) return (
-    <button style={{ width: '100%', padding: '8px 14px', fontSize: 12, color: 'var(--navy-500)', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-      onMouseEnter={e => (e.currentTarget.style.color = 'var(--accent)')}
-      onMouseLeave={e => (e.currentTarget.style.color = 'var(--navy-500)')}
-      onClick={() => setOpen(true)}>+ add action</button>
+    <button className="add-row-btn" onClick={() => setOpen(true)}>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+      </svg>
+      Add action
+    </button>
   )
 
   return (
-    <form onSubmit={save} style={{ padding: '10px 14px', background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)' }}>
-      <input ref={ref} value={title} onChange={e => setTitle(e.target.value)} placeholder="What do you need to do?"
-        style={{ width: '100%', background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 7, outline: 'none' }} />
-      <select value={krId} onChange={e => setKrId(e.target.value)}
-        style={{ width: '100%', background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: 'var(--navy-200)', fontFamily: 'inherit', marginBottom: 8 }}>
-        {krs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
-      </select>
+    <form onSubmit={save} style={{ padding: '12px 14px', background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)' }}>
+      <input ref={ref} value={title} onChange={e => setTitle(e.target.value)}
+        placeholder="What do you need to do this week?"
+        className="input" style={{ marginBottom: 8 }} />
+      {krs.length > 1 && (
+        <select value={krId} onChange={e => setKrId(e.target.value)} className="input" style={{ marginBottom: 10 }}>
+          {krs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
+        </select>
+      )}
       <div style={{ display: 'flex', gap: 8 }}>
-        <button type="submit" style={{ fontSize: 13, fontWeight: 600, padding: '7px 16px', borderRadius: 8, background: 'var(--accent)', color: '#fff', border: 'none', cursor: 'pointer' }}>Add</button>
-        <button type="button" onClick={() => { setOpen(false); setTitle('') }}
-          style={{ fontSize: 12, padding: '7px 14px', borderRadius: 8, background: 'transparent', color: 'var(--navy-400)', border: '1px solid var(--navy-600)', cursor: 'pointer' }}>Cancel</button>
+        <button type="submit" className="btn-primary" style={{ flex: 1 }}>Add action</button>
+        <button type="button" className="btn" onClick={() => { setOpen(false); setTitle('') }}>Cancel</button>
       </div>
     </form>
   )

@@ -1,17 +1,17 @@
 @import "tailwindcss";
 
-/* ── Keeply-matching dark navy theme ── */
+/* ── Dark theme (default) — improved contrast ── */
 :root {
-  --navy-900: #0b1520;
-  --navy-800: #0f1d2e;
-  --navy-700: #152334;
-  --navy-600: #1c2e42;
-  --navy-500: #243650;
-  --navy-400: #3a5470;
-  --navy-300: #6b8aa8;
-  --navy-200: #9ab4cc;
-  --navy-100: #cddde8;
-  --navy-50:  #eef4f8;
+  --navy-900: #07111d;
+  --navy-800: #0d1928;
+  --navy-700: #132438;
+  --navy-600: #1c3048;
+  --navy-500: #2d4460;
+  --navy-400: #5a7a9a;
+  --navy-300: #8aaec8;
+  --navy-200: #b8d0e4;
+  --navy-100: #daeaf6;
+  --navy-50:  #f2f8fd;
 
   --accent:       #4db8ff;
   --accent-dim:   #1a3f58;
@@ -24,6 +24,32 @@
   --amber:        #f5a623;
   --amber-bg:     #3d2500;
   --amber-text:   #ffbe5c;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --navy-900: #eef2f7;
+  --navy-800: #ffffff;
+  --navy-700: #ffffff;
+  --navy-600: #e2e8f0;
+  --navy-500: #cbd5e1;
+  --navy-400: #94a3b8;
+  --navy-300: #64748b;
+  --navy-200: #475569;
+  --navy-100: #1e3a5f;
+  --navy-50:  #0f172a;
+
+  --accent:       #1a6fb5;
+  --accent-dim:   #dbeafe;
+  --teal:         #0d9467;
+  --teal-bg:      #dcfce7;
+  --teal-text:    #166534;
+  --red:          #dc4a3a;
+  --red-bg:       #fee2e2;
+  --red-text:     #991b1b;
+  --amber:        #d97706;
+  --amber-bg:     #fef3c7;
+  --amber-text:   #92400e;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -44,10 +70,10 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
   to   { transform: translateY(0);   opacity: 1; }
 }
 
-/* ── Utility classes ── */
+/* ── Buttons ── */
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 7px 16px; border-radius: 10px;
+  padding: 9px 18px; border-radius: 10px; min-height: 44px;
   border: 1px solid var(--navy-500); background: var(--navy-700);
   color: var(--navy-100); font-size: 13px; font-weight: 500;
   cursor: pointer; transition: all .15s; white-space: nowrap;
@@ -56,31 +82,47 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
 
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 7px 16px; border-radius: 10px; border: none;
+  padding: 9px 18px; border-radius: 10px; border: none; min-height: 44px;
   background: var(--accent); color: #fff; font-size: 13px; font-weight: 600;
   cursor: pointer; transition: all .15s; white-space: nowrap;
 }
-.btn-primary:hover { background: #6bcaff; }
+.btn-primary:hover { opacity: .88; }
 .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
 
+/* ── Add action / add KR ghost button ── */
+.add-row-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; min-height: 44px; padding: 10px 14px;
+  background: none; border: none; cursor: pointer;
+  color: var(--navy-400); font-size: 13px; font-weight: 500;
+  border-top: 1px solid var(--navy-600);
+  transition: background .12s, color .12s;
+  text-align: left;
+}
+.add-row-btn:hover { background: var(--navy-600); color: var(--accent); }
+
+/* ── Forms ── */
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
 .field label { font-size: 11px; font-weight: 600; color: var(--navy-300); text-transform: uppercase; letter-spacing: .5px; }
 
 .input {
-  width: 100%; padding: 9px 12px;
+  width: 100%; padding: 11px 14px; min-height: 44px;
   border-radius: 10px; border: 1px solid var(--navy-500);
   background: var(--navy-800); color: var(--navy-50);
-  font-size: 13px; outline: none; transition: border-color .15s;
+  font-size: 14px; outline: none; transition: border-color .15s;
 }
 .input:focus { border-color: var(--accent); }
 .input option { background: var(--navy-800); }
+textarea.input { resize: vertical; min-height: 80px; }
 
-textarea.input { resize: vertical; min-height: 72px; }
-
-/* Pills */
+/* ── Pills ── */
 .pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 99px; }
 .pill-green  { background: var(--teal-bg);  color: var(--teal-text); }
 .pill-red    { background: var(--red-bg);   color: var(--red-text); }
 .pill-amber  { background: var(--amber-bg); color: var(--amber-text); }
 .pill-gray   { background: var(--navy-700); color: var(--navy-300); }
 .pill-done   { background: var(--teal-bg);  color: var(--teal-text); }
+
+[data-theme="light"] .input { background: #f8fafc; }
+[data-theme="light"] .input option { background: #fff; }
+[data-theme="light"] .btn { background: #f8fafc; }

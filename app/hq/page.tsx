@@ -24,6 +24,7 @@ export default function HQPage() {
   const [weekStart, setWeekStart] = useState(getMonday())
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -36,6 +37,18 @@ export default function HQPage() {
   const [checkins, setCheckins] = useState<DailyCheckin[]>([])
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [shareToken, setShareToken] = useState('')
+
+  useEffect(() => {
+    const saved = localStorage.getItem('hq-theme') as 'dark' | 'light' | null
+    if (saved) { setTheme(saved); document.documentElement.setAttribute('data-theme', saved) }
+  }, [])
+
+  function toggleTheme() {
+    const next = theme === 'dark' ? 'light' : 'dark'
+    setTheme(next)
+    document.documentElement.setAttribute('data-theme', next === 'light' ? 'light' : '')
+    localStorage.setItem('hq-theme', next)
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
@@ -160,7 +173,15 @@ export default function HQPage() {
             {initials}
           </button>
           {avatarOpen && (
-            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 12, overflow: 'hidden', minWidth: 180, zIndex: 50 }}>
+            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 12, overflow: 'hidden', minWidth: 190, zIndex: 50 }}>
+              <button onClick={() => { toggleTheme(); setAvatarOpen(false) }}
+                style={{ width: '100%', padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)', cursor: 'pointer', fontSize: 12, color: 'var(--navy-100)', textAlign: 'left' }}>
+                {theme === 'dark'
+                  ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M2.9 2.9l.7.7M10.4 10.4l.7.7M10.4 2.9l-.7.7M2.9 10.4l.7-.7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+                  : <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7.5A5 5 0 1 1 6.5 2a3.5 3.5 0 0 0 5.5 5.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                }
+                {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              </button>
               <button onClick={copyShareLink}
                 style={{ width: '100%', padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)', cursor: 'pointer', fontSize: 12, color: 'var(--navy-100)', textAlign: 'left' }}>
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="10.5" cy="3" r="1.75" stroke="currentColor" strokeWidth="1.3"/><circle cx="3.5" cy="7" r="1.75" stroke="currentColor" strokeWidth="1.3"/><circle cx="10.5" cy="11" r="1.75" stroke="currentColor" strokeWidth="1.3"/><path d="M5.1 6.1l3.7-2.1M5.1 7.9l3.7 2.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
