@@ -24,7 +24,7 @@ export default function HQPage() {
   const [weekStart, setWeekStart] = useState(getMonday())
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [copied, setCopied] = useState(false)
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [searchQuery, setSearchQuery] = useState('')
   const [searchFocused, setSearchFocused] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -40,13 +40,13 @@ export default function HQPage() {
 
   useEffect(() => {
     const saved = localStorage.getItem('hq-theme') as 'dark' | 'light' | null
-    if (saved) { setTheme(saved); document.documentElement.setAttribute('data-theme', saved) }
+    if (saved) { setTheme(saved); document.documentElement.setAttribute('data-theme', saved === 'dark' ? 'dark' : '') }
   }, [])
 
   function toggleTheme() {
     const next = theme === 'dark' ? 'light' : 'dark'
     setTheme(next)
-    document.documentElement.setAttribute('data-theme', next === 'light' ? 'light' : '')
+    document.documentElement.setAttribute('data-theme', next === 'dark' ? 'dark' : '')
     localStorage.setItem('hq-theme', next)
   }
 

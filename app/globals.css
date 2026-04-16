@@ -1,7 +1,33 @@
 @import "tailwindcss";
 
-/* ── Forest & Auburn — Dark theme (default) ── */
+/* ── Light theme (default) — warm cream & forest accents ── */
 :root {
+  --navy-900: #f5f2eb;
+  --navy-800: #ffffff;
+  --navy-700: #ffffff;
+  --navy-600: #e8e2d8;
+  --navy-500: #cdc5b8;
+  --navy-400: #9a9080;
+  --navy-300: #6b6055;
+  --navy-200: #3d3428;
+  --navy-100: #1e1810;
+  --navy-50:  #0e0c08;
+
+  --accent:       #8a5c1a;
+  --accent-dim:   #fdf2dc;
+  --teal:         #2a7848;
+  --teal-bg:      #e4f4ea;
+  --teal-text:    #185c30;
+  --red:          #8a3820;
+  --red-bg:       #fce8e0;
+  --red-text:     #6a2810;
+  --amber:        #9a6010;
+  --amber-bg:     #fdf2dc;
+  --amber-text:   #7a4410;
+}
+
+/* ── Dark theme — deep forest ── */
+[data-theme="dark"] {
   --navy-900: #080f08;
   --navy-800: #0c160e;
   --navy-700: #111f13;
@@ -13,50 +39,17 @@
   --navy-100: #d4ecd8;
   --navy-50:  #eef8f0;
 
-  /* Auburn gold — primary action */
   --accent:       #d4922a;
   --accent-dim:   #2e2008;
-
-  /* Forest green — success / on track */
   --teal:         #3a9e5c;
   --teal-bg:      #091f0e;
   --teal-text:    #68d48a;
-
-  /* Terracotta — off track / error */
   --red:          #c05038;
   --red-bg:       #2e0e08;
   --red-text:     #e07a5a;
-
-  /* Harvest gold — warnings / carried / parking */
   --amber:        #c89030;
   --amber-bg:     #281c08;
   --amber-text:   #e8c068;
-}
-
-/* ── Autumn Woodland — Light theme ── */
-[data-theme="light"] {
-  --navy-900: #f0ece2;
-  --navy-800: #ffffff;
-  --navy-700: #faf8f2;
-  --navy-600: #e8e0d0;
-  --navy-500: #cec4b0;
-  --navy-400: #8a8272;
-  --navy-300: #5a5242;
-  --navy-200: #3a3228;
-  --navy-100: #1e1810;
-  --navy-50:  #0e0c06;
-
-  --accent:       #9a5e18;
-  --accent-dim:   #fdf2dc;
-  --teal:         #2a7848;
-  --teal-bg:      #e4f4ea;
-  --teal-text:    #185c30;
-  --red:          #8a3820;
-  --red-bg:       #fce8e0;
-  --red-text:     #6a2810;
-  --amber:        #9a5e18;
-  --amber-bg:     #fdf2dc;
-  --amber-text:   #7a4410;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -82,10 +75,10 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
   display: inline-flex; align-items: center; gap: 6px;
   padding: 10px 18px; border-radius: 10px; min-height: 44px;
   border: 1px solid var(--navy-500); background: var(--navy-700);
-  color: var(--navy-100); font-size: 13px; font-weight: 500;
+  color: var(--navy-200); font-size: 13px; font-weight: 500;
   cursor: pointer; transition: all .15s; white-space: nowrap;
 }
-.btn:hover { background: var(--navy-600); border-color: var(--navy-400); }
+.btn:hover { background: var(--navy-600); }
 
 .btn-primary {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
@@ -96,7 +89,7 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
 .btn-primary:hover { opacity: .88; }
 .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 
-/* Full-width add row button — replaces tiny text links */
+/* Full-width add row button */
 .add-row-btn {
   display: flex; align-items: center; gap: 10px;
   width: 100%; min-height: 48px; padding: 12px 16px;
@@ -106,12 +99,12 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
   transition: background .12s, color .12s;
   text-align: left;
 }
-.add-row-btn:hover, .add-row-btn:active { 
-  background: var(--navy-600); 
-  color: var(--accent); 
+.add-row-btn:hover, .add-row-btn:active {
+  background: var(--navy-600);
+  color: var(--accent);
 }
 
-/* Pill tab buttons (sub-tabs in Reflect) */
+/* Sub-tab pills */
 .sub-tab-btn {
   display: inline-flex; align-items: center;
   padding: 9px 18px; min-height: 44px;
@@ -121,10 +114,10 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
   white-space: nowrap;
 }
 
-/* Status/checkin toggle buttons */
+/* Status toggle buttons */
 .status-btn {
   display: inline-flex; align-items: center; justify-content: center;
-  padding: 10px 18px; min-height: 44px; flex: 1;
+  padding: 10px 14px; min-height: 44px; flex: 1;
   border-radius: 10px; cursor: pointer;
   font-size: 13px; font-weight: 600;
   transition: all .12s;
@@ -137,7 +130,7 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
 .input {
   width: 100%; padding: 12px 14px; min-height: 48px;
   border-radius: 10px; border: 1px solid var(--navy-500);
-  background: var(--navy-800); color: var(--navy-50);
+  background: var(--navy-900); color: var(--navy-50);
   font-size: 14px; outline: none; transition: border-color .15s;
 }
 .input:focus { border-color: var(--accent); }
@@ -149,11 +142,5 @@ textarea.input { resize: vertical; min-height: 84px; }
 .pill-green  { background: var(--teal-bg);   color: var(--teal-text); }
 .pill-red    { background: var(--red-bg);    color: var(--red-text); }
 .pill-amber  { background: var(--amber-bg);  color: var(--amber-text); }
-.pill-gray   { background: var(--navy-700);  color: var(--navy-300); }
+.pill-gray   { background: var(--navy-600);  color: var(--navy-300); }
 .pill-done   { background: var(--teal-bg);   color: var(--teal-text); }
-
-/* Light theme overrides */
-[data-theme="light"] .input { background: #fdf9f3; }
-[data-theme="light"] .input option { background: #fff; }
-[data-theme="light"] .btn { background: #fdf9f3; color: var(--navy-200); }
-[data-theme="light"] .btn:hover { background: var(--navy-600); }
