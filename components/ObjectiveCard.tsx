@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus } from '@/lib/types'
+import { ACTIVE_Q } from '@/lib/utils'
 import Modal from './Modal'
 
 type Section = 'notes' | 'links' | 'logs' | null
@@ -47,6 +48,9 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const [logEntry, setLogEntry] = useState('')
   const [savingLog, setSavingLog] = useState(false)
   const [editKR, setEditKR] = useState<RoadmapItem | null>(null)
+  const [addingKR, setAddingKR] = useState(false)
+  const [newKRTitle, setNewKRTitle] = useState('')
+  const [savingKR, setSavingKR] = useState(false)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
@@ -110,6 +114,31 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   async function deleteLink(id: string) {
     await supabase.from('objective_links').delete().eq('id', id)
     onDeleteLink(id)
+  }
+
+  async function addKR() {
+    if (!newKRTitle.trim() || savingKR) return
+    setSavingKR(true)
+    const { count } = await supabase.from('roadmap_items')
+      .select('id', { count: 'exact', head: true }).eq('annual_objective_id', obj.id)
+    const { data } = await supabase.from('roadmap_items')
+      .insert({
+        annual_objective_id: obj.id,
+        title: newKRTitle.trim(),
+        quarter: ACTIVE_Q,
+        status: 'active',
+        sort_order: count ?? 0,
+        health_status: 'not_started',
+        progress: 0,
+      })
+      .select().single()
+    if (data) {
+      setRoadmapItems(prev => [...prev, data])
+      setNewKRTitle('')
+      setAddingKR(false)
+      toast('Key result added.')
+    }
+    setSavingKR(false)
   }
 
   function toggleSection(s: Section) {
@@ -188,6 +217,40 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
             </div>
           )
         })}
+
+        {/* Add key result */}
+        {!addingKR ? (
+          <button onClick={() => setAddingKR(true)}
+            style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)', border: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', cursor: 'pointer', color: 'var(--navy-400)', fontSize: 12, fontWeight: 600, transition: 'color .12s' }}>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
+            Add key result
+          </button>
+        ) : (
+          <div style={{ padding: '11px 14px', borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
+            <textarea
+              value={newKRTitle}
+              onChange={e => setNewKRTitle(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addKR()
+                if (e.key === 'Escape') { setAddingKR(false); setNewKRTitle('') }
+              }}
+              placeholder="New key result…"
+              autoFocus
+              style={{ width: '100%', background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 10, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.5, resize: 'none', color: 'var(--navy-100)', outline: 'none', marginBottom: 8 }}
+              rows={2}
+            />
+            <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setAddingKR(false); setNewKRTitle('') }}
+                style={{ padding: '7px 14px', background: 'var(--navy-700)', color: 'var(--navy-300)', fontSize: 12, fontWeight: 600, border: '1px solid var(--navy-600)', borderRadius: 9, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={addKR} disabled={!newKRTitle.trim() || savingKR}
+                style={{ padding: '7px 16px', background: obj.color, color: '#fff', fontSize: 12, fontWeight: 700, border: 'none', borderRadius: 9, cursor: 'pointer', opacity: !newKRTitle.trim() ? .45 : 1, display: 'flex', alignItems: 'center', gap: 5 }}>
+                {savingKR ? 'Saving…' : 'Add'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Footer tabs */}
         <div style={{ display: 'flex', borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>

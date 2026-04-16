@@ -55,7 +55,6 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         .filter(o => o.status !== 'abandoned')
         .map(obj => {
           const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
-          if (!objKRs.length) return null
           return (
             <ObjectiveCard
               key={obj.id}
