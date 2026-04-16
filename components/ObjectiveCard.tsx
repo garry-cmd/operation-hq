@@ -53,6 +53,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const onTrack  = krs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
   const offTrack = krs.filter(k => k.health_status === 'off_track').length
   const blocked  = krs.filter(k => k.health_status === 'blocked').length
+  const doneKRs  = krs.filter(k => k.health_status === 'done').length
+  const progress = krs.length > 0 ? Math.round((doneKRs / krs.length) * 100) : 0
   const objLinks = links.filter(l => l.objective_id === obj.id)
   const objLogs  = logs.filter(l => l.objective_id === obj.id)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -139,6 +141,15 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                 {onTrack === 0 && offTrack === 0 && blocked === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>not started</span>}
               </div>
             )}
+            {/* Progress bar — always visible, even collapsed */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
+              <div style={{ flex: 1, height: 4, background: 'var(--navy-600)', borderRadius: 2, overflow: 'hidden' }}>
+                <div style={{ height: 4, borderRadius: 2, background: progress === 100 ? 'var(--teal)' : obj.color, width: `${progress}%`, transition: 'width .4s ease' }} />
+              </div>
+              <span style={{ fontSize: 10, fontWeight: 700, color: progress === 100 ? 'var(--teal-text)' : 'var(--navy-300)', minWidth: 28, textAlign: 'right', flexShrink: 0 }}>
+                {progress}%
+              </span>
+            </div>
           </div>
           {/* Chevron */}
           <div style={{ flexShrink: 0, marginTop: 2, transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', color: 'var(--navy-400)' }}>
