@@ -170,13 +170,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
           return (
             <div key={kr.id} style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 6 }}>{kr.title}</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                  <div style={{ flex: 1, height: 3, background: 'var(--navy-600)', borderRadius: 2 }}>
-                    <div style={{ height: 3, borderRadius: 2, background: obj.color, width: `${kr.progress ?? 0}%`, transition: 'width .3s' }} />
-                  </div>
-                  <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600, flexShrink: 0 }}>{kr.progress ?? 0}%</span>
-                </div>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 4 }}>{kr.title}</div>
                 <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>
                   {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
                 </div>
