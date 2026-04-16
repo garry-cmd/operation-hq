@@ -42,7 +42,7 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
           </button>
         ))}
       </div>
-      {sub === 'checkin'  && <CheckinView  objectives={objectives} roadmapItems={roadmapItems} checkins={checkins} setCheckins={setCheckins} />}
+      {sub === 'checkin'  && <CheckinView  objectives={objectives} roadmapItems={roadmapItems} checkins={checkins} setCheckins={setCheckins} toast={toast} />}
       {sub === 'progress' && <ProgressView objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} toast={toast} />}
       {sub === 'review'   && <ReviewView   reviews={reviews} setReviews={setReviews} roadmapItems={roadmapItems} weekStart={weekStart} toast={toast} />}
       {sub === 'history'  && <HistoryView  reviews={reviews} />}
@@ -51,7 +51,7 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
 }
 
 /* ── Check-in ── */
-function CheckinView({ objectives, roadmapItems, checkins, setCheckins }: Pick<Props, 'objectives' | 'roadmapItems' | 'checkins' | 'setCheckins'>) {
+function CheckinView({ objectives, roadmapItems, checkins, setCheckins, toast }: Pick<Props, 'objectives' | 'roadmapItems' | 'checkins' | 'setCheckins' | 'toast'>) {
   const today = new Date().toISOString().slice(0, 10)
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const todayCheckins = checkins.filter(c => c.checkin_date === today)
@@ -65,6 +65,7 @@ function CheckinView({ objectives, roadmapItems, checkins, setCheckins }: Pick<P
       const { data } = await supabase.from('daily_checkins').insert({ checkin_date: today, roadmap_item_id: krId, status }).select().single()
       if (data) setCheckins(prev => [...prev, data])
     }
+    toast('Check-in saved ✓')
   }
 
   const STATUS_CFG = [

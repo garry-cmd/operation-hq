@@ -1,7 +1,8 @@
 'use client'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus } from '@/lib/types'
-import { ACTIVE_Q } from '@/lib/utils'
+import Modal from './Modal'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -22,6 +23,7 @@ const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }>
 }
 
 export default function OKRs({ objectives, roadmapItems, setRoadmapItems, actions, weekStart, toast }: Props) {
+  const [editKR, setEditKR] = useState<RoadmapItem | null>(null)
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack = activeKRs.filter(i => i.health_status === 'on_track').length
@@ -106,6 +108,11 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, action
                         style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, padding: '6px 12px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s', marginTop: 2 }}>
                         {hs.label}
                       </button>
+                      {/* Edit button */}
+                      <button onClick={() => setEditKR(kr)}
+                        style={{ flexShrink: 0, width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginTop: 2 }}>
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                      </button>
                     </div>
                   </div>
                 )
@@ -114,6 +121,33 @@ export default function OKRs({ objectives, roadmapItems, setRoadmapItems, action
           </div>
         )
       })}
+
+      {/* Edit KR modal */}
+      {editKR && (
+        <EditKRModal kr={editKR} onClose={() => setEditKR(null)}
+          onSave={updated => { setRoadmapItems(prev => prev.map(i => i.id === updated.id ? updated : i)); setEditKR(null); toast('Key result updated.') }} />
+      )}
     </div>
+  )
+}
+
+function EditKRModal({ kr, onClose, onSave }: { kr: RoadmapItem; onClose: () => void; onSave: (kr: RoadmapItem) => void }) {
+  const [title, setTitle] = useState(kr.title)
+  const [saving, setSaving] = useState(false)
+  async function save() {
+    if (!title.trim()) return
+    setSaving(true)
+    await supabase.from('roadmap_items').update({ title }).eq('id', kr.id)
+    onSave({ ...kr, title })
+    setSaving(false)
+  }
+  return (
+    <Modal title="Edit Key Result" onClose={onClose}
+      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>{saving ? 'Saving…' : 'Save'}</button></>}>
+      <div className="field">
+        <label>Key Result</label>
+        <textarea className="input" rows={3} value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+      </div>
+    </Modal>
   )
 }

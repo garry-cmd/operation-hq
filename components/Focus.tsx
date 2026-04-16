@@ -31,14 +31,25 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
     setActions(prev => prev.map(a => a.id === action.id ? { ...a, completed: next } : a))
   }
 
-  async function carryForward() {
-    const nextWeek = addWeeks(weekStart, 1)
-    const incomplete = weekActions.filter(a => !a.completed)
-    if (!incomplete.length) { toast('Nothing incomplete to carry forward.'); return }
-    const { data } = await supabase.from('weekly_actions')
-      .insert(incomplete.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: nextWeek, carried_over: true })))
-      .select()
-    if (data) { setActions(prev => [...prev, ...data]); toast(`${data.length} action${data.length > 1 ? 's' : ''} carried forward.`) }
+  async function goToWeek(dir: number) {
+    const target = addWeeks(weekStart, dir)
+    if (dir > 0) {
+      // Auto-carry incomplete actions to an empty week
+      const targetEmpty = !actions.some(a => a.week_start === target)
+      if (targetEmpty) {
+        const incomplete = actions.filter(a => a.week_start === weekStart && !a.completed)
+        if (incomplete.length > 0) {
+          const { data } = await supabase.from('weekly_actions')
+            .insert(incomplete.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: target, carried_over: true })))
+            .select()
+          if (data) {
+            setActions(prev => [...prev, ...data])
+            toast(`${data.length} incomplete action${data.length > 1 ? 's' : ''} carried forward`)
+          }
+        }
+      }
+    }
+    setWeekStart(() => target)
   }
 
   const enriched = weekActions.map(action => {
@@ -82,8 +93,8 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
                   Re-plan
                 </button>
               )}
-              <button style={navBtn} onClick={() => setWeekStart(s => addWeeks(s, -1))}>‹</button>
-              <button style={navBtn} onClick={() => setWeekStart(s => addWeeks(s, 1))}>›</button>
+              <button style={navBtn} onClick={() => goToWeek(-1)}>‹</button>
+              <button style={navBtn} onClick={() => goToWeek(1)}>›</button>
             </div>
           </div>
           {taskTotal > 0 && (
@@ -160,13 +171,6 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
           </div>
         )}
 
-        {taskTotal > 0 && taskDone < taskTotal && (
-          <div style={{ paddingTop: 16 }}>
-            <button onClick={carryForward} className="btn" style={{ fontSize: 13, width: '100%', justifyContent: 'center' }}>
-              Carry incomplete to next week →
-            </button>
-          </div>
-        )}
       </div>
     </>
   )

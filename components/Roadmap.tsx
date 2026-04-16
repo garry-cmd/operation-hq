@@ -30,19 +30,16 @@ function hex2rgba(hex: string, a: number) {
 
 export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, toast }: Props) {
   const [modal, setModal] = useState<ModalState>(null)
-  const [draggingId, setDraggingId] = useState<string | null>(null)
-  const [dragOver, setDragOver] = useState<string | null>(null) // `${objId}::${quarter|null}`
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const activeObjs = objectives.filter(o => o.status !== 'abandoned')
-
-  // Items that are NOT parked
   const items = roadmapItems.filter(i => !i.is_parked)
 
-  async function moveKR(itemId: string, quarter: string | null) {
-    const newStatus = quarter === ACTIVE_Q ? 'active' : quarter ? 'planned' : 'planned'
+  async function moveKR(itemId: string, quarter: string) {
+    const newStatus = quarter === ACTIVE_Q ? 'active' : 'planned'
     await supabase.from('roadmap_items').update({ quarter, status: newStatus }).eq('id', itemId)
     setRoadmapItems(prev => prev.map(i => i.id === itemId ? { ...i, quarter, status: newStatus } : i))
-    toast(`Moved to ${formatQ(quarter ?? 'Roadmap')}`)
+    toast(`Moved to ${formatQ(quarter)}`)
   }
 
   async function parkKR(item: RoadmapItem) {
@@ -54,33 +51,27 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   async function deleteKR(id: string) {
     await supabase.from('roadmap_items').delete().eq('id', id)
     setRoadmapItems(prev => prev.filter(i => i.id !== id))
-    setModal(null)
-    toast('Key result deleted.')
+    setModal(null); toast('Key result deleted.')
   }
 
-  function cellKey(objId: string, q: string | null) { return `${objId}::${q ?? 'null'}` }
-
-  function onDragStart(e: React.DragEvent, itemId: string) {
-    e.dataTransfer.setData('itemId', itemId)
-    setDraggingId(itemId)
+  // Tap-to-select, tap-cell-to-place — works on mobile and desktop
+  function handleChipTap(e: React.MouseEvent, item: RoadmapItem) {
+    e.stopPropagation()
+    if (selectedId === item.id) { setSelectedId(null); return }
+    setSelectedId(item.id)
   }
 
-  function onDragOver(e: React.DragEvent, key: string) {
-    e.preventDefault()
-    setDragOver(key)
-  }
-
-  function onDrop(e: React.DragEvent, objId: string, quarter: string | null) {
-    e.preventDefault()
-    const itemId = e.dataTransfer.getData('itemId')
-    setDragOver(null); setDraggingId(null)
-    if (!itemId) return
-    const item = items.find(i => i.id === itemId)
-    if (!item || item.annual_objective_id !== objId) {
-      toast('Can only move key results within the same objective')
-      return
+  function handleCellTap(objId: string, quarter: string) {
+    if (!selectedId) return
+    const item = items.find(i => i.id === selectedId)
+    if (!item) { setSelectedId(null); return }
+    if (item.annual_objective_id !== objId) {
+      toast('KRs can only move within the same objective')
+      setSelectedId(null); return
     }
-    moveKR(itemId, quarter)
+    if (item.quarter === quarter) { setSelectedId(null); return }
+    moveKR(selectedId, quarter)
+    setSelectedId(null)
   }
 
   // Column widths: 4 rolling quarters only
@@ -88,11 +79,11 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   const MIN_W = 480
 
   return (
-    <div>
+    <div onClick={() => setSelectedId(null)}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
-          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>Plan your key results by quarter — drag to schedule</p>
+          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>{selectedId ? '✓ Tap a quarter cell to move · tap chip again to cancel' : 'Tap a key result to move it between quarters'}</p>
         </div>
         <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
           style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -141,28 +132,38 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                     </button>
                   </div>
 
-                  {/* Quarter cells only */}
+                  {/* Quarter cells — tap chip to select, tap cell to place */}
                   <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, padding: '8px 8px 10px' }}>
-                    {ROLLING.map(q => (
-                      <DropsCell key={q}
-                        cellKey={cellKey(obj.id, q)}
-                        dragOver={dragOver}
-                        isActive={q === ACTIVE_Q}
-                        objColor={obj.color}
-                        onDragOver={e => onDragOver(e, cellKey(obj.id, q))}
-                        onDragLeave={() => setDragOver(null)}
-                        onDrop={e => onDrop(e, obj.id, q)}
-                      >
-                        {objItems.filter(i => i.quarter === q).map(item => (
-                          <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
-                            dragging={draggingId === item.id}
-                            onDragStart={e => onDragStart(e, item.id)}
-                            onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
-                            onClick={() => setModal({ type: 'edit_kr', item })} />
-                        ))}
-                        <AddKRBtn onClick={() => setModal({ type: 'add_kr', objId: obj.id, quarter: q })} color={obj.color} />
-                      </DropsCell>
-                    ))}
+                    {ROLLING.map(q => {
+                      const selectedItem = selectedId ? items.find(i => i.id === selectedId) : null
+                      const canReceive = selectedItem?.annual_objective_id === obj.id && selectedItem?.quarter !== q
+                      return (
+                        <div key={q}
+                          onClick={e => { e.stopPropagation(); handleCellTap(obj.id, q) }}
+                          style={{ minHeight: 52, borderRadius: 9, padding: '5px 5px 3px',
+                            background: canReceive ? hex2rgba(obj.color, 0.18) : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
+                            border: canReceive ? `2px solid ${obj.color}` : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--navy-600)',
+                            cursor: canReceive ? 'pointer' : 'default',
+                            transition: 'background .12s, border .12s' }}>
+                          {canReceive && (
+                            <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .8 }}>
+                              Tap to place here
+                            </div>
+                          )}
+                          {objItems.filter(i => i.quarter === q).map(item => (
+                            <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
+                              selected={selectedId === item.id}
+                              onTap={e => {
+                                e.stopPropagation()
+                                if (selectedId && selectedId !== item.id) { setModal({ type: 'edit_kr', item }); setSelectedId(null) }
+                                else handleChipTap(e, item)
+                              }}
+                              onEdit={() => setModal({ type: 'edit_kr', item })} />
+                          ))}
+                          <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )
@@ -228,46 +229,30 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   )
 }
 
-/* ── Drop cell ── */
-function DropsCell({ cellKey, dragOver, isActive, objColor, onDragOver, onDragLeave, onDrop, children }: {
-  cellKey: string; dragOver: string | null; isActive: boolean; objColor: string
-  onDragOver: (e: React.DragEvent) => void; onDragLeave: () => void; onDrop: (e: React.DragEvent) => void
-  children: React.ReactNode
-}) {
-  const isOver = dragOver === cellKey
-  return (
-    <div
-      onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}
-      style={{ minHeight: 52, borderRadius: 9, padding: '5px 5px 3px',
-        background: isOver ? hex2rgba(objColor, 0.18) : isActive ? hex2rgba(objColor, 0.1) : 'transparent',
-        border: isOver ? `1.5px solid ${objColor}` : isActive ? `1px dashed ${hex2rgba(objColor, 0.4)}` : '1px dashed var(--navy-600)',
-        transition: 'background .12s, border .12s' }}>
-      {children}
-    </div>
-  )
-}
-
-/* ── KR chip ── */
-function KRChip({ item, objColor, quarter, dragging, onDragStart, onDragEnd, onClick }: {
-  item: RoadmapItem; objColor: string; quarter: string | null
-  dragging: boolean; onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void; onClick: () => void
+/* ── KR chip — tap to select/move ── */
+function KRChip({ item, objColor, quarter, selected, onTap, onEdit }: {
+  item: RoadmapItem; objColor: string; quarter: string
+  selected: boolean; onTap: (e: React.MouseEvent) => void; onEdit: () => void
 }) {
   const isActive = quarter === ACTIVE_Q
-  const isUnscheduled = !quarter
   return (
-    <div draggable onDragStart={onDragStart} onDragEnd={onDragEnd} onClick={onClick}
-      style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '5px 8px', borderRadius: 7, marginBottom: 4,
-        cursor: 'grab', userSelect: 'none', lineHeight: 1.35, opacity: dragging ? 0.3 : 1, transition: 'opacity .12s',
-        background: isUnscheduled ? 'var(--navy-700)' : isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
-        border: isUnscheduled ? '1.5px dashed var(--navy-500)' : isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
-        color: isUnscheduled ? 'var(--navy-400)' : isActive ? 'var(--navy-50)' : 'var(--navy-200)' }}>
+    <div onClick={onTap} onDoubleClick={e => { e.stopPropagation(); onEdit() }}
+      style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '6px 8px', borderRadius: 7, marginBottom: 4,
+        cursor: 'pointer', userSelect: 'none', lineHeight: 1.35, transition: 'all .12s',
+        background: selected ? objColor : isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
+        border: selected ? `2px solid ${objColor}` : isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
+        color: selected ? '#fff' : isActive ? 'var(--navy-50)' : 'var(--navy-200)',
+        outline: selected ? `2px solid ${hex2rgba(objColor, 0.4)}` : 'none',
+        outlineOffset: selected ? 2 : 0,
+        transform: selected ? 'scale(1.03)' : 'scale(1)',
+      }}>
       {isActive && <span style={{ marginRight: 4 }}>⚡</span>}{item.title}
     </div>
   )
 }
 
 /* ── Add KR button ── */
-function AddKRBtn({ onClick, color }: { onClick: () => void; color: string }) {
+function AddKRBtn({ onClick, color }: { onClick: (e: React.MouseEvent) => void; color: string }) {
   return (
     <button onClick={onClick}
       style={{ width: '100%', padding: '4px 0', fontSize: 10, fontWeight: 600, color: hex2rgba(color, 0.6),
