@@ -174,6 +174,63 @@ export function calculateHabitProgress(
 }
 
 /**
+ * Rolling aggregate performance over the last N weeks.
+ * Used to answer "how am I doing over the last 8 weeks" etc.
+ */
+export interface HabitAggregate {
+  sessions: number
+  expected: number
+  percent: number
+  weeks: number
+}
+
+export function calculateRollingAggregate(
+  kr: RoadmapItem,
+  checkins: HabitCheckin[],
+  weeks: number = 8
+): HabitAggregate {
+  const pattern = parseHabitPattern(kr.title)
+
+  // Window: last N weeks ending today (inclusive of today)
+  const end = new Date()
+  end.setHours(23, 59, 59, 999)
+  const start = new Date()
+  start.setDate(start.getDate() - (weeks * 7) + 1)
+  start.setHours(0, 0, 0, 0)
+
+  const krCheckins = checkins.filter(c => c.roadmap_item_id === kr.id)
+  const windowCheckins = krCheckins.filter(c => {
+    const d = new Date(c.date)
+    return d >= start && d <= end
+  })
+
+  const sessions = windowCheckins.length
+
+  // Expected sessions across the window based on habit pattern
+  let expected = 0
+  switch (pattern.mode) {
+    case 'daily':
+      expected = weeks * 7
+      break
+    case 'weekly_count':
+      expected = (pattern.target || 1) * weeks
+      break
+    case 'weekly_percentage':
+      // target% of 7 days each week
+      expected = Math.round(((pattern.target || 0) / 100) * 7 * weeks)
+      break
+    case 'monthly_count':
+      // ~4.33 weeks per month
+      expected = Math.round(((pattern.target || 0) * weeks) / 4.33)
+      break
+  }
+
+  const percent = expected > 0 ? Math.round((sessions / expected) * 100) : 0
+
+  return { sessions, expected, percent, weeks }
+}
+
+/**
  * Get current week start (Monday)
  */
 export function getCurrentWeekStart(): string {

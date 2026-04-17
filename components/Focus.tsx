@@ -3,7 +3,11 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
-import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
+import { calculateHabitProgress, calculateRollingAggregate, getToday, formatDate } from '@/lib/habitUtils'
+
+// Rolling window used for the per-habit aggregate shown next to each habit title.
+// Bump this if you want a longer/shorter lookback.
+const AGGREGATE_WEEKS = 8
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
 
@@ -41,9 +45,11 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
   const habitProgress = habitKRs.map(kr => {
     const krCheckins = habitCheckins.filter(c => c.roadmap_item_id === kr.id)
     const progress = calculateHabitProgress(kr, krCheckins, weekStart)
+    const aggregate = calculateRollingAggregate(kr, habitCheckins, AGGREGATE_WEEKS)
     return {
       kr,
-      progress
+      progress,
+      aggregate
     }
   }).filter(h => h.progress.showInFocus) // Only show daily/weekly habits
 
@@ -205,15 +211,17 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
             
             {/* Habit list with bubbles */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {habitProgress.map(({ kr, progress }) => (
+              {habitProgress.map(({ kr, progress, aggregate }) => (
                 <div key={kr.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Habit title and status */}
+                  {/* Habit title and rolling aggregate */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div style={{ fontSize: 14, color: 'var(--navy-50)', fontWeight: 500 }}>
                       {kr.title}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
-                      {progress.displayText}
+                    <div style={{ fontSize: 11, color: 'var(--navy-400)', whiteSpace: 'nowrap' }}>
+                      {aggregate.expected > 0
+                        ? `${aggregate.percent}% · last ${aggregate.weeks}w`
+                        : ''}
                     </div>
                   </div>
                   
