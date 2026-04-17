@@ -253,46 +253,6 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                 </button>
               </div>
 
-              {/* Show KR edit buttons */}
-              {objKRs.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 500, color: 'var(--navy-300)' }}>
-                    Key Results:
-                  </h4>
-                  {objKRs.map(kr => (
-                    <div key={kr.id} style={{ 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'space-between', 
-                      padding: '8px 12px',
-                      background: 'var(--navy-800)',
-                      border: '1px solid var(--navy-600)',
-                      borderRadius: 6,
-                      marginBottom: 6
-                    }}>
-                      <span style={{ fontSize: 14, color: 'var(--navy-200)' }}>
-                        {kr.title}
-                      </span>
-                      <button 
-                        onClick={() => setEditingKR(kr)}
-                        style={{ 
-                          background: 'none', 
-                          border: 'none', 
-                          color: 'var(--navy-400)', 
-                          cursor: 'pointer', 
-                          fontSize: 12, 
-                          padding: '4px 8px',
-                          borderRadius: 4
-                        }}
-                        title="Edit KR (with delete)"
-                      >
-                        <EditIcon size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
               <ObjectiveCard
                 obj={obj}
                 krs={objKRs}
