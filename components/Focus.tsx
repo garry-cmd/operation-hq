@@ -37,56 +37,56 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
     (kr.health_status === 'on_track' || kr.health_status === 'off_track' || kr.health_status === 'blocked')
   )
 
-  // Habit progress calculations
+  // Habit progress calculations - only show weekly/daily habits in Focus
   const habitProgress = habitKRs.map(kr => {
     const krCheckins = habitCheckins.filter(c => c.roadmap_item_id === kr.id)
-    const progress = calculateHabitProgress(kr, krCheckins)
-    const todayCheckin = krCheckins.find(c => c.date === today)
+    const progress = calculateHabitProgress(kr, krCheckins, weekStart)
     return {
       kr,
-      progress,
-      isCheckedToday: todayCheckin?.completed || false,
-      todayCheckinId: todayCheckin?.id
+      progress
     }
-  })
+  }).filter(h => h.progress.showInFocus) // Only show daily/weekly habits
 
-  const habitsCompleteToday = habitProgress.filter(h => h.isCheckedToday).length
+  const habitsCompleteCount = habitProgress.filter(h => h.progress.status === 'on_track' || h.progress.status === 'ahead').length
 
-  async function toggleHabit(krId: string, currentlyChecked: boolean, checkinId?: string) {
-    console.log('toggleHabit called:', { krId, currentlyChecked, checkinId, today })
+  async function addHabitSession(krId: string) {
+    console.log('Adding habit session for KR:', krId, 'date:', today)
     
     try {
-      if (currentlyChecked && checkinId) {
-        // Remove existing checkin
-        console.log('Deleting checkin:', checkinId)
-        const { error } = await supabase.from('habit_checkins').delete().eq('id', checkinId)
-        if (error) {
-          console.error('Delete error:', error)
-          return
-        }
-        setHabitCheckins(prev => prev.filter(c => c.id !== checkinId))
-        console.log('Checkin deleted successfully')
-      } else {
-        // Create new checkin
-        console.log('Creating new checkin for KR:', krId, 'date:', today)
-        const { data, error } = await supabase
-          .from('habit_checkins')
-          .insert({ roadmap_item_id: krId, date: today, completed: true })
-          .select()
-          .single()
-        
-        if (error) {
-          console.error('Insert error:', error)
-          return
-        }
-        
-        if (data) {
-          console.log('Checkin created:', data)
-          setHabitCheckins(prev => [...prev, data])
-        }
+      const { data, error } = await supabase
+        .from('habit_checkins')
+        .insert({ roadmap_item_id: krId, date: today })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Insert error:', error)
+        return
+      }
+      
+      if (data) {
+        console.log('Session created:', data)
+        setHabitCheckins(prev => [...prev, data])
+        toast('Session logged!')
       }
     } catch (err) {
-      console.error('toggleHabit error:', err)
+      console.error('addHabitSession error:', err)
+    }
+  }
+
+  async function removeHabitSession(checkinId: string) {
+    console.log('Removing habit session:', checkinId)
+    
+    try {
+      const { error } = await supabase.from('habit_checkins').delete().eq('id', checkinId)
+      if (error) {
+        console.error('Delete error:', error)
+        return
+      }
+      setHabitCheckins(prev => prev.filter(c => c.id !== checkinId))
+      toast('Session removed')
+    } catch (err) {
+      console.error('removeHabitSession error:', err)
     }
   }
 
@@ -145,6 +145,13 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
 
   return (
     <>
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+      
       {planning && (
         <PlanWeek
           objectives={objectives}
@@ -160,68 +167,81 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
         <p style={{ fontSize: 12, color: 'var(--navy-400)', marginBottom: 16 }}>Week of {formatWeek(weekStart)}</p>
 
         {/* Habits Section */}
-        {habitKRs.length > 0 && (
+        {habitProgress.length > 0 && (
           <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
               <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>Today's Habits</h3>
               <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
-                {habitsCompleteToday}/{habitKRs.length} complete
+                {habitsCompleteCount}/{habitProgress.length} on track
               </div>
             </div>
             
-            {/* Habit list */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {habitProgress.map(({ kr, progress, isCheckedToday, todayCheckinId }) => (
-                <div key={kr.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <button 
-                    onClick={() => toggleHabit(kr.id, isCheckedToday, todayCheckinId)}
-                    style={{ 
-                      width: 22, 
-                      height: 22, 
-                      borderRadius: '50%', 
-                      background: isCheckedToday ? 'var(--teal)' : 'transparent', 
-                      border: `2px solid ${isCheckedToday ? 'var(--teal)' : 'var(--navy-400)'}`, 
-                      display: 'flex', 
-                      alignItems: 'center', 
-                      justifyContent: 'center', 
-                      cursor: 'pointer', 
-                      flexShrink: 0,
-                      transition: 'all 0.15s'
-                    }}
-                  >
-                    {isCheckedToday && (
-                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                        <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                      </svg>
-                    )}
-                  </button>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ 
-                      fontSize: 14, 
-                      color: isCheckedToday ? 'var(--navy-400)' : 'var(--navy-50)',
-                      textDecoration: isCheckedToday ? 'line-through' : 'none',
-                      transition: 'all 0.15s'
-                    }}>
+            {/* Habit list with bubbles */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {habitProgress.map(({ kr, progress }) => (
+                <div key={kr.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {/* Habit title and status */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ fontSize: 14, color: 'var(--navy-50)', fontWeight: 500 }}>
                       {kr.title}
                     </div>
-                    {progress.displayText && (
-                      <div style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 2 }}>
-                        {progress.displayText}
-                      </div>
-                    )}
-                  </div>
-                  {isCheckedToday && (
-                    <div style={{ 
-                      fontSize: 11, 
-                      fontWeight: 500, 
-                      padding: '2px 6px', 
-                      borderRadius: 99, 
-                      background: 'var(--teal)', 
-                      color: 'white' 
-                    }}>
-                      ✓
+                    <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                      {progress.displayText}
                     </div>
-                  )}
+                  </div>
+                  
+                  {/* Progress bubbles */}
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {Array.from({ length: progress.targetCount }, (_, index) => {
+                      const isCompleted = index < progress.currentCount
+                      const isNext = index === progress.currentCount && progress.currentCount < progress.targetCount
+                      const sessionForThisBubble = progress.completedSessions[index]
+                      
+                      return (
+                        <button
+                          key={index}
+                          onClick={() => {
+                            if (isCompleted && sessionForThisBubble) {
+                              // Remove this session
+                              removeHabitSession(sessionForThisBubble.id)
+                            } else if (!isCompleted) {
+                              // Add new session
+                              addHabitSession(kr.id)
+                            }
+                          }}
+                          style={{
+                            width: 20,
+                            height: 20,
+                            borderRadius: '50%',
+                            background: isCompleted ? 'var(--teal)' : 'transparent',
+                            border: `2px solid ${isCompleted ? 'var(--teal)' : isNext ? 'var(--accent)' : 'var(--navy-400)'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                            transition: 'all 0.15s',
+                            position: 'relative'
+                          }}
+                        >
+                          {isCompleted && (
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                              <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                          {isNext && (
+                            <div style={{
+                              position: 'absolute',
+                              inset: -2,
+                              borderRadius: '50%',
+                              border: '2px dashed var(--accent)',
+                              animation: 'pulse 2s infinite'
+                            }} />
+                          )}
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
               ))}
             </div>
