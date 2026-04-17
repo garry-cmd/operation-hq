@@ -50,6 +50,7 @@ export interface RoadmapItem {
   health_status: HealthStatus
   progress: number
   is_parked: boolean
+  is_habit: boolean
   created_at: string
 }
 
@@ -82,4 +83,13 @@ export interface WeeklyReview {
   krs_hit: number
   krs_total: number
   space_id: string
+}
+
+export interface HabitCheckin {
+  id: string
+  roadmap_item_id: string
+  date: string
+  completed: boolean
+  notes?: string
+  created_at: string
 }

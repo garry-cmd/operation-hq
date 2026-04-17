@@ -1,8 +1,9 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
+import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
 
@@ -11,24 +12,64 @@ type Props = {
   roadmapItems: RoadmapItem[]
   actions: WeeklyAction[]
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
+  habitCheckins: HabitCheckin[]
+  setHabitCheckins: (fn: (h: HabitCheckin[]) => HabitCheckin[]) => void
   weekStart: string
   setWeekStart: (fn: (s: string) => string) => void
   toast: (m: string) => void
 }
 
-export default function Focus({ objectives, roadmapItems, actions, setActions, weekStart, setWeekStart, toast }: Props) {
+export default function Focus({ objectives, roadmapItems, actions, setActions, habitCheckins, setHabitCheckins, weekStart, setWeekStart, toast }: Props) {
   const [planning, setPlanning] = useState(false)
   const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
+  const habitKRs = activeKRs.filter(kr => kr.is_habit)
+  const today = getToday()
+  
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const taskDone = weekActions.filter(a => a.completed).length
   const taskTotal = weekActions.length
   const taskPct = taskTotal > 0 ? Math.round(taskDone / taskTotal * 100) : 0
   const allDone = taskTotal > 0 && taskDone === taskTotal
   const unplanned = activeKRs.filter(kr =>
+    !kr.is_habit && // Exclude habits from unplanned section
     !weekActions.some(a => a.roadmap_item_id === kr.id) &&
     (kr.health_status === 'on_track' || kr.health_status === 'off_track' || kr.health_status === 'blocked')
   )
+
+  // Habit progress calculations
+  const habitProgress = habitKRs.map(kr => {
+    const krCheckins = habitCheckins.filter(c => c.roadmap_item_id === kr.id)
+    const progress = calculateHabitProgress(kr, krCheckins)
+    const todayCheckin = krCheckins.find(c => c.date === today)
+    return {
+      kr,
+      progress,
+      isCheckedToday: todayCheckin?.completed || false,
+      todayCheckinId: todayCheckin?.id
+    }
+  })
+
+  const habitsCompleteToday = habitProgress.filter(h => h.isCheckedToday).length
+
+  async function toggleHabit(krId: string, currentlyChecked: boolean, checkinId?: string) {
+    if (currentlyChecked && checkinId) {
+      // Remove existing checkin
+      await supabase.from('daily_checkins').delete().eq('id', checkinId)
+      setHabitCheckins(prev => prev.filter(c => c.id !== checkinId))
+    } else {
+      // Create new checkin
+      const { data, error } = await supabase
+        .from('daily_checkins')
+        .insert({ roadmap_item_id: krId, date: today, completed: true })
+        .select()
+        .single()
+      
+      if (data && !error) {
+        setHabitCheckins(prev => [...prev, data])
+      }
+    }
+  }
 
   async function toggleAction(action: WeeklyAction) {
     const next = !action.completed
@@ -99,11 +140,80 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
         <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 2 }}>Focus this week</h1>
         <p style={{ fontSize: 12, color: 'var(--navy-400)', marginBottom: 16 }}>Week of {formatWeek(weekStart)}</p>
 
-        {/* Week bar */}
+        {/* Habits Section */}
+        {habitKRs.length > 0 && (
+          <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>Today's Habits</h3>
+              <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+                {habitsCompleteToday}/{habitKRs.length} complete
+              </div>
+            </div>
+            
+            {/* Habit list */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {habitProgress.map(({ kr, progress, isCheckedToday, todayCheckinId }) => (
+                <div key={kr.id} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button 
+                    onClick={() => toggleHabit(kr.id, isCheckedToday, todayCheckinId)}
+                    style={{ 
+                      width: 22, 
+                      height: 22, 
+                      borderRadius: '50%', 
+                      background: isCheckedToday ? 'var(--teal)' : 'transparent', 
+                      border: `2px solid ${isCheckedToday ? 'var(--teal)' : 'var(--navy-400)'}`, 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      cursor: 'pointer', 
+                      flexShrink: 0,
+                      transition: 'all 0.15s'
+                    }}
+                  >
+                    {isCheckedToday && (
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                        <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    )}
+                  </button>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ 
+                      fontSize: 14, 
+                      color: isCheckedToday ? 'var(--navy-400)' : 'var(--navy-50)',
+                      textDecoration: isCheckedToday ? 'line-through' : 'none',
+                      transition: 'all 0.15s'
+                    }}>
+                      {kr.title}
+                    </div>
+                    {progress.displayText && (
+                      <div style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 2 }}>
+                        {progress.displayText}
+                      </div>
+                    )}
+                  </div>
+                  {isCheckedToday && (
+                    <div style={{ 
+                      fontSize: 11, 
+                      fontWeight: 500, 
+                      padding: '2px 6px', 
+                      borderRadius: 99, 
+                      background: 'var(--teal)', 
+                      color: 'white' 
+                    }}>
+                      ✓
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Week bar for actions */}
         <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: taskTotal > 0 ? 10 : 0 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-300)' }}>
-              {taskTotal === 0 ? 'Nothing planned yet' : allDone ? '✓ All done!' : `${taskDone} of ${taskTotal} done`}
+              {taskTotal === 0 ? 'No actions planned yet' : allDone ? '✓ All actions done!' : `${taskDone} of ${taskTotal} actions done`}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {taskTotal > 0 && (
@@ -124,12 +234,12 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
         </div>
 
         {/* Empty — plan prompt */}
-        {taskTotal === 0 && activeKRs.length > 0 && (
+        {taskTotal === 0 && activeKRs.filter(kr => !kr.is_habit).length > 0 && (
           <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, padding: '24px 20px', textAlign: 'center', marginBottom: 16 }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>🗓</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 8 }}>Plan your week</div>
             <div style={{ fontSize: 13, color: 'var(--navy-400)', lineHeight: 1.6, marginBottom: 20 }}>
-              Walk through each key result and decide what you're doing about it this week.
+              Walk through each key result and decide what actions you're taking this week.
             </div>
             <button onClick={() => setPlanning(true)} className="btn-primary" style={{ width: '100%', fontSize: 14, marginBottom: 10 }}>
               Start planning →
@@ -138,7 +248,7 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
           </div>
         )}
 
-        {taskTotal === 0 && activeKRs.length === 0 && (
+        {taskTotal === 0 && activeKRs.filter(kr => !kr.is_habit).length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.6 }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>⚡</div>
             Add key results on the Roadmap, then plan your actions here.
@@ -146,10 +256,21 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, w
         )}
 
         {/* Action cards */}
+        {taskTotal > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>This Week's Actions</h3>
+              <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+                {taskDone}/{taskTotal} complete
+              </div>
+            </div>
+          </div>
+        )}
+        
         {enriched.map(({ action, kr, obj }) => (
           <div key={action.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s' }}>
             <button onClick={() => toggleAction(action)}
-              style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
+              style={{ width: 26, height: 26, borderRadius: '6px', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
               {action.completed && <svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
             </button>
             <div style={{ flex: 1, minWidth: 0 }}>
