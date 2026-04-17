@@ -11,9 +11,10 @@ import ParkingLot from '@/components/ParkingLot'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import SpaceSwitcher from '@/components/SpaceSwitcher'
+import PTPage from '@/app/pt/page'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
+type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'pt' | 'park'
 
 interface SearchResult { label: string; sub: string; screen: Screen }
 
@@ -156,12 +157,13 @@ export default function HQPage() {
   const spaceLogs = logs.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
 
-  // Nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking
+  // Nav — Reflect | Focus | OKRs⚡ | Roadmap | PT | Parking
   const NAV: { id: Screen; label: string; icon: React.ReactNode; fab?: boolean }[] = [
     { id: 'reflect',  label: 'Reflect',  icon: <ReflectIcon  active={screen === 'reflect'} /> },
     { id: 'focus',    label: 'Focus',    icon: <FocusIcon    active={screen === 'focus'} /> },
     { id: 'okr',      label: 'OKRs',     icon: <OKRIcon />, fab: true },
     { id: 'roadmap',  label: 'Roadmap',  icon: <RoadmapIcon  active={screen === 'roadmap'} /> },
+    { id: 'pt',       label: 'PT',       icon: <PTIcon       active={screen === 'pt'} /> },
     { id: 'park',     label: 'Parking',  icon: <ParkIcon     active={screen === 'park'} /> },
   ]
 
@@ -253,12 +255,13 @@ export default function HQPage() {
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} checkins={spaceCheckins} setCheckins={setCheckins} reviews={spaceReviews} setReviews={setReviews} weekStart={weekStart} activeSpaceId={activeSpaceId} metricCheckins={spaceMetricCheckins} setMetricCheckins={setMetricCheckins} toast={setToast} />}
+            {screen === 'pt'      && <PTPage />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
       </main>
 
-      {/* Footer nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking */}
+      {/* Footer nav — Reflect | Focus | OKRs⚡ | Roadmap | PT | Parking */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 72, background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '0 8px', zIndex: 40 }}>
         {NAV.map(item => item.fab ? (
           <button key={item.id} onClick={() => setScreen(item.id)}
@@ -299,7 +302,7 @@ export default function HQPage() {
   )
 }
 
-// ── Icons ──────────────────────────────────────────────────────────
+// — Icons ——————————————————————————————————————————————————————————————————————————
 function ReflectIcon({ active }: { active: boolean }) {
   const c = active ? 'var(--accent)' : 'var(--navy-400)'
   return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke={c} strokeWidth="1.5"/><path d="M11 6v5l3 2" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
@@ -315,12 +318,16 @@ function RoadmapIcon({ active }: { active: boolean }) {
   const c = active ? 'var(--accent)' : 'var(--navy-400)'
   return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="2" y="5" width="5" height="13" rx="1.5" stroke={c} strokeWidth="1.5"/><rect x="9" y="3" width="5" height="17" rx="1.5" stroke={c} strokeWidth="1.5"/><rect x="16" y="7" width="5" height="10" rx="1.5" stroke={c} strokeWidth="1.5"/></svg>
 }
+function PTIcon({ active }: { active: boolean }) {
+  const c = active ? 'var(--accent)' : 'var(--navy-400)'
+  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M6.5 7a4.5 4.5 0 1 1 9 0M4 12v-2a4 4 0 1 1 8 0v2" stroke={c} strokeWidth="1.5" strokeLinecap="round"/><path d="M9 12H4a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h5m4-5h5a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-5" stroke={c} strokeWidth="1.5" strokeLinecap="round"/></svg>
+}
 function ParkIcon({ active }: { active: boolean }) {
   const c = active ? 'var(--accent)' : 'var(--navy-400)'
   return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="4" stroke={c} strokeWidth="1.5"/><path d="M9 8h4a2.5 2.5 0 0 1 0 5H9V8Z" stroke={c} strokeWidth="1.5"/><path d="M9 13v4" stroke={c} strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
-// ── Login ──────────────────────────────────────────────────────────
+// — Login ——————————————————————————————————————————————————————————————————————————
 function LoginPage() {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   const [email, setEmail] = useState('')
