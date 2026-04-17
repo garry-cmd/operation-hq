@@ -185,25 +185,45 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         .map(obj => {
           const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
           return (
-            <ObjectiveCard
-              key={obj.id}
-              obj={obj}
-              krs={objKRs}
-              actions={actions}
-              weekStart={weekStart}
-              links={links}
-              logs={logs}
-              setRoadmapItems={setRoadmapItems}
-              setObjectives={setObjectives}
-              setActions={setActions}
-              onAddLink={onAddLink}
-              onDeleteLink={onDeleteLink}
-              onAddLog={onAddLog}
-              onDeleteLog={onDeleteLog}
-              onEditKR={setEditingKR}
-              onEditObjective={setEditingObjective}
-              toast={toast}
-            />
+            <div key={obj.id} style={{ marginBottom: 20 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--navy-200)' }}>
+                  {obj.name}
+                </h3>
+                <button 
+                  onClick={() => setEditingObjective(obj)}
+                  style={{ 
+                    background: 'none', 
+                    border: 'none', 
+                    color: 'var(--navy-400)', 
+                    cursor: 'pointer', 
+                    fontSize: 14, 
+                    padding: '4px 8px',
+                    borderRadius: 4
+                  }}
+                  title="Edit objective"
+                >
+                  ✏️
+                </button>
+              </div>
+              <ObjectiveCard
+                obj={obj}
+                krs={objKRs}
+                actions={actions}
+                weekStart={weekStart}
+                links={links}
+                logs={logs}
+                setRoadmapItems={setRoadmapItems}
+                setObjectives={setObjectives}
+                setActions={setActions}
+                onAddLink={onAddLink}
+                onDeleteLink={onDeleteLink}
+                onAddLog={onAddLog}
+                onDeleteLog={onDeleteLog}
+                onEditKR={setEditingKR}
+                toast={toast}
+              />
+            </div>
           )
         })}
 
