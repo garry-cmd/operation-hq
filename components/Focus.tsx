@@ -197,18 +197,29 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                       const isNext = index === progress.currentCount && progress.currentCount < progress.targetCount
                       const sessionForThisBubble = progress.completedSessions[index]
                       
+                      // Debug logging
+                      console.log(`Bubble ${index} for ${kr.title}:`, {
+                        isCompleted,
+                        isNext,
+                        sessionForThisBubble,
+                        currentCount: progress.currentCount,
+                        targetCount: progress.targetCount
+                      })
+                      
                       return (
                         <button
                           key={index}
                           onClick={() => {
+                            console.log(`Clicked bubble ${index} for ${kr.title}`)
                             if (isCompleted && sessionForThisBubble) {
-                              // Remove this specific session
+                              console.log('Removing session:', sessionForThisBubble.id)
                               removeHabitSession(sessionForThisBubble.id)
                             } else if (isNext) {
-                              // Only allow adding the next session in sequence
+                              console.log('Adding new session for KR:', kr.id)
                               addHabitSession(kr.id)
+                            } else {
+                              console.log('Click ignored - bubble not clickable')
                             }
-                            // For bubbles beyond the next one, do nothing (can't skip ahead)
                           }}
                           style={{
                             width: 20,
