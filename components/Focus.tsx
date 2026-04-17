@@ -53,21 +53,40 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
   const habitsCompleteToday = habitProgress.filter(h => h.isCheckedToday).length
 
   async function toggleHabit(krId: string, currentlyChecked: boolean, checkinId?: string) {
-    if (currentlyChecked && checkinId) {
-      // Remove existing checkin
-      await supabase.from('daily_checkins').delete().eq('id', checkinId)
-      setHabitCheckins(prev => prev.filter(c => c.id !== checkinId))
-    } else {
-      // Create new checkin
-      const { data, error } = await supabase
-        .from('daily_checkins')
-        .insert({ roadmap_item_id: krId, date: today, completed: true })
-        .select()
-        .single()
-      
-      if (data && !error) {
-        setHabitCheckins(prev => [...prev, data])
+    console.log('toggleHabit called:', { krId, currentlyChecked, checkinId, today })
+    
+    try {
+      if (currentlyChecked && checkinId) {
+        // Remove existing checkin
+        console.log('Deleting checkin:', checkinId)
+        const { error } = await supabase.from('habit_checkins').delete().eq('id', checkinId)
+        if (error) {
+          console.error('Delete error:', error)
+          return
+        }
+        setHabitCheckins(prev => prev.filter(c => c.id !== checkinId))
+        console.log('Checkin deleted successfully')
+      } else {
+        // Create new checkin
+        console.log('Creating new checkin for KR:', krId, 'date:', today)
+        const { data, error } = await supabase
+          .from('habit_checkins')
+          .insert({ roadmap_item_id: krId, date: today, completed: true })
+          .select()
+          .single()
+        
+        if (error) {
+          console.error('Insert error:', error)
+          return
+        }
+        
+        if (data) {
+          console.log('Checkin created:', data)
+          setHabitCheckins(prev => [...prev, data])
+        }
       }
+    } catch (err) {
+      console.error('toggleHabit error:', err)
     }
   }
 
