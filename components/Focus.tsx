@@ -74,6 +74,33 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
     }
   }
 
+  async function addHabitSessionForDate(krId: string, date: string) {
+    console.log('Adding habit session for KR:', krId, 'date:', date)
+    
+    try {
+      const { data, error } = await supabase
+        .from('habit_checkins')
+        .insert({ roadmap_item_id: krId, date })
+        .select()
+        .single()
+      
+      if (error) {
+        console.error('Insert error:', error)
+        toast('Could not log session - may already exist for this date')
+        return
+      }
+      
+      if (data) {
+        console.log('Session created:', data)
+        setHabitCheckins(prev => [...prev, data])
+        toast('Session logged!')
+      }
+    } catch (err) {
+      console.error('addHabitSessionForDate error:', err)
+      toast('Error logging session')
+    }
+  }
+
   async function removeHabitSession(checkinId: string) {
     console.log('Removing habit session:', checkinId)
     
@@ -191,53 +218,95 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                   </div>
                   
                   {/* Progress bubbles */}
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    {Array.from({ length: progress.targetCount }, (_, index) => {
-                      const isCompleted = index < progress.currentCount
-                      const isNext = index === progress.currentCount && progress.currentCount < progress.targetCount
-                      const sessionForThisBubble = progress.completedSessions[index]
-                      
-                      // Debug logging
-                      console.log(`Bubble ${index} for ${kr.title}:`, {
-                        isCompleted,
-                        isNext,
-                        sessionForThisBubble,
-                        currentCount: progress.currentCount,
-                        targetCount: progress.targetCount
-                      })
-                      
-                      return (
-                        <button
-                          key={index}
-                          onClick={() => {
-                            console.log(`Clicked bubble ${index} for ${kr.title}`)
-                            if (isCompleted && sessionForThisBubble) {
-                              console.log('Removing session:', sessionForThisBubble.id)
-                              removeHabitSession(sessionForThisBubble.id)
-                            } else if (isNext) {
-                              console.log('Adding new session for KR:', kr.id)
-                              addHabitSession(kr.id)
-                            } else {
-                              console.log('Click ignored - bubble not clickable')
-                            }
-                          }}
-                          style={{
-                            width: 20,
-                            height: 20,
-                            borderRadius: '50%',
-                            background: isCompleted ? 'var(--teal)' : 'transparent',
-                            border: `2px solid ${isCompleted ? 'var(--teal)' : isNext ? 'var(--accent)' : 'var(--navy-400)'}`,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: isCompleted || isNext ? 'pointer' : 'not-allowed',
-                            flexShrink: 0,
-                            transition: 'all 0.15s',
-                            position: 'relative',
-                            opacity: isCompleted || isNext ? 1 : 0.5
-                          }}
-                          disabled={!isCompleted && !isNext}
-                        >
+                  {/* Weekly daily checkboxes */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 500 }}>
+                        This Week
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                        {progress.displayText}
+                      </div>
+                    </div>
+                    
+                    {/* Days of the week */}
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayLabel, dayIndex) => {
+                        const date = new Date(weekStart)
+                        date.setDate(date.getDate() + dayIndex)
+                        const dateStr = date.toISOString().split('T')[0]
+                        
+                        // Check if there's a session for this day
+                        const hasSession = progress.completedSessions.some(session => session.date === dateStr)
+                        const isToday = dateStr === today
+                        const isPastDay = date < new Date(today)
+                        const isFutureDay = date > new Date(today)
+                        
+                        return (
+                          <div key={dayIndex} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
+                            {/* Day label */}
+                            <div style={{ 
+                              fontSize: 9, 
+                              color: isToday ? 'var(--accent)' : 'var(--navy-400)', 
+                              fontWeight: isToday ? 600 : 400,
+                              textTransform: 'uppercase',
+                              letterSpacing: '0.5px'
+                            }}>
+                              {dayLabel}
+                            </div>
+                            
+                            {/* Day checkbox */}
+                            <button
+                              onClick={() => {
+                                console.log(`Clicked ${dayLabel} (${dateStr}) for ${kr.title}`)
+                                if (hasSession) {
+                                  // Remove session for this day
+                                  const sessionToRemove = progress.completedSessions.find(s => s.date === dateStr)
+                                  if (sessionToRemove) {
+                                    console.log('Removing session:', sessionToRemove.id)
+                                    removeHabitSession(sessionToRemove.id)
+                                  }
+                                } else {
+                                  // Add session for this day
+                                  console.log('Adding session for date:', dateStr)
+                                  addHabitSessionForDate(kr.id, dateStr)
+                                }
+                              }}
+                              disabled={isFutureDay}
+                              style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: 4,
+                                background: hasSession ? 'var(--teal)' : 'transparent',
+                                border: `1.5px solid ${hasSession ? 'var(--teal)' : isToday ? 'var(--accent)' : 'var(--navy-500)'}`,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                cursor: isFutureDay ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.15s',
+                                opacity: isFutureDay ? 0.3 : 1
+                              }}
+                            >
+                              {hasSession && (
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                  <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                                </svg>
+                              )}
+                            </button>
+                            
+                            {/* Date number */}
+                            <div style={{ 
+                              fontSize: 9, 
+                              color: 'var(--navy-500)',
+                              fontWeight: 400
+                            }}>
+                              {date.getDate()}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
                           {isCompleted && (
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
                               <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
