@@ -360,7 +360,6 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
   toast: (m: string) => void
 }) {
   const [title, setTitle] = useState(kr.title)
-  const [description, setDescription] = useState(kr.description || '')
   const [healthStatus, setHealthStatus] = useState(kr.health_status)
   const [status, setStatus] = useState(kr.status)
   const [saving, setSaving] = useState(false)
@@ -372,7 +371,6 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
     try {
       const updatedKR = {
         title: title.trim(),
-        description: description.trim() || null,
         health_status: healthStatus,
         status: status
       }
@@ -416,17 +414,6 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           onChange={e => setTitle(e.target.value)} 
           autoFocus
           placeholder="e.g. Lose 20 lbs" 
-        />
-      </div>
-      
-      <div className="field">
-        <label>Description (optional)</label>
-        <textarea 
-          className="input" 
-          rows={3} 
-          value={description} 
-          onChange={e => setDescription(e.target.value)} 
-          placeholder="Any additional details..." 
         />
       </div>
 
