@@ -19,27 +19,59 @@ export function parseHabitPattern(title: string): {
 } {
   const titleLower = title.toLowerCase()
   
-  // Daily habits: "exercise daily", "babel every day"
-  const dailyMatch = titleLower.match(/(daily|every day|each day)/i)
-  if (dailyMatch) {
-    return {
-      mode: 'daily',
-      target: 1,
-      showInFocus: true
+  // Monthly patterns first (these should NOT show in Focus)
+  const monthlyPatterns = [
+    /(\d+)\s*(books?|articles?|posts?|videos?)\s*(per\s*month|monthly)/i,
+    /(\d+)\s*(per\s*month|monthly)/i
+  ]
+  
+  for (const pattern of monthlyPatterns) {
+    const match = titleLower.match(pattern)
+    if (match) {
+      return {
+        mode: 'monthly_count',
+        target: parseInt(match[1]),
+        showInFocus: false
+      }
     }
   }
   
-  // Weekly count: "exercise 4x per week", "gym 3 times per week"
-  const weeklyCountMatch = titleLower.match(/(\d+)x?\s*(per\s*week|weekly|times?\s*per\s*week)/i)
-  if (weeklyCountMatch) {
-    return {
-      mode: 'weekly_count',
-      target: parseInt(weeklyCountMatch[1]),
-      showInFocus: true
+  // Daily habits
+  const dailyPatterns = [
+    /(daily|every day|each day)/i,
+    /(\d+)x?\s*(daily|every day|each day)/i
+  ]
+  
+  for (const pattern of dailyPatterns) {
+    const match = titleLower.match(pattern)
+    if (match) {
+      return {
+        mode: 'daily',
+        target: 1,
+        showInFocus: true
+      }
     }
   }
   
-  // Weekly percentage: "eat clean 80% each week"
+  // Weekly count: "4x per week", "3 times per week", "cardio 3xweek"
+  const weeklyCountPatterns = [
+    /(\d+)x\s*(per\s*week|weekly|week)/i,
+    /(\d+)\s*times?\s*(per\s*week|weekly)/i,
+    /(\d+)\s*(per\s*week|weekly)/i
+  ]
+  
+  for (const pattern of weeklyCountPatterns) {
+    const match = titleLower.match(pattern)
+    if (match) {
+      return {
+        mode: 'weekly_count',
+        target: parseInt(match[1]),
+        showInFocus: true
+      }
+    }
+  }
+  
+  // Weekly percentage: "80% each week"
   const weeklyPercentMatch = titleLower.match(/(\d+)%\s*(each\s*week|weekly|per\s*week)/i)
   if (weeklyPercentMatch) {
     return {
@@ -49,17 +81,7 @@ export function parseHabitPattern(title: string): {
     }
   }
   
-  // Monthly count: "write 3 articles per month" - NOT shown in Focus
-  const monthlyCountMatch = titleLower.match(/(\d+)\s*(per\s*month|monthly|times?\s*per\s*month)/i)
-  if (monthlyCountMatch) {
-    return {
-      mode: 'monthly_count',
-      target: parseInt(monthlyCountMatch[1]),
-      showInFocus: false
-    }
-  }
-  
-  // Default: if marked as habit but no pattern, treat as daily
+  // Default: if marked as habit but no pattern detected, treat as daily
   return {
     mode: 'daily',
     target: 1,
@@ -112,14 +134,15 @@ export function calculateHabitProgress(
     case 'weekly_count':
       if (currentCount >= targetCount) {
         status = 'ahead'
+        displayText = `${currentCount}/${targetCount} this week (Complete!)`
       } else {
         // Check if still on track for weekly target
         const now = new Date()
         const daysIntoWeek = Math.floor((now.getTime() - weekStartDate.getTime()) / (1000 * 60 * 60 * 24)) + 1
         const expectedByNow = (targetCount * daysIntoWeek) / 7
         status = currentCount >= expectedByNow - 1 ? 'on_track' : 'off_track'
+        displayText = `${currentCount}/${targetCount} this week`
       }
-      displayText = `${currentCount}/${targetCount} this week`
       break
       
     case 'weekly_percentage':
@@ -130,7 +153,7 @@ export function calculateHabitProgress(
       } else if (currentPercentage < targetCount - 15) {
         status = 'off_track'
       }
-      displayText = `${currentCount}/${daysInWeek} days (${currentPercentage}%)`
+      displayText = `${currentCount}/${daysInWeek} days this week (${currentPercentage}%)`
       break
       
     case 'monthly_count':
