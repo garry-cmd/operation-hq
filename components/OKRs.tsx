@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { COLORS } from '@/lib/utils'
+import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
 import ObjectiveCard from './ObjectiveCard'
 import GuidedObjectiveBuilder from './GuidedObjectiveBuilder'
 import Modal from './Modal'
@@ -22,10 +23,12 @@ type Props = {
   onAddLog: (log: ObjectiveLog) => void
   onDeleteLog: (id: string) => void
   activeSpaceId: string
+  habitCheckins: HabitCheckin[]
+  metricCheckins: MetricCheckin[]
   toast: (m: string) => void
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, toast }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast }: Props) {
   const [modal, setModal] = useState<'smart' | 'manual' | null>(null)
   
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
@@ -80,6 +83,88 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
           </div>
         ))}
       </div>
+
+      {/* KPI Dashboard */}
+      {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => kr.metric_type).length > 0) && (
+        <div style={{ marginBottom: 20 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: '0 0 12px 0' }}>Key metrics (last 4 weeks)</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+            {/* Habit KPIs */}
+            {activeKRs
+              .filter(kr => kr.is_habit)
+              .map(kr => {
+                const aggregate = calculateRollingAggregate(kr, habitCheckins, 4)
+                let status = 'poor'
+                if (aggregate.percent >= 80) status = 'good'
+                else if (aggregate.percent >= 50) status = 'okay'
+                
+                return (
+                  <div key={kr.id} style={{ 
+                    background: 'var(--navy-800)', 
+                    border: '1px solid var(--navy-600)', 
+                    borderLeft: `3px solid ${status === 'good' ? 'var(--teal)' : status === 'okay' ? 'var(--accent)' : 'var(--red)'}`,
+                    borderRadius: 8, 
+                    padding: '14px 16px' 
+                  }}>
+                    <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {kr.title}
+                    </p>
+                    <p style={{ fontSize: 22, fontWeight: 500, color: 'var(--navy-50)', margin: '0 0 3px 0' }}>
+                      {aggregate.percent}%
+                    </p>
+                    <div style={{ fontSize: 11, color: 'var(--navy-500)', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span>{aggregate.sessions}/{aggregate.expected} sessions</span>
+                    </div>
+                  </div>
+                )
+              })}
+
+            {/* Metric KPIs */}
+            {activeKRs
+              .filter(kr => (kr as any).metric_type)
+              .map(kr => {
+                const metricKR = kr as any
+                const aggregate = calculateMetricAggregate(kr, metricCheckins, 4)
+                let status = 'okay'
+                if (Math.abs(aggregate.change) > 0) {
+                  status = aggregate.trend === 'up' ? 'good' : 'poor'
+                }
+                
+                const formatValue = (value: number) => {
+                  if (metricKR.metric_type === 'weight') return `${value} lbs`
+                  if (metricKR.metric_type === 'net_worth') return `$${Math.round(value / 1000)}K`
+                  if (metricKR.metric_type === 'revenue') return `$${value.toLocaleString()}`
+                  return value.toString()
+                }
+                
+                return (
+                  <div key={kr.id} style={{ 
+                    background: 'var(--navy-800)', 
+                    border: '1px solid var(--navy-600)', 
+                    borderLeft: `3px solid ${status === 'good' ? 'var(--teal)' : status === 'okay' ? 'var(--accent)' : 'var(--red)'}`,
+                    borderRadius: 8, 
+                    padding: '14px 16px' 
+                  }}>
+                    <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {kr.title}
+                    </p>
+                    <p style={{ fontSize: 20, fontWeight: 500, color: 'var(--navy-50)', margin: '0 0 3px 0' }}>
+                      {formatValue(aggregate.currentValue)}
+                    </p>
+                    <div style={{ fontSize: 11, color: 'var(--navy-500)', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ color: aggregate.trend === 'up' ? 'var(--teal)' : aggregate.trend === 'down' ? 'var(--red)' : 'var(--navy-500)' }}>
+                        {aggregate.trend === 'up' ? '↑' : aggregate.trend === 'down' ? '↓' : '→'}
+                      </span>
+                      <span>
+                        {aggregate.change > 0 ? '+' : ''}{formatValue(aggregate.change)} last 4w
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
 
       {activeKRs.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>

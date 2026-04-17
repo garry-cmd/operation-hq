@@ -1,4 +1,4 @@
-import { HabitCheckin, RoadmapItem } from './types'
+import { HabitCheckin, RoadmapItem, MetricCheckin, MetricKR } from './types'
 
 export interface HabitProgress {
   currentCount: number
@@ -184,10 +184,70 @@ export interface HabitAggregate {
   weeks: number
 }
 
+export interface MetricAggregate {
+  currentValue: number
+  previousValue: number | null
+  change: number
+  changePercent: number
+  trend: 'up' | 'down' | 'flat'
+  weeks: number
+}
+
+export function calculateMetricAggregate(
+  kr: RoadmapItem,
+  checkins: MetricCheckin[],
+  weeks: number = 4
+): MetricAggregate {
+  const krCheckins = checkins
+    .filter(c => c.roadmap_item_id === kr.id)
+    .sort((a, b) => new Date(b.week_start).getTime() - new Date(a.week_start).getTime())
+
+  if (krCheckins.length === 0) {
+    return {
+      currentValue: 0,
+      previousValue: null,
+      change: 0,
+      changePercent: 0,
+      trend: 'flat',
+      weeks
+    }
+  }
+
+  const currentValue = krCheckins[0].value
+
+  // Find value from N weeks ago
+  const weeksAgoDate = new Date()
+  weeksAgoDate.setDate(weeksAgoDate.getDate() - (weeks * 7))
+  const weeksAgoStr = weeksAgoDate.toISOString().split('T')[0]
+
+  // Find closest previous value
+  const previousCheckin = krCheckins.find(c => c.week_start <= weeksAgoStr)
+  const previousValue = previousCheckin?.value || null
+
+  const change = previousValue !== null ? currentValue - previousValue : 0
+  const changePercent = previousValue !== null && previousValue !== 0 
+    ? Math.round((change / Math.abs(previousValue)) * 100)
+    : 0
+
+  let trend: 'up' | 'down' | 'flat' = 'flat'
+  if (Math.abs(change) > 0.01) {
+    trend = change > 0 ? 'up' : 'down'
+  }
+
+  return {
+    currentValue,
+    previousValue,
+    change,
+    changePercent,
+    trend,
+    weeks
+  }
+}
+
 export function calculateRollingAggregate(
   kr: RoadmapItem,
   checkins: HabitCheckin[],
-  weeks: number = 8
+  weeks: number = 4
 ): HabitAggregate {
   const pattern = parseHabitPattern(kr.title)
 

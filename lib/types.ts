@@ -93,3 +93,18 @@ export interface HabitCheckin {
   notes?: string
   created_at: string
 }
+
+export interface MetricCheckin {
+  id: string
+  roadmap_item_id: string
+  week_start: string
+  value: number
+  created_at: string
+}
+
+export interface MetricKR extends RoadmapItem {
+  metric_type: 'weight' | 'net_worth' | 'revenue' | 'custom'
+  target_value?: number
+  target_date?: string
+  unit?: string
+}

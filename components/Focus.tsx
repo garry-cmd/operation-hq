@@ -7,7 +7,7 @@ import { calculateHabitProgress, calculateRollingAggregate, getToday, formatDate
 
 // Rolling window used for the per-habit aggregate shown next to each habit title.
 // Bump this if you want a longer/shorter lookback.
-const AGGREGATE_WEEKS = 8
+const AGGREGATE_WEEKS = 4
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
 

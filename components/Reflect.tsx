@@ -1,7 +1,7 @@
 'use client'
-import { useState } from 'react'
+import React, { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, DailyCheckin, WeeklyReview, CheckinStatus, ReviewRating, HealthStatus } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, DailyCheckin, WeeklyReview, CheckinStatus, ReviewRating, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q, formatWeek, formatDate } from '@/lib/utils'
 import StatusPill from './StatusPill'
 
@@ -15,12 +15,14 @@ type Props = {
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   weekStart: string
   activeSpaceId: string
+  metricCheckins: MetricCheckin[]
+  setMetricCheckins: (fn: (p: MetricCheckin[]) => MetricCheckin[]) => void
   toast: (m: string) => void
 }
 
 type Tab = 'review' | 'history'
 
-export default function Reflect({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, toast }: Props) {
+export default function Reflect({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, metricCheckins, setMetricCheckins, toast }: Props) {
   const [tab, setTab] = useState<Tab>('review')
   
   const TABS: { id: Tab; label: string }[] = [
@@ -54,7 +56,9 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
           reviews={reviews} 
           setReviews={setReviews} 
           weekStart={weekStart} 
-          activeSpaceId={activeSpaceId} 
+          activeSpaceId={activeSpaceId}
+          metricCheckins={metricCheckins}
+          setMetricCheckins={setMetricCheckins}
           toast={toast} 
         />
       )}
@@ -64,7 +68,7 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
 }
 
 // Workflow-based weekly review: Habits → Actions → Outcomes → Reflection
-function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, toast }: Props) {
+function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, metricCheckins, setMetricCheckins, toast }: Props) {
   const existing = reviews.find(r => r.week_start === weekStart)
   const [rating, setRating] = useState<ReviewRating>(existing?.rating ?? 'steady')
   const [win, setWin] = useState(existing?.win ?? '')
@@ -72,9 +76,69 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
   const [adjustNotes, setAdjustNotes] = useState(existing?.adjust_notes ?? '')
   const [saving, setSaving] = useState(false)
 
+  // Metric entry state
+  const [metricValues, setMetricValues] = useState<Record<string, string>>({})
+  const [savingMetrics, setSavingMetrics] = useState(false)
+
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
-  const outcomeKRs = activeKRs.filter(kr => !kr.is_habit)
+  const metricKRs = activeKRs.filter(kr => (kr as any).metric_type)
+  const outcomeKRs = activeKRs.filter(kr => !kr.is_habit && !(kr as any).metric_type)
+
+  // Get current metric values for this week
+  React.useEffect(() => {
+    const currentValues: Record<string, string> = {}
+    metricKRs.forEach(kr => {
+      const existingCheckin = metricCheckins.find(c => c.roadmap_item_id === kr.id && c.week_start === weekStart)
+      if (existingCheckin) {
+        currentValues[kr.id] = existingCheckin.value.toString()
+      }
+    })
+    setMetricValues(currentValues)
+  }, [metricKRs, metricCheckins, weekStart])
+
+  async function saveMetrics() {
+    setSavingMetrics(true)
+    try {
+      for (const kr of metricKRs) {
+        const value = parseFloat(metricValues[kr.id])
+        if (isNaN(value)) continue
+
+        const existingCheckin = metricCheckins.find(c => c.roadmap_item_id === kr.id && c.week_start === weekStart)
+        
+        if (existingCheckin) {
+          // Update existing
+          const { error } = await supabase
+            .from('metric_checkins')
+            .update({ value })
+            .eq('id', existingCheckin.id)
+          if (error) throw error
+          
+          setMetricCheckins(prev => prev.map(c => 
+            c.id === existingCheckin.id ? { ...c, value } : c
+          ))
+        } else {
+          // Create new
+          const { data, error } = await supabase
+            .from('metric_checkins')
+            .insert({ roadmap_item_id: kr.id, week_start: weekStart, value })
+            .select()
+            .single()
+          if (error) throw error
+          
+          if (data) {
+            setMetricCheckins(prev => [data, ...prev])
+          }
+        }
+      }
+      
+      setSavingMetrics(false)
+      toast('Metrics updated ✓')
+    } catch (error) {
+      setSavingMetrics(false)
+      toast('Error saving metrics')
+    }
+  }
   
   // Get this week's habit performance from Focus tab data
   const weekStartDate = new Date(weekStart)
@@ -412,7 +476,105 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
         </div>
       )}
 
-      {/* 4. Weekly Reflection */}
+      {/* 4. Update Metrics */}
+      {metricKRs.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: 0 }}>
+              📊 Update Metrics
+            </h3>
+            <button
+              onClick={saveMetrics}
+              disabled={savingMetrics}
+              style={{
+                padding: '6px 12px',
+                fontSize: 11,
+                borderRadius: 6,
+                border: 'none',
+                cursor: 'pointer',
+                background: 'var(--accent)',
+                color: '#fff',
+                opacity: savingMetrics ? 0.6 : 1
+              }}
+            >
+              {savingMetrics ? 'Saving...' : 'Save Metrics'}
+            </button>
+          </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {metricKRs.map(kr => {
+              const metricKR = kr as any
+              const obj = objectives.find(o => o.id === kr.annual_objective_id)
+              const lastCheckin = metricCheckins
+                .filter(c => c.roadmap_item_id === kr.id)
+                .sort((a, b) => new Date(b.week_start).getTime() - new Date(a.week_start).getTime())[0]
+              
+              const getPlaceholder = () => {
+                if (metricKR.metric_type === 'weight') return '195'
+                if (metricKR.metric_type === 'net_worth') return '850000'
+                if (metricKR.metric_type === 'revenue') return '2400'
+                return ''
+              }
+              
+              const getUnit = () => {
+                if (metricKR.metric_type === 'weight') return 'lbs'
+                if (metricKR.metric_type === 'net_worth') return '$'
+                if (metricKR.metric_type === 'revenue') return '$'
+                return ''
+              }
+              
+              return (
+                <div key={kr.id} style={{
+                  background: 'var(--navy-700)',
+                  border: '1px solid var(--navy-600)',
+                  borderRadius: 8,
+                  padding: 16
+                }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', marginBottom: 2 }}>
+                      {kr.title}
+                    </div>
+                    {obj && (
+                      <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                        {obj.name}
+                      </div>
+                    )}
+                    {lastCheckin && (
+                      <div style={{ fontSize: 11, color: 'var(--navy-500)', marginTop: 4 }}>
+                        Last: {getUnit()}{lastCheckin.value.toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+                      {getUnit()}
+                    </span>
+                    <input
+                      type="number"
+                      value={metricValues[kr.id] || ''}
+                      onChange={e => setMetricValues(prev => ({ ...prev, [kr.id]: e.target.value }))}
+                      placeholder={getPlaceholder()}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        fontSize: 13,
+                        borderRadius: 6,
+                        border: '1px solid var(--navy-600)',
+                        background: 'var(--navy-800)',
+                        color: 'var(--navy-50)',
+                        outline: 'none'
+                      }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 5. Weekly Reflection */}
       <div>
         <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
           💭 Weekly Reflection
