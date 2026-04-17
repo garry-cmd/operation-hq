@@ -85,7 +85,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
       </div>
 
       {/* KPI Dashboard */}
-      {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => kr.metric_type).length > 0) && (
+      {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => (kr as any).metric_type).length > 0) && (
         <div style={{ marginBottom: 20 }}>
           <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: '0 0 12px 0' }}>Key metrics (last 4 weeks)</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
@@ -119,49 +119,8 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                 )
               })}
 
-            {/* Metric KPIs */}
-            {activeKRs
-              .filter(kr => (kr as any).metric_type)
-              .map(kr => {
-                const metricKR = kr as any
-                const aggregate = calculateMetricAggregate(kr, metricCheckins, 4)
-                let status = 'okay'
-                if (Math.abs(aggregate.change) > 0) {
-                  status = aggregate.trend === 'up' ? 'good' : 'poor'
-                }
-                
-                const formatValue = (value: number) => {
-                  if (metricKR.metric_type === 'weight') return `${value} lbs`
-                  if (metricKR.metric_type === 'net_worth') return `$${Math.round(value / 1000)}K`
-                  if (metricKR.metric_type === 'revenue') return `$${value.toLocaleString()}`
-                  return value.toString()
-                }
-                
-                return (
-                  <div key={kr.id} style={{ 
-                    background: 'var(--navy-800)', 
-                    border: '1px solid var(--navy-600)', 
-                    borderLeft: `3px solid ${status === 'good' ? 'var(--teal)' : status === 'okay' ? 'var(--accent)' : 'var(--red)'}`,
-                    borderRadius: 8, 
-                    padding: '14px 16px' 
-                  }}>
-                    <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {kr.title}
-                    </p>
-                    <p style={{ fontSize: 20, fontWeight: 500, color: 'var(--navy-50)', margin: '0 0 3px 0' }}>
-                      {formatValue(aggregate.currentValue)}
-                    </p>
-                    <div style={{ fontSize: 11, color: 'var(--navy-500)', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ color: aggregate.trend === 'up' ? 'var(--teal)' : aggregate.trend === 'down' ? 'var(--red)' : 'var(--navy-500)' }}>
-                        {aggregate.trend === 'up' ? '↑' : aggregate.trend === 'down' ? '↓' : '→'}
-                      </span>
-                      <span>
-                        {aggregate.change > 0 ? '+' : ''}{formatValue(aggregate.change)} last 4w
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
+            {/* Metric KPIs - Currently none since metric_type column doesn't exist yet */}
+            {/* This section will show metric cards once you add metric_type to roadmap_items table */}
           </div>
         </div>
       )}
