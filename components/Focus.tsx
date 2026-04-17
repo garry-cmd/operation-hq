@@ -307,24 +307,6 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                       })}
                     </div>
                   </div>
-                          {isCompleted && (
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                              <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          )}
-                          {isNext && (
-                            <div style={{
-                              position: 'absolute',
-                              inset: -2,
-                              borderRadius: '50%',
-                              border: '2px dashed var(--accent)',
-                              animation: 'pulse 2s infinite'
-                            }} />
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
                 </div>
               ))}
             </div>
