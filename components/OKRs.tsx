@@ -31,6 +31,7 @@ type Props = {
 export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast }: Props) {
   const [modal, setModal] = useState<'smart' | 'manual' | null>(null)
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
+  const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
   
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
@@ -51,6 +52,34 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
     } catch (err) {
       console.error('deleteKR error:', err)
       toast('Failed to delete KR')
+    }
+  }
+
+  async function deleteObjective(id: string) {
+    try {
+      // First delete all KRs for this objective
+      const { error: krError } = await supabase.from('roadmap_items').delete().eq('annual_objective_id', id)
+      if (krError) {
+        console.error('Delete objective KRs error:', krError)
+        toast('Failed to delete objective - could not remove key results')
+        return
+      }
+      
+      // Then delete the objective
+      const { error: objError } = await supabase.from('annual_objectives').delete().eq('id', id)
+      if (objError) {
+        console.error('Delete objective error:', objError)
+        toast('Failed to delete objective')
+        return
+      }
+      
+      // Update local state
+      setRoadmapItems(prev => prev.filter(kr => kr.annual_objective_id !== id))
+      setObjectives(prev => prev.filter(obj => obj.id !== id))
+      toast('Objective deleted')
+    } catch (err) {
+      console.error('deleteObjective error:', err)
+      toast('Failed to delete objective')
     }
   }
 
@@ -172,6 +201,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               onAddLog={onAddLog}
               onDeleteLog={onDeleteLog}
               onEditKR={setEditingKR}
+              onEditObjective={setEditingObjective}
               toast={toast}
             />
           )
@@ -242,6 +272,35 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
           onDelete={() => {
             deleteKR(editingKR.id)
             setEditingKR(null)
+          }}
+          toast={toast}
+        />
+      )}
+
+      {editingObjective && (
+        <EditObjectiveModal
+          objective={editingObjective}
+          onClose={() => setEditingObjective(null)}
+          onSave={async (updatedObjective) => {
+            try {
+              const { error } = await supabase.from('annual_objectives').update(updatedObjective).eq('id', editingObjective.id)
+              if (error) {
+                console.error('Update objective error:', error)
+                toast('Failed to update objective')
+                return
+              }
+              
+              setObjectives(prev => prev.map(obj => obj.id === editingObjective.id ? { ...obj, ...updatedObjective } : obj))
+              setEditingObjective(null)
+              toast('Objective updated')
+            } catch (err) {
+              console.error('updateObjective error:', err)
+              toast('Failed to update objective')
+            }
+          }}
+          onDelete={() => {
+            deleteObjective(editingObjective.id)
+            setEditingObjective(null)
           }}
           toast={toast}
         />
@@ -440,6 +499,111 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           <option value="not_started">Not Started</option>
           <option value="in_progress">In Progress</option>
           <option value="done">Done</option>
+          <option value="abandoned">Abandoned</option>
+        </select>
+      </div>
+    </Modal>
+  )
+}
+
+// Objective edit modal with delete functionality
+function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
+  objective: AnnualObjective
+  onClose: () => void
+  onSave: (obj: Partial<AnnualObjective>) => void
+  onDelete: () => void
+  toast: (m: string) => void
+}) {
+  const [name, setName] = useState(objective.name)
+  const [color, setColor] = useState(objective.color)
+  const [status, setStatus] = useState(objective.status)
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!name.trim()) return
+    setSaving(true)
+    
+    try {
+      const updatedObjective = {
+        name: name.trim(),
+        color: color,
+        status: status
+      }
+      
+      await onSave(updatedObjective)
+    } catch (error) {
+      console.error('Failed to update objective:', error)
+      toast('Failed to update objective')
+    }
+    
+    setSaving(false)
+  }
+
+  return (
+    <Modal 
+      title="✏️ Edit Objective" 
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onDelete}
+            style={{ color: 'var(--red)', marginRight: 'auto' }}
+          >
+            Delete
+          </button>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button 
+            className="btn-primary" 
+            onClick={save} 
+            disabled={saving || !name.trim()}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <label>Objective Name</label>
+        <textarea 
+          className="input" 
+          rows={3} 
+          value={name} 
+          onChange={e => setName(e.target.value)} 
+          autoFocus
+          placeholder="e.g. Get in amazing shape this year" 
+        />
+      </div>
+      
+      <div className="field">
+        <label>Color</label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {COLORS.map(c => (
+            <button 
+              key={c} 
+              onClick={() => setColor(c)}
+              style={{ 
+                width: 32, 
+                height: 32, 
+                borderRadius: '50%', 
+                background: c, 
+                border: color === c ? '3px solid var(--navy-50)' : '2px solid transparent', 
+                cursor: 'pointer', 
+                outline: color === c ? '2px solid ' + c : 'none', 
+                outlineOffset: 2 
+              }} 
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Status</label>
+        <select 
+          className="input" 
+          value={status} 
+          onChange={e => setStatus(e.target.value as any)}
+        >
+          <option value="active">Active</option>
+          <option value="completed">Completed</option>
           <option value="abandoned">Abandoned</option>
         </select>
       </div>
