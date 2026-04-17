@@ -63,7 +63,7 @@ export default function Reflect({ objectives, roadmapItems, setRoadmapItems, che
   )
 }
 
-// Consolidated weekly review with progress, check-ins, and reflection
+// Workflow-based weekly review: Habits → Actions → Outcomes → Reflection
 function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, toast }: Props) {
   const existing = reviews.find(r => r.week_start === weekStart)
   const [rating, setRating] = useState<ReviewRating>(existing?.rating ?? 'steady')
@@ -73,31 +73,45 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
   const [saving, setSaving] = useState(false)
 
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
-  const today = new Date().toISOString().slice(0, 10)
-  const todayCheckins = checkins.filter(c => c.checkin_date === today)
+  const habitKRs = activeKRs.filter(kr => kr.is_habit)
+  const outcomeKRs = activeKRs.filter(kr => !kr.is_habit)
+  
+  // Get this week's habit performance from Focus tab data
+  const weekStartDate = new Date(weekStart)
+  const weekEndDate = new Date(weekStartDate)
+  weekEndDate.setDate(weekEndDate.getDate() + 6)
+  
+  const thisWeekCheckins = checkins.filter(c => {
+    const checkinDate = new Date(c.checkin_date)
+    return checkinDate >= weekStartDate && checkinDate <= weekEndDate
+  })
 
-  async function setKRProgress(kr: RoadmapItem, progress: number) {
+  // Get incomplete actions from the week (these need review)
+  const incompleteActions = roadmapItems.filter(i => 
+    !i.is_parked && 
+    i.status !== 'abandoned' && 
+    i.status !== 'done' &&
+    !i.is_habit &&
+    i.progress < 100
+  )
+
+  async function setOutcomeProgress(kr: RoadmapItem, progress: number) {
     await supabase.from('roadmap_items').update({ progress }).eq('id', kr.id)
     setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress } : i))
     toast('Progress updated ✓')
   }
 
-  async function setKRHealth(kr: RoadmapItem, health: HealthStatus) {
-    await supabase.from('roadmap_items').update({ health_status: health }).eq('id', kr.id)
-    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, health_status: health } : i))
-    toast('Status updated ✓')
-  }
-
-  async function setTodayCheckin(krId: string, status: CheckinStatus) {
-    const existing = todayCheckins.find(c => c.roadmap_item_id === krId)
-    if (existing) {
-      await supabase.from('daily_checkins').update({ status }).eq('id', existing.id)
-      setCheckins(prev => prev.map(c => c.id === existing.id ? { ...c, status } : c))
-    } else {
-      const { data } = await supabase.from('daily_checkins').insert({ checkin_date: today, roadmap_item_id: krId, status }).select().single()
-      if (data) setCheckins(prev => [...prev, data])
+  async function handleAction(actionId: string, decision: 'keep' | 'park' | 'abandon') {
+    if (decision === 'park') {
+      await supabase.from('roadmap_items').update({ is_parked: true, quarter: null }).eq('id', actionId)
+      setRoadmapItems(prev => prev.map(i => i.id === actionId ? { ...i, is_parked: true, quarter: null } : i))
+      toast('Moved to parking lot')
+    } else if (decision === 'abandon') {
+      await supabase.from('roadmap_items').update({ status: 'abandoned' }).eq('id', actionId)
+      setRoadmapItems(prev => prev.map(i => i.id === actionId ? { ...i, status: 'abandoned' } : i))
+      toast('Action abandoned')
     }
-    toast('Check-in saved ✓')
+    // 'keep' means no change - stays active for next week
   }
 
   async function saveReview() {
@@ -131,9 +145,43 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
     { value: 'rough',  label: '😤 Rough',  color: 'var(--red)' },
   ]
 
-  const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'on_track', 'off_track', 'blocked', 'done']
-
   const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
+
+  // Calculate habit performance from Focus tab data
+  function getHabitPerformance(kr: RoadmapItem) {
+    const krCheckins = thisWeekCheckins.filter(c => c.roadmap_item_id === kr.id && c.status === 'on_track')
+    
+    // Parse habit frequency from title
+    const title = kr.title.toLowerCase()
+    
+    if (title.includes('daily') || title.includes('every day')) {
+      return {
+        completed: krCheckins.length,
+        target: 7,
+        percentage: Math.round((krCheckins.length / 7) * 100),
+        type: 'daily' as const
+      }
+    }
+    
+    const weeklyMatch = title.match(/(\d+)x?\s*(per\s*week|weekly|times?\s*per\s*week)/i)
+    if (weeklyMatch) {
+      const target = parseInt(weeklyMatch[1])
+      return {
+        completed: krCheckins.length,
+        target,
+        percentage: Math.round((krCheckins.length / target) * 100),
+        type: 'weekly' as const
+      }
+    }
+    
+    // Default to weekly 1x
+    return {
+      completed: krCheckins.length,
+      target: 1,
+      percentage: krCheckins.length >= 1 ? 100 : 0,
+      type: 'weekly' as const
+    }
+  }
 
   return (
     <div style={{ maxWidth: 600 }}>
@@ -150,32 +198,32 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
           Week of {formatWeek(weekStart)}
         </div>
         <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
-          {activeKRs.length} active key results
+          {habitKRs.length} habits · {outcomeKRs.length} outcomes · {incompleteActions.length} incomplete actions
         </div>
       </div>
 
-      {/* Key Results Progress & Status */}
+      {/* 1. Habits Review (Auto-Populated) */}
       <div style={{ marginBottom: 32 }}>
         <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
-          📊 Progress & Status Check
+          📊 This Week's Habits
         </h3>
         
-        {activeKRs.length === 0 ? (
+        {habitKRs.length === 0 ? (
           <div style={{ 
             color: 'var(--navy-400)', 
             fontSize: 14, 
             textAlign: 'center', 
-            padding: '32px 0',
+            padding: '24px 0',
             background: 'var(--navy-700)',
             borderRadius: 8
           }}>
-            No active key results to review.
+            No habit tracking this week.
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {activeKRs.map(kr => {
+            {habitKRs.map(kr => {
+              const performance = getHabitPerformance(kr)
               const obj = objectives.find(o => o.id === kr.annual_objective_id)
-              const todayCheckin = todayCheckins.find(c => c.roadmap_item_id === kr.id)
               
               return (
                 <div key={kr.id} style={{
@@ -184,7 +232,142 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
                   borderRadius: 8,
                   padding: 16
                 }}>
-                  {/* KR Title & Objective */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', marginBottom: 2 }}>
+                        {kr.title}
+                      </div>
+                      {obj && (
+                        <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                          {obj.name}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ 
+                        fontSize: 16, 
+                        fontWeight: 600, 
+                        color: performance.percentage >= 80 ? 'var(--teal-text)' : 
+                               performance.percentage >= 50 ? 'var(--amber-text)' : 'var(--red-text)'
+                      }}>
+                        {performance.completed}/{performance.target}
+                      </div>
+                      <div style={{ fontSize: 10, color: 'var(--navy-400)' }}>
+                        {performance.percentage}%
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 2. Incomplete Actions Review */}
+      {incompleteActions.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
+            🔄 Incomplete Actions
+          </h3>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {incompleteActions.map(action => {
+              const obj = objectives.find(o => o.id === action.annual_objective_id)
+              
+              return (
+                <div key={action.id} style={{
+                  background: 'var(--navy-700)',
+                  border: '1px solid var(--navy-600)',
+                  borderRadius: 8,
+                  padding: 16
+                }}>
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', marginBottom: 2 }}>
+                      {action.title}
+                    </div>
+                    {obj && (
+                      <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                        {obj.name}
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button
+                      onClick={() => handleAction(action.id, 'keep')}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        fontSize: 11,
+                        borderRadius: 4,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: 'var(--teal-bg)',
+                        color: 'var(--teal-text)',
+                        transition: 'all .15s'
+                      }}
+                    >
+                      Keep for next week
+                    </button>
+                    <button
+                      onClick={() => handleAction(action.id, 'park')}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        fontSize: 11,
+                        borderRadius: 4,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: 'var(--amber-bg)',
+                        color: 'var(--amber-text)',
+                        transition: 'all .15s'
+                      }}
+                    >
+                      Move to parking
+                    </button>
+                    <button
+                      onClick={() => handleAction(action.id, 'abandon')}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        fontSize: 11,
+                        borderRadius: 4,
+                        border: 'none',
+                        cursor: 'pointer',
+                        background: 'var(--red-bg)',
+                        color: 'var(--red-text)',
+                        transition: 'all .15s'
+                      }}
+                    >
+                      Abandon
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 3. Outcome Progress (Manual Updates) */}
+      {outcomeKRs.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
+            📈 Outcome Progress
+          </h3>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {outcomeKRs.map(kr => {
+              const obj = objectives.find(o => o.id === kr.annual_objective_id)
+              
+              return (
+                <div key={kr.id} style={{
+                  background: 'var(--navy-700)',
+                  border: '1px solid var(--navy-600)',
+                  borderRadius: 8,
+                  padding: 16
+                }}>
                   <div style={{ marginBottom: 12 }}>
                     <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', marginBottom: 2 }}>
                       {kr.title}
@@ -195,9 +378,8 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
                       </div>
                     )}
                   </div>
-
-                  {/* Progress Slider */}
-                  <div style={{ marginBottom: 12 }}>
+                  
+                  <div style={{ marginBottom: 8 }}>
                     <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 6 }}>
                       Progress: {kr.progress}%
                     </div>
@@ -205,7 +387,7 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
                       {PROGRESS_OPTIONS.map(pct => (
                         <button
                           key={pct}
-                          onClick={() => setKRProgress(kr, pct)}
+                          onClick={() => setOutcomeProgress(kr, pct)}
                           style={{
                             flex: 1,
                             padding: '6px 8px',
@@ -223,64 +405,14 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
                       ))}
                     </div>
                   </div>
-
-                  {/* Health Status */}
-                  <div style={{ marginBottom: 12 }}>
-                    <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 6 }}>
-                      Weekly Status
-                    </div>
-                    <button
-                      onClick={() => {
-                        const currentIndex = HEALTH_CYCLE.indexOf(kr.health_status)
-                        const nextStatus = HEALTH_CYCLE[(currentIndex + 1) % HEALTH_CYCLE.length]
-                        setKRHealth(kr, nextStatus)
-                      }}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        cursor: 'pointer',
-                        padding: 0
-                      }}
-                    >
-                      <StatusPill status={kr.health_status} />
-                    </button>
-                  </div>
-
-                  {/* Today's Check-in */}
-                  <div>
-                    <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 6 }}>
-                      Today's Check-in
-                    </div>
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      {(['on_track', 'off_track', 'blocked'] as CheckinStatus[]).map(status => (
-                        <button
-                          key={status}
-                          onClick={() => setTodayCheckin(kr.id, status)}
-                          style={{
-                            flex: 1,
-                            padding: '4px 8px',
-                            fontSize: 10,
-                            borderRadius: 4,
-                            border: 'none',
-                            cursor: 'pointer',
-                            background: todayCheckin?.status === status ? 'var(--accent)' : 'var(--navy-600)',
-                            color: todayCheckin?.status === status ? '#fff' : 'var(--navy-300)',
-                            transition: 'all .15s'
-                          }}
-                        >
-                          {status.replace('_', ' ')}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
                 </div>
               )
             })}
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
-      {/* Weekly Reflection */}
+      {/* 4. Weekly Reflection */}
       <div>
         <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
           💭 Weekly Reflection
