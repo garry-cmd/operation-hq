@@ -160,7 +160,8 @@ Otherwise, continue the conversation naturally by asking questions or providing 
           health_status: 'not_started' as const,
           progress: 0,
           is_parked: false,
-          is_habit: kr.isHabit
+          is_habit: kr.isHabit,
+          created_at: new Date().toISOString()
         }))
 
         if (keyResultsToInsert.length > 0) {
