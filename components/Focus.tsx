@@ -202,12 +202,13 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                           key={index}
                           onClick={() => {
                             if (isCompleted && sessionForThisBubble) {
-                              // Remove this session
+                              // Remove this specific session
                               removeHabitSession(sessionForThisBubble.id)
-                            } else if (!isCompleted) {
-                              // Add new session
+                            } else if (isNext) {
+                              // Only allow adding the next session in sequence
                               addHabitSession(kr.id)
                             }
+                            // For bubbles beyond the next one, do nothing (can't skip ahead)
                           }}
                           style={{
                             width: 20,
@@ -218,11 +219,13 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            cursor: 'pointer',
+                            cursor: isCompleted || isNext ? 'pointer' : 'not-allowed',
                             flexShrink: 0,
                             transition: 'all 0.15s',
-                            position: 'relative'
+                            position: 'relative',
+                            opacity: isCompleted || isNext ? 1 : 0.5
                           }}
+                          disabled={!isCompleted && !isNext}
                         >
                           {isCompleted && (
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
