@@ -231,28 +231,28 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         .map(obj => {
           const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
           return (
-            <div key={obj.id} style={{ marginBottom: 20 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: 'var(--navy-200)' }}>
-                  {obj.name}
-                </h3>
-                <button 
-                  onClick={() => setEditingObjective(obj)}
-                  style={{ 
-                    background: 'none', 
-                    border: 'none', 
-                    color: 'var(--navy-400)', 
-                    cursor: 'pointer', 
-                    fontSize: 14, 
-                    padding: '4px 8px',
-                    borderRadius: 4
-                  }}
-                  title="Edit objective"
-                >
-                  <EditIcon size={16} />
-                </button>
-              </div>
-
+            <div key={obj.id} style={{ marginBottom: 20, position: 'relative' }}>
+              {/* Edit button positioned over ObjectiveCard */}
+              <button 
+                onClick={() => setEditingObjective(obj)}
+                style={{ 
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  zIndex: 10,
+                  background: 'var(--navy-700)', 
+                  border: '1px solid var(--navy-600)', 
+                  color: 'var(--navy-400)', 
+                  cursor: 'pointer', 
+                  fontSize: 14, 
+                  padding: '6px 8px',
+                  borderRadius: 6
+                }}
+                title="Edit objective"
+              >
+                <EditIcon size={16} />
+              </button>
+              
               <ObjectiveCard
                 obj={obj}
                 krs={objKRs}
