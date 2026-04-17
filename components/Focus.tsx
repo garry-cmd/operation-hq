@@ -218,19 +218,10 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                   </div>
                   
                   {/* Progress bubbles */}
-                  {/* Weekly daily checkboxes */}
+                  {/* Weekly daily bubbles */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 500 }}>
-                        This Week
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
-                        {progress.displayText}
-                      </div>
-                    </div>
-                    
                     {/* Days of the week */}
-                    <div style={{ display: 'flex', gap: 4 }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayLabel, dayIndex) => {
                         const date = new Date(weekStart)
                         date.setDate(date.getDate() + dayIndex)
@@ -243,7 +234,7 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                         const isFutureDay = date > new Date(today)
                         
                         return (
-                          <div key={dayIndex} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flex: 1 }}>
+                          <div key={dayIndex} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flex: 1 }}>
                             {/* Day label */}
                             <div style={{ 
                               fontSize: 9, 
@@ -255,7 +246,7 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                               {dayLabel}
                             </div>
                             
-                            {/* Day checkbox */}
+                            {/* Day bubble */}
                             <button
                               onClick={() => {
                                 console.log(`Clicked ${dayLabel} (${dateStr}) for ${kr.title}`)
@@ -274,34 +265,26 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                               }}
                               disabled={isFutureDay}
                               style={{
-                                width: 24,
-                                height: 24,
-                                borderRadius: 4,
+                                width: 22,
+                                height: 22,
+                                borderRadius: '50%', // BUBBLE!
                                 background: hasSession ? 'var(--teal)' : 'transparent',
-                                border: `1.5px solid ${hasSession ? 'var(--teal)' : isToday ? 'var(--accent)' : 'var(--navy-500)'}`,
+                                border: `2px solid ${hasSession ? 'var(--teal)' : isToday ? 'var(--accent)' : 'var(--navy-500)'}`,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
                                 cursor: isFutureDay ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.15s',
-                                opacity: isFutureDay ? 0.3 : 1
+                                opacity: isFutureDay ? 0.3 : 1,
+                                flexShrink: 0
                               }}
                             >
                               {hasSession && (
-                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none">
+                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
                                   <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                                 </svg>
                               )}
                             </button>
-                            
-                            {/* Date number */}
-                            <div style={{ 
-                              fontSize: 9, 
-                              color: 'var(--navy-500)',
-                              fontWeight: 400
-                            }}>
-                              {date.getDate()}
-                            </div>
                           </div>
                         )
                       })}
