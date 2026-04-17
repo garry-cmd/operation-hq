@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { getMonday, ACTIVE_Q } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -36,6 +36,7 @@ export default function HQPage() {
   const [actions, setActions] = useState<WeeklyAction[]>([])
   const [checkins, setCheckins] = useState<DailyCheckin[]>([])
   const [habitCheckins, setHabitCheckins] = useState<HabitCheckin[]>([])
+  const [metricCheckins, setMetricCheckins] = useState<MetricCheckin[]>([])
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
@@ -79,12 +80,13 @@ export default function HQPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
-    const [o, r, a, ci, hc, rv, lk, lg, sp, st] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st] = await Promise.all([
       supabase.from('annual_objectives').select('*').order('sort_order'),
       supabase.from('roadmap_items').select('*').order('sort_order'),
       supabase.from('weekly_actions').select('*').order('created_at'),
       supabase.from('daily_checkins').select('*').order('checkin_date', { ascending: false }),
       supabase.from('habit_checkins').select('*').order('date', { ascending: false }),
+      supabase.from('metric_checkins').select('*').order('created_at', { ascending: false }),
       supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
       supabase.from('objective_links').select('*').order('sort_order'),
       supabase.from('objective_logs').select('*').order('created_at', { ascending: false }),
@@ -96,6 +98,7 @@ export default function HQPage() {
     setActions(a.data ?? [])
     setCheckins(ci.data ?? [])
     setHabitCheckins(hc.data ?? [])
+    setMetricCheckins(mc.data ?? [])
     setReviews(rv.data ?? [])
     setLinks(lk.data ?? [])
     setLogs(lg.data ?? [])
@@ -148,6 +151,7 @@ export default function HQPage() {
   const spaceActions = actions.filter(a => spaceRoadmapItemIds.has(a.roadmap_item_id))
   const spaceCheckins = checkins.filter(c => spaceRoadmapItemIds.has(c.roadmap_item_id))
   const spaceHabitCheckins = habitCheckins.filter(h => spaceRoadmapItemIds.has(h.roadmap_item_id))
+  const spaceMetricCheckins = metricCheckins.filter(m => spaceRoadmapItemIds.has(m.roadmap_item_id))
   const spaceLinks = links.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceLogs = logs.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
@@ -245,10 +249,10 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
-            {screen === 'reflect' && <Reflect objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} checkins={spaceCheckins} setCheckins={setCheckins} reviews={spaceReviews} setReviews={setReviews} weekStart={weekStart} activeSpaceId={activeSpaceId} toast={setToast} />}
+            {screen === 'reflect' && <Reflect objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} checkins={spaceCheckins} setCheckins={setCheckins} reviews={spaceReviews} setReviews={setReviews} weekStart={weekStart} activeSpaceId={activeSpaceId} metricCheckins={spaceMetricCheckins} setMetricCheckins={setMetricCheckins} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
