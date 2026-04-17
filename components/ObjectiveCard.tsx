@@ -51,6 +51,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const [editKR, setEditKR] = useState<RoadmapItem | null>(null)
   const [addingKR, setAddingKR] = useState(false)
   const [newKRTitle, setNewKRTitle] = useState('')
+  const [newKRIsHabit, setNewKRIsHabit] = useState(false)
   const [savingKR, setSavingKR] = useState(false)
   const [addingActionKRId, setAddingActionKRId] = useState<string | null>(null)
   const [newActionTitle, setNewActionTitle] = useState('')
@@ -135,11 +136,13 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
         sort_order: count ?? 0,
         health_status: 'not_started',
         progress: 0,
+        is_habit: newKRIsHabit,
       })
       .select().single()
     if (data) {
       setRoadmapItems(prev => [...prev, data])
       setNewKRTitle('')
+      setNewKRIsHabit(false)
       setAddingKR(false)
       toast('Key result added.')
     }
@@ -299,15 +302,24 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
               onChange={e => setNewKRTitle(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) addKR()
-                if (e.key === 'Escape') { setAddingKR(false); setNewKRTitle('') }
+                if (e.key === 'Escape') { setAddingKR(false); setNewKRTitle(''); setNewKRIsHabit(false) }
               }}
               placeholder="New key result…"
               autoFocus
               style={{ width: '100%', background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 10, padding: '9px 11px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.5, resize: 'none', color: 'var(--navy-100)', outline: 'none', marginBottom: 8 }}
               rows={2}
             />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 10, fontSize: 12, color: 'var(--navy-300)' }}>
+              <input 
+                type="checkbox" 
+                checked={newKRIsHabit} 
+                onChange={e => setNewKRIsHabit(e.target.checked)}
+                style={{ width: 14, height: 14 }}
+              />
+              This is a daily habit
+            </label>
             <div style={{ display: 'flex', gap: 7, justifyContent: 'flex-end' }}>
-              <button onClick={() => { setAddingKR(false); setNewKRTitle('') }}
+              <button onClick={() => { setAddingKR(false); setNewKRTitle(''); setNewKRIsHabit(false) }}
                 style={{ padding: '7px 14px', background: 'var(--navy-700)', color: 'var(--navy-300)', fontSize: 12, fontWeight: 600, border: '1px solid var(--navy-600)', borderRadius: 9, cursor: 'pointer' }}>
                 Cancel
               </button>
@@ -479,12 +491,13 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
 
 function EditKRModal({ kr, onClose, onSave }: { kr: RoadmapItem; onClose: () => void; onSave: (kr: RoadmapItem) => void }) {
   const [title, setTitle] = useState(kr.title)
+  const [isHabit, setIsHabit] = useState(kr.is_habit || false)
   const [saving, setSaving] = useState(false)
   async function save() {
     if (!title.trim()) return
     setSaving(true)
-    await supabase.from('roadmap_items').update({ title }).eq('id', kr.id)
-    onSave({ ...kr, title })
+    await supabase.from('roadmap_items').update({ title, is_habit: isHabit }).eq('id', kr.id)
+    onSave({ ...kr, title, is_habit: isHabit })
     setSaving(false)
   }
   return (
@@ -493,6 +506,20 @@ function EditKRModal({ kr, onClose, onSave }: { kr: RoadmapItem; onClose: () => 
       <div className="field">
         <label>Key Result</label>
         <textarea className="input" rows={3} value={title} onChange={e => setTitle(e.target.value)} autoFocus />
+      </div>
+      <div className="field">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input 
+            type="checkbox" 
+            checked={isHabit} 
+            onChange={e => setIsHabit(e.target.checked)}
+            style={{ width: 16, height: 16 }}
+          />
+          This is a daily habit
+        </label>
+        <div style={{ fontSize: 12, color: 'var(--navy-400)', marginTop: 4 }}>
+          Habits appear in Focus tab for daily check-ins
+        </div>
       </div>
     </Modal>
   )
