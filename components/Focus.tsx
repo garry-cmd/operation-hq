@@ -5,6 +5,13 @@ import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/
 import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import { calculateHabitProgress, calculateRollingAggregate, getToday, formatDate } from '@/lib/habitUtils'
 
+// SVG Icons
+const LightningIcon = ({ size = 48, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+
 // Rolling window used for the per-habit aggregate shown next to each habit title.
 // Bump this if you want a longer/shorter lookback.
 const AGGREGATE_WEEKS = 4
@@ -345,7 +352,7 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
 
         {taskTotal === 0 && activeKRs.filter(kr => !kr.is_habit).length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.6 }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>⚡</div>
+            <div style={{ marginBottom: 16 }}><LightningIcon size={48} /></div>
             Add key results on the Roadmap, then plan your actions here.
           </div>
         )}

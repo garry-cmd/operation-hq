@@ -5,6 +5,64 @@ import { AnnualObjective, RoadmapItem, DailyCheckin, WeeklyReview, CheckinStatus
 import { ACTIVE_Q, formatWeek, formatDate } from '@/lib/utils'
 import StatusPill from './StatusPill'
 
+// SVG Icons
+const TargetIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+    <circle cx="12" cy="12" r="6" stroke="currentColor" strokeWidth="2"/>
+    <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const StrongIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M6 2v6h4v6h4v6h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M4 8h8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+    <path d="M14 14h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+)
+
+const ChartIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M3 3v18h18" stroke="currentColor" strokeWidth="2"/>
+    <path d="m19 9-5 5-4-4-3 3" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const RefreshIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" stroke="currentColor" strokeWidth="2"/>
+    <path d="M21 3v5h-5" stroke="currentColor" strokeWidth="2"/>
+    <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" stroke="currentColor" strokeWidth="2"/>
+    <path d="M3 21v-5h5" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const TrendingUpIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" stroke="currentColor" strokeWidth="2"/>
+    <polyline points="16,7 22,7 22,13" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const BalanceIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M12 3v18" stroke="currentColor" strokeWidth="2"/>
+    <path d="M8 21h8" stroke="currentColor" strokeWidth="2"/>
+    <path d="M8 5h8" stroke="currentColor" strokeWidth="2"/>
+    <path d="M12 5L8 2v6l4-1 4 1V2l-4 3Z" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const PoorIcon = ({ size = 16, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+    <path d="M16 16s-1.5-2-4-2-4 2-4 2" stroke="currentColor" strokeWidth="2"/>
+    <line x1="9" y1="9" x2="9.01" y2="9" stroke="currentColor" strokeWidth="2"/>
+    <line x1="15" y1="9" x2="15.01" y2="9" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
 type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
@@ -200,13 +258,13 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
     }
     
     setSaving(false)
-    toast('Weekly review saved! 🎯')
+    toast('Weekly review saved!')
   }
 
   const RATINGS: { value: ReviewRating; label: string; color: string }[] = [
-    { value: 'strong', label: '💪 Strong', color: 'var(--teal)' },
-    { value: 'steady', label: '⚖️ Steady', color: 'var(--amber)' },
-    { value: 'rough',  label: '😤 Rough',  color: 'var(--red)' },
+    { value: 'strong', label: 'Strong', color: 'var(--teal)' },
+    { value: 'steady', label: 'Steady', color: 'var(--amber)' },
+    { value: 'rough',  label: 'Rough',  color: 'var(--red)' },
   ]
 
   const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
@@ -268,8 +326,8 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
 
       {/* 1. Habits Review (Auto-Populated) */}
       <div style={{ marginBottom: 32 }}>
-        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
-          📊 This Week's Habits
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <ChartIcon size={16} /> This Week's Habits
         </h3>
         
         {habitKRs.length === 0 ? (
@@ -331,8 +389,8 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
       {/* 2. Incomplete Actions Review */}
       {incompleteActions.length > 0 && (
         <div style={{ marginBottom: 32 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
-            🔄 Incomplete Actions
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <RefreshIcon size={16} /> Incomplete Actions
           </h3>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -417,8 +475,8 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
       {/* 3. Outcome Progress (Manual Updates) */}
       {outcomeKRs.length > 0 && (
         <div style={{ marginBottom: 32 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
-            📈 Outcome Progress
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <TrendingUpIcon size={16} /> Outcome Progress
           </h3>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -480,8 +538,8 @@ function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins,
       {metricKRs.length > 0 && (
         <div style={{ marginBottom: 32 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-            <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: 0 }}>
-              📊 Update Metrics
+            <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ChartIcon size={16} /> Update Metrics
             </h3>
             <button
               onClick={saveMetrics}
@@ -678,8 +736,11 @@ function HistoryView({ reviews }: { reviews: WeeklyReview[] }) {
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-200)' }}>{formatWeek(r.week_start)}</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>{r.krs_hit}/{r.krs_total} KRs</span>
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: r.rating === 'strong' ? 'var(--teal)' : r.rating === 'steady' ? 'var(--amber)' : 'var(--red)', color: '#fff' }}>
-                    {r.rating === 'strong' ? '💪' : r.rating === 'steady' ? '⚖️' : '😤'}
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: r.rating === 'strong' ? 'var(--teal)' : r.rating === 'steady' ? 'var(--amber)' : 'var(--red)', color: '#fff', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {r.rating === 'strong' ? <StrongIcon size={12} /> : r.rating === 'steady' ? <BalanceIcon size={12} /> : <PoorIcon size={12} />}
+                    <span style={{ fontSize: 11 }}>
+                      {r.rating === 'strong' ? 'Strong' : r.rating === 'steady' ? 'Steady' : 'Rough'}
+                    </span>
                   </span>
                 </div>
               </div>
