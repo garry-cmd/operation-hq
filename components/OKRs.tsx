@@ -30,11 +30,29 @@ type Props = {
 
 export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast }: Props) {
   const [modal, setModal] = useState<'smart' | 'manual' | null>(null)
+  const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack  = activeKRs.filter(i => i.health_status === 'on_track').length
   const offTrack = activeKRs.filter(i => i.health_status === 'off_track').length
+
+  async function deleteKR(id: string) {
+    try {
+      const { error } = await supabase.from('roadmap_items').delete().eq('id', id)
+      if (error) {
+        console.error('Delete KR error:', error)
+        toast('Failed to delete KR')
+        return
+      }
+      
+      setRoadmapItems(prev => prev.filter(kr => kr.id !== id))
+      toast('Key Result deleted')
+    } catch (err) {
+      console.error('deleteKR error:', err)
+      toast('Failed to delete KR')
+    }
+  }
 
   return (
     <div>
@@ -153,7 +171,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               onDeleteLink={onDeleteLink}
               onAddLog={onAddLog}
               onDeleteLog={onDeleteLog}
-              onEditKR={() => {}}
+              onEditKR={setEditingKR}
               toast={toast}
             />
           )
@@ -197,6 +215,35 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
             setModal(null)
             toast('Objective created! Add key results on the Roadmap.')
           }}
+        />
+      )}
+
+      {editingKR && (
+        <EditKRModal
+          kr={editingKR}
+          onClose={() => setEditingKR(null)}
+          onSave={async (updatedKR) => {
+            try {
+              const { error } = await supabase.from('roadmap_items').update(updatedKR).eq('id', editingKR.id)
+              if (error) {
+                console.error('Update KR error:', error)
+                toast('Failed to update KR')
+                return
+              }
+              
+              setRoadmapItems(prev => prev.map(kr => kr.id === editingKR.id ? { ...kr, ...updatedKR } : kr))
+              setEditingKR(null)
+              toast('Key Result updated')
+            } catch (err) {
+              console.error('updateKR error:', err)
+              toast('Failed to update KR')
+            }
+          }}
+          onDelete={() => {
+            deleteKR(editingKR.id)
+            setEditingKR(null)
+          }}
+          toast={toast}
         />
       )}
     </div>
@@ -299,6 +346,115 @@ function ManualObjectiveBuilder({ objectives, activeSpaceId, onClose, onSave }: 
         lineHeight: 1.4
       }}>
         💡 <strong>Tip:</strong> After creating the objective, you can add key results on the Roadmap tab or use the Smart Builder for a complete setup.
+      </div>
+    </Modal>
+  )
+}
+
+// KR edit modal with delete functionality
+function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
+  kr: RoadmapItem
+  onClose: () => void
+  onSave: (kr: Partial<RoadmapItem>) => void
+  onDelete: () => void
+  toast: (m: string) => void
+}) {
+  const [title, setTitle] = useState(kr.title)
+  const [description, setDescription] = useState(kr.description || '')
+  const [healthStatus, setHealthStatus] = useState(kr.health_status)
+  const [status, setStatus] = useState(kr.status)
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    if (!title.trim()) return
+    setSaving(true)
+    
+    try {
+      const updatedKR = {
+        title: title.trim(),
+        description: description.trim() || null,
+        health_status: healthStatus,
+        status: status
+      }
+      
+      await onSave(updatedKR)
+    } catch (error) {
+      console.error('Failed to update KR:', error)
+      toast('Failed to update KR')
+    }
+    
+    setSaving(false)
+  }
+
+  return (
+    <Modal 
+      title="✏️ Edit Key Result" 
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onDelete}
+            style={{ color: 'var(--red)', marginRight: 'auto' }}
+          >
+            Delete
+          </button>
+          <button className="btn" onClick={onClose}>Cancel</button>
+          <button 
+            className="btn-primary" 
+            onClick={save} 
+            disabled={saving || !title.trim()}
+          >
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
+        </>
+      }
+    >
+      <div className="field">
+        <label>Title</label>
+        <input 
+          className="input" 
+          value={title} 
+          onChange={e => setTitle(e.target.value)} 
+          autoFocus
+          placeholder="e.g. Lose 20 lbs" 
+        />
+      </div>
+      
+      <div className="field">
+        <label>Description (optional)</label>
+        <textarea 
+          className="input" 
+          rows={3} 
+          value={description} 
+          onChange={e => setDescription(e.target.value)} 
+          placeholder="Any additional details..." 
+        />
+      </div>
+
+      <div className="field">
+        <label>Health Status</label>
+        <select 
+          className="input" 
+          value={healthStatus} 
+          onChange={e => setHealthStatus(e.target.value as any)}
+        >
+          <option value="on_track">✅ On Track</option>
+          <option value="off_track">⚠️ Off Track</option>
+          <option value="blocked">🚫 Blocked</option>
+        </select>
+      </div>
+
+      <div className="field">
+        <label>Status</label>
+        <select 
+          className="input" 
+          value={status} 
+          onChange={e => setStatus(e.target.value as any)}
+        >
+          <option value="not_started">Not Started</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+          <option value="abandoned">Abandoned</option>
+        </select>
       </div>
     </Modal>
   )
