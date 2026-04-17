@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
 import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ } from '@/lib/utils'
 import Modal from './Modal'
-import GuidedObjectiveBuilder from './GuidedObjectiveBuilder'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -16,7 +15,6 @@ type Props = {
 }
 
 type ModalState =
-  | { type: 'add_obj_guided' }
   | { type: 'add_obj' }
   | { type: 'edit_obj'; obj: AnnualObjective }
   | { type: 'add_kr'; objId: string; quarter: string | null }
@@ -88,12 +86,12 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
           <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
           <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>{selectedId ? '✓ Tap a quarter cell to move · tap chip again to cancel' : 'Tap a key result to move it between quarters'}</p>
         </div>
-        <button onClick={() => setModal({ type: 'add_obj_guided' })} className="btn-primary"
+        <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
           style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 2L9 6h4l-3 3 1 4-4-2-4 2 1-4-3-3h4l2-4z" fill="currentColor"/>
+            <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
           </svg>
-          Smart Builder
+          Add Key Results
         </button>
       </div>
 
@@ -178,33 +176,6 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       )}
 
       {/* Modals */}
-      {modal?.type === 'add_obj_guided' && (
-        <GuidedObjectiveBuilder
-          objectives={objectives}
-          activeSpaceId={activeSpaceId}
-          onClose={() => setModal(null)}
-          onSave={async (objective, keyResults) => {
-            // Add objective to state
-            setObjectives(prev => [...prev, objective])
-            
-            // Add key results to state (they're already created in DB by GuidedObjectiveBuilder)
-            if (keyResults.length > 0) {
-              const { data: createdKRs } = await supabase
-                .from('roadmap_items')
-                .select('*')
-                .eq('annual_objective_id', objective.id)
-              
-              if (createdKRs) {
-                setRoadmapItems(prev => [...prev, ...createdKRs])
-              }
-            }
-            
-            setModal(null)
-            toast('🎯 Smart builder created your objective!')
-          }}
-        />
-      )}
-      
       {(modal?.type === 'add_obj' || modal?.type === 'edit_obj') && (
         <ObjModal
           obj={modal.type === 'edit_obj' ? modal.obj : undefined}

@@ -84,7 +84,7 @@ export default function HQPage() {
       supabase.from('roadmap_items').select('*').order('sort_order'),
       supabase.from('weekly_actions').select('*').order('created_at'),
       supabase.from('daily_checkins').select('*').order('checkin_date', { ascending: false }),
-      supabase.from('daily_checkins').select('*').order('date', { ascending: false }),
+      supabase.from('habit_checkins').select('*').order('date', { ascending: false }),
       supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
       supabase.from('objective_links').select('*').order('sort_order'),
       supabase.from('objective_logs').select('*').order('created_at', { ascending: false }),
@@ -245,7 +245,7 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} checkins={spaceCheckins} setCheckins={setCheckins} reviews={spaceReviews} setReviews={setReviews} weekStart={weekStart} activeSpaceId={activeSpaceId} toast={setToast} />}
