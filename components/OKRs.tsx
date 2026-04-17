@@ -8,6 +8,52 @@ import ObjectiveCard from './ObjectiveCard'
 import GuidedObjectiveBuilder from './GuidedObjectiveBuilder'
 import Modal from './Modal'
 
+// Naval-themed SVG Icons
+const EditIcon = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+
+const TargetIcon = ({ size = 36, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+    <circle cx="12" cy="12" r="6" stroke="currentColor" strokeWidth="2"/>
+    <circle cx="12" cy="12" r="2" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const OnTrackIcon = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="m9 12 2 2 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+  </svg>
+)
+
+const OffTrackIcon = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M12 9v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="m12 17.02.01-.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+
+const BlockedIcon = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
+    <path d="m4.93 4.93 14.14 14.14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+  </svg>
+)
+
+const LightbulbIcon = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
+    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M9 18h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M10 22h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+)
+
 type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
@@ -174,7 +220,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
 
       {activeKRs.length === 0 && (
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
-          <div style={{ fontSize: 36, marginBottom: 10 }}>🎯</div>
+          <div style={{ marginBottom: 16 }}><TargetIcon size={48} /></div>
           No active key results yet.<br />
           <span style={{ fontSize: 13 }}>Use Smart Builder or Manual creation above to get started.</span>
         </div>
@@ -203,7 +249,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                   }}
                   title="Edit objective"
                 >
-                  ✏️
+                  <EditIcon size={16} />
                 </button>
               </div>
 
@@ -240,7 +286,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                         }}
                         title="Edit KR (with delete)"
                       >
-                        ✏️
+                        <EditIcon size={14} />
                       </button>
                     </div>
                   ))}
@@ -291,7 +337,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
             }
             
             setModal(null)
-            toast('🎯 Smart builder created your objective!')
+            toast('Smart builder created your objective!')
           }}
         />
       )}
@@ -407,7 +453,7 @@ function ManualObjectiveBuilder({ objectives, activeSpaceId, onClose, onSave }: 
 
   return (
     <Modal 
-      title="✏️ New Objective" 
+      title="New Objective" 
       onClose={onClose}
       footer={
         <>
@@ -463,9 +509,15 @@ function ManualObjectiveBuilder({ objectives, activeSpaceId, onClose, onSave }: 
         padding: 12,
         fontSize: 12,
         color: 'var(--navy-400)',
-        lineHeight: 1.4
+        lineHeight: 1.4,
+        display: 'flex',
+        gap: 8,
+        alignItems: 'flex-start'
       }}>
-        💡 <strong>Tip:</strong> After creating the objective, you can add key results on the Roadmap tab or use the Smart Builder for a complete setup.
+        <LightbulbIcon size={16} />
+        <div>
+          <strong>Tip:</strong> After creating the objective, you can add key results on the Roadmap tab or use the Smart Builder for a complete setup.
+        </div>
       </div>
     </Modal>
   )
@@ -506,7 +558,7 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
 
   return (
     <Modal 
-      title="✏️ Edit Key Result" 
+      title="Edit Key Result" 
       onClose={onClose}
       footer={
         <>
@@ -544,9 +596,9 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           value={healthStatus} 
           onChange={e => setHealthStatus(e.target.value as any)}
         >
-          <option value="on_track">✅ On Track</option>
-          <option value="off_track">⚠️ Off Track</option>
-          <option value="blocked">🚫 Blocked</option>
+          <option value="on_track">On Track</option>
+          <option value="off_track">Off Track</option>
+          <option value="blocked">Blocked</option>
         </select>
       </div>
 
@@ -602,7 +654,7 @@ function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
 
   return (
     <Modal 
-      title="✏️ Edit Objective" 
+      title="Edit Objective" 
       onClose={onClose}
       footer={
         <>
