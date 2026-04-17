@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, DailyCheckin, WeeklyReview, CheckinStatus, ReviewRating } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, DailyCheckin, WeeklyReview, CheckinStatus, ReviewRating, HealthStatus } from '@/lib/types'
 import { ACTIVE_Q, formatWeek, formatDate } from '@/lib/utils'
 import StatusPill from './StatusPill'
 
@@ -18,50 +18,81 @@ type Props = {
   toast: (m: string) => void
 }
 
-type Sub = 'checkin' | 'progress' | 'review' | 'history'
+type Tab = 'review' | 'history'
 
 export default function Reflect({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, toast }: Props) {
-  const [sub, setSub] = useState<Sub>('checkin')
-  const TABS: { id: Sub; label: string }[] = [
-    { id: 'checkin',  label: 'Check-in' },
-    { id: 'progress', label: 'Progress' },
-    { id: 'review',   label: 'Review' },
+  const [tab, setTab] = useState<Tab>('review')
+  
+  const TABS: { id: Tab; label: string }[] = [
+    { id: 'review',   label: 'Weekly Review' },
     { id: 'history',  label: 'History' },
   ]
 
   return (
     <div>
       <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Reflect</h1>
-      <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>Check in · Progress · Review · History</p>
+      <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>Weekly review and progress tracking</p>
+      
       <div style={{ display: 'flex', gap: 7, marginBottom: 20, flexWrap: 'wrap' }}>
         {TABS.map(t => (
-          <button key={t.id} onClick={() => setSub(t.id)} className="sub-tab-btn"
-            style={sub === t.id
+          <button key={t.id} onClick={() => setTab(t.id)} className="sub-tab-btn"
+            style={tab === t.id
               ? { background: 'var(--accent)', color: '#fff' }
               : { background: 'var(--navy-700)', color: 'var(--navy-200)', border: '1px solid var(--navy-500)' }}>
             {t.label}
           </button>
         ))}
       </div>
-      {sub === 'checkin'  && <CheckinView  objectives={objectives} roadmapItems={roadmapItems} checkins={checkins} setCheckins={setCheckins} toast={toast} />}
-      {sub === 'progress' && <ProgressView objectives={objectives} roadmapItems={roadmapItems} setRoadmapItems={setRoadmapItems} toast={toast} />}
-      {sub === 'review'   && <ReviewView   reviews={reviews} setReviews={setReviews} roadmapItems={roadmapItems} weekStart={weekStart} activeSpaceId={activeSpaceId} toast={toast} />}
-      {sub === 'history'  && <HistoryView  reviews={reviews} />}
+      
+      {tab === 'review' && (
+        <WeeklyReviewView 
+          objectives={objectives}
+          roadmapItems={roadmapItems} 
+          setRoadmapItems={setRoadmapItems}
+          checkins={checkins}
+          setCheckins={setCheckins}
+          reviews={reviews} 
+          setReviews={setReviews} 
+          weekStart={weekStart} 
+          activeSpaceId={activeSpaceId} 
+          toast={toast} 
+        />
+      )}
+      {tab === 'history' && <HistoryView reviews={reviews} />}
     </div>
   )
 }
 
-/* ── Check-in ── */
-function CheckinView({ objectives, roadmapItems, checkins, setCheckins, toast }: Pick<Props, 'objectives' | 'roadmapItems' | 'checkins' | 'setCheckins' | 'toast'>) {
-  const today = new Date().toISOString().slice(0, 10)
+// Consolidated weekly review with progress, check-ins, and reflection
+function WeeklyReviewView({ objectives, roadmapItems, setRoadmapItems, checkins, setCheckins, reviews, setReviews, weekStart, activeSpaceId, toast }: Props) {
+  const existing = reviews.find(r => r.week_start === weekStart)
+  const [rating, setRating] = useState<ReviewRating>(existing?.rating ?? 'steady')
+  const [win, setWin] = useState(existing?.win ?? '')
+  const [slipped, setSlipped] = useState(existing?.slipped ?? '')
+  const [adjustNotes, setAdjustNotes] = useState(existing?.adjust_notes ?? '')
+  const [saving, setSaving] = useState(false)
+
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
+  const today = new Date().toISOString().slice(0, 10)
   const todayCheckins = checkins.filter(c => c.checkin_date === today)
 
-  async function setStatus(krId: string, status: CheckinStatus) {
-    const ex = todayCheckins.find(c => c.roadmap_item_id === krId)
-    if (ex) {
-      await supabase.from('daily_checkins').update({ status }).eq('id', ex.id)
-      setCheckins(prev => prev.map(c => c.id === ex.id ? { ...c, status } : c))
+  async function setKRProgress(kr: RoadmapItem, progress: number) {
+    await supabase.from('roadmap_items').update({ progress }).eq('id', kr.id)
+    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress } : i))
+    toast('Progress updated ✓')
+  }
+
+  async function setKRHealth(kr: RoadmapItem, health: HealthStatus) {
+    await supabase.from('roadmap_items').update({ health_status: health }).eq('id', kr.id)
+    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, health_status: health } : i))
+    toast('Status updated ✓')
+  }
+
+  async function setTodayCheckin(krId: string, status: CheckinStatus) {
+    const existing = todayCheckins.find(c => c.roadmap_item_id === krId)
+    if (existing) {
+      await supabase.from('daily_checkins').update({ status }).eq('id', existing.id)
+      setCheckins(prev => prev.map(c => c.id === existing.id ? { ...c, status } : c))
     } else {
       const { data } = await supabase.from('daily_checkins').insert({ checkin_date: today, roadmap_item_id: krId, status }).select().single()
       if (data) setCheckins(prev => [...prev, data])
@@ -69,100 +100,19 @@ function CheckinView({ objectives, roadmapItems, checkins, setCheckins, toast }:
     toast('Check-in saved ✓')
   }
 
-  const STATUS_CFG = [
-    { value: 'on_track' as CheckinStatus, label: 'On track', bg: 'var(--teal)', color: '#fff', inactiveBg: 'var(--navy-700)', inactiveColor: 'var(--navy-300)' },
-    { value: 'off_track' as CheckinStatus, label: 'Off track', bg: 'var(--red)', color: '#fff', inactiveBg: 'var(--navy-700)', inactiveColor: 'var(--navy-300)' },
-    { value: 'blocked' as CheckinStatus, label: 'Blocked', bg: 'var(--amber)', color: '#fff', inactiveBg: 'var(--navy-700)', inactiveColor: 'var(--navy-300)' },
-  ]
-
-  return (
-    <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy-400)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.5px' }}>{formatDate(today)}</div>
-      {activeKRs.length === 0 && <div style={{ color: 'var(--navy-400)', fontSize: 14, textAlign: 'center', padding: '32px 0' }}>No active key results to check in on.</div>}
-      {activeKRs.map(kr => {
-        const obj = objectives.find(o => o.id === kr.annual_objective_id)
-        const current = todayCheckins.find(c => c.roadmap_item_id === kr.id)?.status
-        return (
-          <div key={kr.id} style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderLeft: `4px solid ${obj?.color ?? 'var(--accent)'}` }}>
-            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--navy-600)' }}>
-              <div style={{ fontSize: 11, color: 'var(--navy-300)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.4px' }}>{obj?.name}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)', lineHeight: 1.4 }}>{kr.title}</div>
-            </div>
-            <div style={{ padding: '11px 13px', display: 'flex', gap: 8 }}>
-              {STATUS_CFG.map(s => (
-                <button key={s.value} className="status-btn" onClick={() => setStatus(kr.id, s.value)}
-                  style={current === s.value
-                    ? { background: s.bg, color: s.color, border: `1px solid ${s.bg}` }
-                    : { background: s.inactiveBg, color: s.inactiveColor, border: '1px solid var(--navy-500)' }}>
-                  {s.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-/* ── Progress ── */
-function ProgressView({ objectives, roadmapItems, setRoadmapItems, toast }: Pick<Props, 'objectives' | 'roadmapItems' | 'setRoadmapItems' | 'toast'>) {
-  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
-  const PCT_OPTS = [0, 25, 50, 75, 100]
-
-  async function setPct(kr: RoadmapItem, pct: number) {
-    await supabase.from('roadmap_items').update({ progress: pct }).eq('id', kr.id)
-    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress: pct } : i))
-  }
-
-  return (
-    <div>
-      <div style={{ fontSize: 12, color: 'var(--navy-400)', marginBottom: 16, lineHeight: 1.6 }}>
-        Update how far along you are on each key result. This feeds the progress bar on the OKRs screen.
-      </div>
-      {activeKRs.length === 0 && <div style={{ color: 'var(--navy-400)', fontSize: 14, textAlign: 'center', padding: '32px 0' }}>No active key results.</div>}
-      {activeKRs.map(kr => {
-        const obj = objectives.find(o => o.id === kr.annual_objective_id)
-        const pct = kr.progress ?? 0
-        return (
-          <div key={kr.id} style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 16, marginBottom: 10, overflow: 'hidden', borderLeft: `4px solid ${obj?.color ?? 'var(--accent)'}` }}>
-            <div style={{ padding: '12px 14px', borderBottom: '1px solid var(--navy-600)' }}>
-              <div style={{ fontSize: 11, color: 'var(--navy-300)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.4px' }}>{obj?.name}</div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)', lineHeight: 1.4 }}>{kr.title}</div>
-            </div>
-            <div style={{ padding: '12px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <span style={{ fontSize: 12, color: 'var(--navy-400)' }}>How far along?</span>
-                <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)' }}>{pct}%</span>
-              </div>
-              <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-                {PCT_OPTS.map(p => (
-                  <button key={p} onClick={() => setPct(kr, p)}
-                    style={{ flex: 1, padding: '8px 0', fontSize: 11, fontWeight: 700, borderRadius: 9, border: `1.5px solid ${pct === p ? obj?.color ?? 'var(--accent)' : 'var(--navy-500)'}`, background: pct === p ? obj?.color ?? 'var(--accent)' : 'var(--navy-800)', color: pct === p ? '#fff' : 'var(--navy-400)', cursor: 'pointer', transition: 'all .12s', textAlign: 'center' }}>
-                    {p === 100 ? '✓' : p}
-                  </button>
-                ))}
-              </div>
-              <div style={{ height: 4, background: 'var(--navy-600)', borderRadius: 2 }}>
-                <div style={{ height: 4, borderRadius: 2, background: obj?.color ?? 'var(--accent)', width: `${pct}%`, transition: 'width .3s' }} />
-              </div>
-            </div>
-          </div>
-        )
-      })}
-    </div>
-  )
-}
-
-/* ── Review ── */
-function ReviewView({ reviews, setReviews, roadmapItems, weekStart, activeSpaceId, toast }: Pick<Props, 'reviews' | 'setReviews' | 'roadmapItems' | 'weekStart' | 'activeSpaceId' | 'toast'>) {
-  const existing = reviews.find(r => r.week_start === weekStart)
-  const [rv, setRv] = useState({ rating: existing?.rating ?? 'steady' as ReviewRating, win: existing?.win ?? '', slipped: existing?.slipped ?? '', adjust_notes: existing?.adjust_notes ?? '' })
-  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
-
-  async function save() {
+  async function saveReview() {
+    setSaving(true)
     const onTrack = activeKRs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
-    const payload = { week_start: weekStart, ...rv, krs_hit: onTrack, krs_total: activeKRs.length }
+    const payload = { 
+      week_start: weekStart, 
+      rating, 
+      win, 
+      slipped, 
+      adjust_notes: adjustNotes, 
+      krs_hit: onTrack, 
+      krs_total: activeKRs.length 
+    }
+    
     if (existing) {
       await supabase.from('weekly_reviews').update(payload).eq('id', existing.id)
       setReviews(prev => prev.map(r => r.id === existing.id ? { ...r, ...payload } : r))
@@ -170,7 +120,9 @@ function ReviewView({ reviews, setReviews, roadmapItems, weekStart, activeSpaceI
       const { data } = await supabase.from('weekly_reviews').insert({ ...payload, space_id: activeSpaceId }).select().single()
       if (data) setReviews(prev => [data, ...prev])
     }
-    toast('Review saved!')
+    
+    setSaving(false)
+    toast('Weekly review saved! 🎯')
   }
 
   const RATINGS: { value: ReviewRating; label: string; color: string }[] = [
@@ -178,64 +130,272 @@ function ReviewView({ reviews, setReviews, roadmapItems, weekStart, activeSpaceI
     { value: 'steady', label: '⚖️ Steady', color: 'var(--amber)' },
     { value: 'rough',  label: '😤 Rough',  color: 'var(--red)' },
   ]
-  const FIELDS: { key: keyof typeof rv; label: string; placeholder: string }[] = [
-    { key: 'win',          label: 'Win of the week',       placeholder: 'What moved the needle?' },
-    { key: 'slipped',      label: 'What slipped?',         placeholder: 'One honest line…' },
-    { key: 'adjust_notes', label: 'Adjust for next week?', placeholder: 'Drop a KR, shift a deadline…' },
-  ]
+
+  const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'on_track', 'off_track', 'blocked', 'done']
+
+  const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
 
   return (
-    <div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy-400)', marginBottom: 14, textTransform: 'uppercase', letterSpacing: '.5px' }}>Week of {formatWeek(weekStart)}</div>
-      <div style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 16, overflow: 'hidden', marginBottom: 12 }}>
-        <div style={{ padding: '13px 14px', borderBottom: '1px solid var(--navy-600)' }}>
-          <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-300)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '.5px' }}>How did the week go?</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ maxWidth: 600 }}>
+      {/* Week Header */}
+      <div style={{ 
+        background: 'var(--navy-700)', 
+        border: '1px solid var(--navy-600)', 
+        borderRadius: 12, 
+        padding: 16, 
+        marginBottom: 24,
+        textAlign: 'center'
+      }}>
+        <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', marginBottom: 4 }}>
+          Week of {formatWeek(weekStart)}
+        </div>
+        <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+          {activeKRs.length} active key results
+        </div>
+      </div>
+
+      {/* Key Results Progress & Status */}
+      <div style={{ marginBottom: 32 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
+          📊 Progress & Status Check
+        </h3>
+        
+        {activeKRs.length === 0 ? (
+          <div style={{ 
+            color: 'var(--navy-400)', 
+            fontSize: 14, 
+            textAlign: 'center', 
+            padding: '32px 0',
+            background: 'var(--navy-700)',
+            borderRadius: 8
+          }}>
+            No active key results to review.
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {activeKRs.map(kr => {
+              const obj = objectives.find(o => o.id === kr.annual_objective_id)
+              const todayCheckin = todayCheckins.find(c => c.roadmap_item_id === kr.id)
+              
+              return (
+                <div key={kr.id} style={{
+                  background: 'var(--navy-700)',
+                  border: '1px solid var(--navy-600)',
+                  borderRadius: 8,
+                  padding: 16
+                }}>
+                  {/* KR Title & Objective */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', marginBottom: 2 }}>
+                      {kr.title}
+                    </div>
+                    {obj && (
+                      <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>
+                        {obj.name}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Progress Slider */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 6 }}>
+                      Progress: {kr.progress}%
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {PROGRESS_OPTIONS.map(pct => (
+                        <button
+                          key={pct}
+                          onClick={() => setKRProgress(kr, pct)}
+                          style={{
+                            flex: 1,
+                            padding: '6px 8px',
+                            fontSize: 11,
+                            borderRadius: 4,
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: kr.progress === pct ? 'var(--accent)' : 'var(--navy-600)',
+                            color: kr.progress === pct ? '#fff' : 'var(--navy-300)',
+                            transition: 'all .15s'
+                          }}
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Health Status */}
+                  <div style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 6 }}>
+                      Weekly Status
+                    </div>
+                    <button
+                      onClick={() => {
+                        const currentIndex = HEALTH_CYCLE.indexOf(kr.health_status)
+                        const nextStatus = HEALTH_CYCLE[(currentIndex + 1) % HEALTH_CYCLE.length]
+                        setKRHealth(kr, nextStatus)
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 0
+                      }}
+                    >
+                      <StatusPill status={kr.health_status} />
+                    </button>
+                  </div>
+
+                  {/* Today's Check-in */}
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 6 }}>
+                      Today's Check-in
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      {(['on_track', 'off_track', 'blocked'] as CheckinStatus[]).map(status => (
+                        <button
+                          key={status}
+                          onClick={() => setTodayCheckin(kr.id, status)}
+                          style={{
+                            flex: 1,
+                            padding: '4px 8px',
+                            fontSize: 10,
+                            borderRadius: 4,
+                            border: 'none',
+                            cursor: 'pointer',
+                            background: todayCheckin?.status === status ? 'var(--accent)' : 'var(--navy-600)',
+                            color: todayCheckin?.status === status ? '#fff' : 'var(--navy-300)',
+                            transition: 'all .15s'
+                          }}
+                        >
+                          {status.replace('_', ' ')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Weekly Reflection */}
+      <div>
+        <h3 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', marginBottom: 16 }}>
+          💭 Weekly Reflection
+        </h3>
+        
+        {/* Overall Rating */}
+        <div className="field">
+          <label>How was this week overall?</label>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {RATINGS.map(r => (
-              <button key={r.value} onClick={() => setRv(d => ({ ...d, rating: r.value }))} className="status-btn"
-                style={{ flex: 1, ...(rv.rating === r.value ? { background: r.color, color: '#fff', border: `1px solid ${r.color}` } : { background: 'var(--navy-800)', color: 'var(--navy-300)', border: '1px solid var(--navy-500)' }) }}>
+              <button key={r.value} onClick={() => setRating(r.value)}
+                style={{ 
+                  padding: '8px 16px', 
+                  fontSize: 13, 
+                  borderRadius: 8, 
+                  border: 'none', 
+                  cursor: 'pointer',
+                  background: rating === r.value ? r.color : 'var(--navy-600)',
+                  color: rating === r.value ? '#fff' : 'var(--navy-300)',
+                  transition: 'all .15s'
+                }}>
                 {r.label}
               </button>
             ))}
           </div>
         </div>
-        {FIELDS.map(({ key, label, placeholder }, i) => (
-          <div key={key} style={{ padding: '13px 14px', borderBottom: i < FIELDS.length - 1 ? '1px solid var(--navy-600)' : 'none' }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-300)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.5px' }}>{label}</div>
-            <textarea rows={2} placeholder={placeholder} value={rv[key] as string}
-              onChange={e => setRv(d => ({ ...d, [key]: e.target.value }))}
-              className="input" style={{ resize: 'none' }} />
-          </div>
-        ))}
+
+        {/* Win of the Week */}
+        <div className="field">
+          <label>Win of the week</label>
+          <textarea 
+            className="input" 
+            rows={2} 
+            value={win} 
+            onChange={e => setWin(e.target.value)}
+            placeholder="What moved the needle?"
+          />
+        </div>
+
+        {/* What Slipped */}
+        <div className="field">
+          <label>What slipped?</label>
+          <textarea 
+            className="input" 
+            rows={2} 
+            value={slipped} 
+            onChange={e => setSlipped(e.target.value)}
+            placeholder="One honest line…"
+          />
+        </div>
+
+        {/* Adjustments */}
+        <div className="field">
+          <label>Adjust for next week?</label>
+          <textarea 
+            className="input" 
+            rows={2} 
+            value={adjustNotes} 
+            onChange={e => setAdjustNotes(e.target.value)}
+            placeholder="Drop a KR, shift a deadline…"
+          />
+        </div>
+
+        {/* Save Button */}
+        <button 
+          onClick={saveReview}
+          disabled={saving}
+          className="btn-primary"
+          style={{ 
+            width: '100%', 
+            padding: '12px', 
+            fontSize: 14, 
+            fontWeight: 600,
+            marginTop: 8
+          }}
+        >
+          {saving ? 'Saving…' : existing ? 'Update Review' : 'Save Weekly Review'}
+        </button>
       </div>
-      <button onClick={save} className="btn-primary" style={{ width: '100%', fontSize: 15 }}>Save week review</button>
     </div>
   )
 }
 
-/* ── History ── */
-function HistoryView({ reviews }: Pick<Props, 'reviews'>) {
-  if (!reviews.length) return (
-    <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14 }}>
-      <div style={{ fontSize: 32, marginBottom: 8 }}>📚</div>
-      No reviews yet. Close out your week in the Review tab.
-    </div>
-  )
+// History view 
+function HistoryView({ reviews }: { reviews: WeeklyReview[] }) {
+  const sorted = [...reviews].sort((a, b) => new Date(b.week_start).getTime() - new Date(a.week_start).getTime())
+
   return (
     <div>
-      {reviews.map(r => (
-        <div key={r.id} style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 14px', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: r.win || r.slipped ? 9 : 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)' }}>Week of {formatWeek(r.week_start)}</div>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--teal-text)' }}>{r.krs_hit}/{r.krs_total} on track</span>
-              <StatusPill status={r.rating} />
-            </div>
-          </div>
-          {r.win     && <div style={{ fontSize: 13, color: 'var(--navy-200)', marginBottom: 4 }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)', marginRight: 6 }}>WIN</span>{r.win}</div>}
-          {r.slipped && <div style={{ fontSize: 13, color: 'var(--navy-200)' }}><span style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)', marginRight: 6 }}>SLIPPED</span>{r.slipped}</div>}
+      {sorted.length === 0 ? (
+        <div style={{ color: 'var(--navy-400)', fontSize: 14, textAlign: 'center', padding: '60px 0' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>📚</div>
+          No reviews yet.<br />
+          <span style={{ fontSize: 12 }}>Complete your first weekly review to see it here.</span>
         </div>
-      ))}
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {sorted.map(r => (
+            <div key={r.id} style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 8, padding: 16 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-200)' }}>{formatWeek(r.week_start)}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>{r.krs_hit}/{r.krs_total} KRs</span>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 4, background: r.rating === 'strong' ? 'var(--teal)' : r.rating === 'steady' ? 'var(--amber)' : 'var(--red)', color: '#fff' }}>
+                    {r.rating === 'strong' ? '💪' : r.rating === 'steady' ? '⚖️' : '😤'}
+                  </span>
+                </div>
+              </div>
+              {r.win && <div style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 4, lineHeight: 1.4 }}><strong>Win:</strong> {r.win}</div>}
+              {r.slipped && <div style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 4, lineHeight: 1.4 }}><strong>Slipped:</strong> {r.slipped}</div>}
+              {r.adjust_notes && <div style={{ fontSize: 12, color: 'var(--navy-300)', lineHeight: 1.4 }}><strong>Adjust:</strong> {r.adjust_notes}</div>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
