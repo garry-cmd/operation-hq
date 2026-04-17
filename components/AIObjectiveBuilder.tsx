@@ -103,7 +103,7 @@ Otherwise, continue the conversation naturally by asking questions or providing 
 
       // Check if AI provided a complete objective structure
       if (assistantMessage.includes('OBJECTIVE_READY:')) {
-        const jsonMatch = assistantMessage.match(/OBJECTIVE_READY:\s*(\{[\s\S]*?\})/s)
+        const jsonMatch = assistantMessage.match(/OBJECTIVE_READY:\s*(\{[\s\S]*?\})/)
         if (jsonMatch) {
           try {
             const parsed = JSON.parse(jsonMatch[1])
