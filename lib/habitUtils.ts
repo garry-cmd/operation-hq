@@ -53,10 +53,11 @@ export function parseHabitPattern(title: string): {
     }
   }
   
-  // Weekly count: "4x per week", "3 times per week", "cardio 3xweek"
+  // Weekly count: "4x per week", "3 times per week", "cardio 3xweek", "4 days per week"
   const weeklyCountPatterns = [
     /(\d+)x\s*(per\s*week|weekly|week)/i,
     /(\d+)\s*times?\s*(per\s*week|weekly)/i,
+    /(\d+)\s*days?\s*(per\s*week|weekly)/i,
     /(\d+)\s*(per\s*week|weekly)/i
   ]
   
