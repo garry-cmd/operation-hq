@@ -1,9 +1,9 @@
 'use client'
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, WeeklyReview } from '@/lib/types'
-import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
-import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
+import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
+import { addWeeks, formatWeek } from '@/lib/utils'
+import { calculateHabitProgress, getToday } from '@/lib/habitUtils'
 
 // SVG Icons
 const LightningIcon = ({ size = 48, className = "" }: { size?: number, className?: string }) => (
@@ -15,31 +15,26 @@ const LightningIcon = ({ size = 48, className = "" }: { size?: number, className
 
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
-import CloseWeekWizard from './CloseWeekWizard'
 
 type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
-  setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   actions: WeeklyAction[]
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   habitCheckins: HabitCheckin[]
   setHabitCheckins: (fn: (h: HabitCheckin[]) => HabitCheckin[]) => void
-  reviews: WeeklyReview[]
-  setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   weekStart: string
   setWeekStart: (fn: (s: string) => string) => void
-  activeSpaceId: string
   toast: (m: string) => void
+  onRequestCloseWeek: (week: string) => void
 }
 
 export default function Focus({
-  objectives, roadmapItems, setRoadmapItems, actions, setActions,
-  habitCheckins, setHabitCheckins, reviews, setReviews,
-  weekStart, setWeekStart, activeSpaceId, toast,
+  objectives, roadmapItems, actions, setActions,
+  habitCheckins, setHabitCheckins,
+  weekStart, setWeekStart, toast, onRequestCloseWeek,
 }: Props) {
   const [planning, setPlanning] = useState(false)
-  const [closingWizard, setClosingWizard] = useState<string | null>(null)
   const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
@@ -194,7 +189,7 @@ export default function Focus({
             <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 2 }}>Focus this week</h1>
             <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: 0 }}>Week of {formatWeek(weekStart)}</p>
           </div>
-          <button onClick={() => setClosingWizard(weekStart)}
+          <button onClick={() => onRequestCloseWeek(weekStart)}
             title="Close this week — reflect, then plan the next one"
             style={{ padding: '10px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
             Close week →
@@ -385,25 +380,6 @@ export default function Focus({
             onClose={() => setEditAction(null)}
             onSave={(title, isRecurring) => saveEdit(editAction, title, isRecurring)}
             onDelete={() => deleteAction(editAction.id)}
-          />
-        )}
-
-        {/* Close-week wizard */}
-        {closingWizard && (
-          <CloseWeekWizard
-            closingWeek={closingWizard}
-            objectives={objectives}
-            roadmapItems={roadmapItems}
-            setRoadmapItems={setRoadmapItems}
-            actions={actions}
-            setActions={setActions}
-            habitCheckins={habitCheckins}
-            reviews={reviews}
-            setReviews={setReviews}
-            setWeekStart={setWeekStart}
-            activeSpaceId={activeSpaceId}
-            toast={toast}
-            onClose={() => setClosingWizard(null)}
           />
         )}
 

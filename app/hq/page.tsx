@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
-import { getMonday, ACTIVE_Q } from '@/lib/utils'
+import { getMonday, ACTIVE_Q, addWeeks } from '@/lib/utils'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
@@ -11,6 +11,7 @@ import ParkingLot from '@/components/ParkingLot'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import SpaceSwitcher from '@/components/SpaceSwitcher'
+import CloseWeekWizard from '@/components/CloseWeekWizard'
 import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
@@ -43,6 +44,12 @@ export default function HQPage() {
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
+  const [closingWizard, setClosingWizard] = useState<string | null>(null)
+
+  // Guards the once-per-space force-launch check. Reset when the user switches
+  // spaces so a different space's unclosed last week can also trigger.
+  const forceCheckDoneRef = useRef(false)
+  useEffect(() => { forceCheckDoneRef.current = false }, [activeSpaceId])
 
 
   useEffect(() => {
@@ -133,6 +140,47 @@ export default function HQPage() {
   }, [])
 
   useEffect(() => { if (user) loadAll() }, [user, loadAll])
+
+  // Forced launch of CloseWeekWizard when last week wasn't closed.
+  // Runs once per space (reset on space switch). Fires only after data loads,
+  // and only if the prior Monday had real activity in this space (planned
+  // actions or habit checkins) AND no weekly_review exists for it. For stale
+  // gaps of more than one week, the wizard's own carry-forward logic handles
+  // landing carries in the current week on finish — so we only check the
+  // immediately prior week; deeper gaps can be closed manually from Focus.
+  useEffect(() => {
+    if (loading || !activeSpaceId || forceCheckDoneRef.current) return
+    if (closingWizard) return // already open (rare, but don't clobber)
+    forceCheckDoneRef.current = true
+
+    const lastMonday = addWeeks(getMonday(), -1)
+
+    // Space-scope on the fly — cheap and avoids depending on derived state
+    // that's recomputed later in this render.
+    const spaceObjIds = new Set(
+      objectives.filter(o => o.space_id === activeSpaceId).map(o => o.id)
+    )
+    const spaceKRIds = new Set(
+      roadmapItems.filter(i => spaceObjIds.has(i.annual_objective_id)).map(i => i.id)
+    )
+
+    const hasReview = reviews.some(
+      r => r.space_id === activeSpaceId && r.week_start === lastMonday
+    )
+    if (hasReview) return
+
+    const hadActions = actions.some(
+      a => spaceKRIds.has(a.roadmap_item_id) && a.week_start === lastMonday
+    )
+    const hadHabits = habitCheckins.some(h => {
+      if (!spaceKRIds.has(h.roadmap_item_id)) return false
+      const hMonday = getMonday(new Date(h.date + 'T12:00:00'))
+      return hMonday === lastMonday
+    })
+    if (!hadActions && !hadHabits) return
+
+    setClosingWizard(lastMonday)
+  }, [loading, activeSpaceId, reviews, actions, habitCheckins, objectives, roadmapItems, closingWizard])
 
   // Search
   const searchResults: SearchResult[] = searchQuery.trim().length < 2 ? [] : (() => {
@@ -270,7 +318,7 @@ export default function HQPage() {
         ) : (
           <>
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} />}
-            {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} reviews={spaceReviews} setReviews={setReviews} weekStart={weekStart} setWeekStart={setWeekStart} activeSpaceId={activeSpaceId} toast={setToast} />}
+            {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
@@ -308,6 +356,27 @@ export default function HQPage() {
         setActions={setActions}
         toast={setToast}
       />
+
+      {/* Close-week wizard — lifted to page level so forced launch can overlay
+          any screen, not just Focus. Launched either by Focus's "Close week →"
+          button (via onRequestCloseWeek) or by the forced-launch effect above. */}
+      {closingWizard && (
+        <CloseWeekWizard
+          closingWeek={closingWizard}
+          objectives={spaceObjectives}
+          roadmapItems={spaceRoadmapItems}
+          setRoadmapItems={setRoadmapItems}
+          actions={spaceActions}
+          setActions={setActions}
+          habitCheckins={spaceHabitCheckins}
+          reviews={spaceReviews}
+          setReviews={setReviews}
+          setWeekStart={setWeekStart}
+          activeSpaceId={activeSpaceId}
+          toast={setToast}
+          onClose={() => setClosingWizard(null)}
+        />
+      )}
 
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
 
