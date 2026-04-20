@@ -3,7 +3,6 @@ import React, { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
-import Modal from './Modal'
 
 type Section = 'notes' | 'links' | 'logs' | null
 
@@ -51,7 +50,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const [addingLink, setAddingLink] = useState(false)
   const [logEntry, setLogEntry] = useState('')
   const [savingLog, setSavingLog] = useState(false)
-  const [editKR, setEditKR] = useState<RoadmapItem | null>(null)
   const [addingKR, setAddingKR] = useState(false)
   const [newKRTitle, setNewKRTitle] = useState('')
   const [newKRIsHabit, setNewKRIsHabit] = useState(false)
@@ -292,7 +290,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                     style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s' }}>
                     {hs.label}
                   </button>
-                  <button onClick={() => setEditKR(kr)}
+                  <button onClick={() => onEditKR(kr)}
                     style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
                   </button>
@@ -521,46 +519,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
         )}
         </>)}
       </div>
-      {editKR && (
-        <EditKRModal kr={editKR} onClose={() => setEditKR(null)}
-          onSave={updated => { setRoadmapItems(prev => prev.map(i => i.id === updated.id ? updated : i)); setEditKR(null); toast('Key result updated.') }} />
-      )}
     </>
-  )
-}
-
-function EditKRModal({ kr, onClose, onSave }: { kr: RoadmapItem; onClose: () => void; onSave: (kr: RoadmapItem) => void }) {
-  const [title, setTitle] = useState(kr.title)
-  const [isHabit, setIsHabit] = useState(kr.is_habit || false)
-  const [saving, setSaving] = useState(false)
-  async function save() {
-    if (!title.trim()) return
-    setSaving(true)
-    await supabase.from('roadmap_items').update({ title, is_habit: isHabit }).eq('id', kr.id)
-    onSave({ ...kr, title, is_habit: isHabit })
-    setSaving(false)
-  }
-  return (
-    <Modal title="Edit Key Result" onClose={onClose}
-      footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>{saving ? 'Saving…' : 'Save'}</button></>}>
-      <div className="field">
-        <label>Key Result</label>
-        <textarea className="input" rows={3} value={title} onChange={e => setTitle(e.target.value)} autoFocus />
-      </div>
-      <div className="field">
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-          <input 
-            type="checkbox" 
-            checked={isHabit} 
-            onChange={e => setIsHabit(e.target.checked)}
-            style={{ width: 16, height: 16 }}
-          />
-          This is a daily habit
-        </label>
-        <div style={{ fontSize: 12, color: 'var(--navy-400)', marginTop: 4 }}>
-          Habits appear in Focus tab for daily check-ins
-        </div>
-      </div>
-    </Modal>
   )
 }
