@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
-import { calculateHabitProgress, calculateRollingAggregate, getToday, formatDate } from '@/lib/habitUtils'
+import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 
 // SVG Icons
 const LightningIcon = ({ size = 48, className = "" }: { size?: number, className?: string }) => (
@@ -12,9 +12,7 @@ const LightningIcon = ({ size = 48, className = "" }: { size?: number, className
   </svg>
 )
 
-// Rolling window used for the per-habit aggregate shown next to each habit title.
-// Bump this if you want a longer/shorter lookback.
-const AGGREGATE_WEEKS = 4
+
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
 
@@ -52,15 +50,8 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
   const habitProgress = habitKRs.map(kr => {
     const krCheckins = habitCheckins.filter(c => c.roadmap_item_id === kr.id)
     const progress = calculateHabitProgress(kr, krCheckins, weekStart)
-    const aggregate = calculateRollingAggregate(kr, habitCheckins, AGGREGATE_WEEKS)
-    return {
-      kr,
-      progress,
-      aggregate
-    }
+    return { kr, progress }
   }).filter(h => h.progress.showInFocus) // Only show daily/weekly habits
-
-  const habitsCompleteCount = habitProgress.filter(h => h.progress.status === 'on_track' || h.progress.status === 'ahead').length
 
   async function addHabitSession(krId: string) {
     console.log('Adding habit session for KR:', krId, 'date:', today)
@@ -261,35 +252,32 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
       )}
 
       <div>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 2 }}>Focus this week</h1>
-        <p style={{ fontSize: 12, color: 'var(--navy-400)', marginBottom: 16 }}>Week of {formatWeek(weekStart)}</p>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
+          <div style={{ minWidth: 0 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 2 }}>Focus this week</h1>
+            <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: 0 }}>Week of {formatWeek(weekStart)}</p>
+          </div>
+          <button onClick={() => setClosing(true)}
+            title="Close this week — carry forward incomplete actions and re-spawn recurring ones"
+            style={{ padding: '10px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+            Close week →
+          </button>
+        </div>
 
         {/* Habits Section */}
         {habitProgress.length > 0 && (
           <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>Today's Habits</h3>
-              <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
-                {habitsCompleteCount}/{habitProgress.length} on track
-              </div>
-            </div>
-            
+            <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>Habits</h3>
+
             {/* Habit list with bubbles */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              {habitProgress.map(({ kr, progress, aggregate }) => (
+              {habitProgress.map(({ kr, progress }) => (
                 <div key={kr.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Habit title and rolling aggregate */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ fontSize: 14, color: 'var(--navy-50)', fontWeight: 500 }}>
-                      {kr.title}
-                    </div>
-                    <div style={{ fontSize: 11, color: 'var(--navy-400)', whiteSpace: 'nowrap' }}>
-                      {aggregate.expected > 0
-                        ? `${aggregate.percent}% · last ${aggregate.weeks}w`
-                        : ''}
-                    </div>
+                  {/* Habit title */}
+                  <div style={{ fontSize: 14, color: 'var(--navy-50)', fontWeight: 500 }}>
+                    {kr.title}
                   </div>
-                  
+
                   {/* Progress bubbles */}
                   {/* Weekly daily bubbles */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -382,11 +370,6 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                   Re-plan
                 </button>
               )}
-              <button onClick={() => setClosing(true)}
-                title="Close this week — carry forward incomplete actions and re-spawn recurring ones"
-                style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent-dim)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>
-                Close week →
-              </button>
               <button style={navBtn} onClick={() => goToWeek(-1)}>‹</button>
               <button style={navBtn} onClick={() => goToWeek(1)}>›</button>
             </div>
