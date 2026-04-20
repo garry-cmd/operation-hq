@@ -36,7 +36,14 @@ export function getMonday(d: Date = new Date()): string {
   const day = dt.getDay()
   const diff = dt.getDate() - day + (day === 0 ? -6 : 1)
   dt.setDate(diff)
-  return dt.toISOString().slice(0, 10)
+  // Build YYYY-MM-DD from LOCAL components.
+  // Previously used toISOString().slice(0,10) which converts to UTC and
+  // would shift the date forward by a day when called late in the evening
+  // in negative-UTC timezones (e.g. Sunday 8pm Eastern → Monday 00:00 UTC).
+  const y = dt.getFullYear()
+  const m = String(dt.getMonth() + 1).padStart(2, '0')
+  const dd = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${m}-${dd}`
 }
 
 export function addWeeks(dateStr: string, n: number): string {

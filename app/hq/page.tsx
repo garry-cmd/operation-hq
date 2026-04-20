@@ -22,7 +22,15 @@ export default function HQPage() {
   const [screen, setScreen] = useState<Screen>('okr')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
-  const [weekStart, setWeekStart] = useState(getMonday())
+  const [weekStart, setWeekStart] = useState<string>(() => {
+    // Restore the persisted Focus week if it's the current week or later.
+    // This way Close week → advance → refresh keeps you on the new week,
+    // while leaving the app for weeks doesn't strand you on a stale view.
+    if (typeof window === 'undefined') return getMonday()
+    const saved = localStorage.getItem('hq-week-start')
+    const today = getMonday()
+    return (saved && saved >= today) ? saved : today
+  })
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
@@ -51,6 +59,11 @@ export default function HQPage() {
     setTheme(initial)
     document.documentElement.setAttribute('data-theme', initial)
   }, [])
+
+  // Persist the active Focus week so Close week / nav choices survive a refresh.
+  useEffect(() => {
+    localStorage.setItem('hq-week-start', weekStart)
+  }, [weekStart])
 
   function switchSpace(spaceId: string) {
     setActiveSpaceId(spaceId)
