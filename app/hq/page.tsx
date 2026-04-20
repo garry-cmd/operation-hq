@@ -22,15 +22,7 @@ export default function HQPage() {
   const [screen, setScreen] = useState<Screen>('okr')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
-  const [weekStart, setWeekStart] = useState<string>(() => {
-    // Restore the persisted Focus week if it's the current week or later.
-    // This way Close week → advance → refresh keeps you on the new week,
-    // while leaving the app for weeks doesn't strand you on a stale view.
-    if (typeof window === 'undefined') return getMonday()
-    const saved = localStorage.getItem('hq-week-start')
-    const today = getMonday()
-    return (saved && saved >= today) ? saved : today
-  })
+  const [weekStart, setWeekStartRaw] = useState<string>(getMonday())
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
@@ -60,10 +52,25 @@ export default function HQPage() {
     document.documentElement.setAttribute('data-theme', initial)
   }, [])
 
-  // Persist the active Focus week so Close week / nav choices survive a refresh.
+  // Restore the persisted Focus week on mount, but only if it's not stale.
+  // Saved weeks in the past get ignored (you've been away too long; show
+  // current week), saved weeks today-or-later get restored.
   useEffect(() => {
-    localStorage.setItem('hq-week-start', weekStart)
-  }, [weekStart])
+    const saved = localStorage.getItem('hq-week-start')
+    const today = getMonday()
+    if (saved && saved >= today) setWeekStartRaw(() => saved)
+  }, [])
+
+  // Persist alongside any state change. We do this in a setter wrapper rather
+  // than a useEffect because useEffect fires on mount with the SSR/initial
+  // state and would overwrite the saved value before the restore effect runs.
+  const setWeekStart = (updater: (s: string) => string) => {
+    setWeekStartRaw(prev => {
+      const next = updater(prev)
+      try { localStorage.setItem('hq-week-start', next) } catch { /* noop */ }
+      return next
+    })
+  }
 
   function switchSpace(spaceId: string) {
     setActiveSpaceId(spaceId)
