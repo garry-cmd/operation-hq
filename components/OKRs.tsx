@@ -72,9 +72,10 @@ type Props = {
   habitCheckins: HabitCheckin[]
   metricCheckins: MetricCheckin[]
   toast: (m: string) => void
+  onLogMetric: (krId: string) => void
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric }: Props) {
   const [modal, setModal] = useState<'smart' | 'manual' | null>(null)
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
@@ -243,6 +244,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                 weekStart={weekStart}
                 links={links}
                 logs={logs}
+                metricCheckins={metricCheckins}
                 setRoadmapItems={setRoadmapItems}
                 setObjectives={setObjectives}
                 setActions={setActions}
@@ -251,6 +253,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                 onAddLog={onAddLog}
                 onDeleteLog={onDeleteLog}
                 onEditKR={setEditingKR}
+                onLogMetric={onLogMetric}
                 toast={toast}
               />
             </div>
@@ -479,29 +482,63 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
   const [status, setStatus] = useState(kr.status)
   const [saving, setSaving] = useState(false)
 
+  // Metric fields. All stored as strings so inputs stay controlled even when
+  // empty; parsed on save. A KR is either a metric, a habit, or neither —
+  // turning is_metric on forces is_habit off.
+  const [isMetric, setIsMetric] = useState(kr.is_metric)
+  const [metricUnit, setMetricUnit] = useState(kr.metric_unit ?? '')
+  const [metricDirection, setMetricDirection] = useState<'up' | 'down'>(kr.metric_direction ?? 'up')
+  const [startValue, setStartValue] = useState<string>(kr.start_value != null ? String(kr.start_value) : '')
+  const [targetValue, setTargetValue] = useState<string>(kr.target_value != null ? String(kr.target_value) : '')
+  const [targetDate, setTargetDate] = useState<string>(kr.target_date ?? '')
+
   async function save() {
     if (!title.trim()) return
+    if (isMetric) {
+      // Require enough config to make the metric meaningful. These power the
+      // auto-compute + dashboard; a metric KR without them is inert.
+      if (!metricUnit.trim() || startValue === '' || targetValue === '') {
+        toast('Metric KRs need a unit, start, and target.')
+        return
+      }
+      const s = Number(startValue), t = Number(targetValue)
+      if (Number.isNaN(s) || Number.isNaN(t)) { toast('Start and target must be numbers.'); return }
+      if (s === t) { toast('Start and target can\'t be the same value.'); return }
+    }
     setSaving(true)
-    
+
     try {
-      const updatedKR = {
+      const updatedKR: Partial<RoadmapItem> = {
         title: title.trim(),
         health_status: healthStatus,
-        status: status
+        status: status,
+        is_metric: isMetric,
+        // When metric is off, null out the metric-specific fields so stale
+        // data doesn't resurface if the toggle gets flipped back on later.
+        metric_unit:      isMetric ? metricUnit.trim() : null,
+        metric_direction: isMetric ? metricDirection : null,
+        start_value:      isMetric ? Number(startValue) : null,
+        target_value:     isMetric ? Number(targetValue) : null,
+        target_date:      isMetric ? (targetDate || null) : null,
       }
-      
+      // Metric and habit are mutually exclusive — if we're turning metric on,
+      // force is_habit off so the KR doesn't show up in Focus bubbles.
+      if (isMetric && kr.is_habit) {
+        updatedKR.is_habit = false
+      }
+
       await onSave(updatedKR)
     } catch (error) {
       console.error('Failed to update KR:', error)
       toast('Failed to update KR')
     }
-    
+
     setSaving(false)
   }
 
   return (
-    <Modal 
-      title="Edit Key Result" 
+    <Modal
+      title="Edit Key Result"
       onClose={onClose}
       footer={
         <>
@@ -511,9 +548,9 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
             Delete
           </button>
           <button className="btn" onClick={onClose}>Cancel</button>
-          <button 
-            className="btn-primary" 
-            onClick={save} 
+          <button
+            className="btn-primary"
+            onClick={save}
             disabled={saving || !title.trim()}
           >
             {saving ? 'Saving...' : 'Save Changes'}
@@ -523,20 +560,20 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
     >
       <div className="field">
         <label>Title</label>
-        <input 
-          className="input" 
-          value={title} 
-          onChange={e => setTitle(e.target.value)} 
+        <input
+          className="input"
+          value={title}
+          onChange={e => setTitle(e.target.value)}
           autoFocus
-          placeholder="e.g. Lose 20 lbs" 
+          placeholder="e.g. Lose 20 lbs"
         />
       </div>
 
       <div className="field">
         <label>Health Status</label>
-        <select 
-          className="input" 
-          value={healthStatus} 
+        <select
+          className="input"
+          value={healthStatus}
           onChange={e => setHealthStatus(e.target.value as any)}
         >
           <option value="backlog">Backlog</option>
@@ -548,9 +585,9 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
 
       <div className="field">
         <label>Status</label>
-        <select 
-          className="input" 
-          value={status} 
+        <select
+          className="input"
+          value={status}
           onChange={e => setStatus(e.target.value as any)}
         >
           <option value="not_started">Not Started</option>
@@ -559,6 +596,53 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           <option value="abandoned">Abandoned</option>
         </select>
       </div>
+
+      {/* Metric KR config — collapsed behind a toggle to keep the modal light
+          for normal outcome KRs. Only shows the detail fields when on. */}
+      <div className="field" style={{ borderTop: '1px solid var(--navy-600)', paddingTop: 14, marginTop: 6 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 4 }}>
+          <input
+            type="checkbox"
+            checked={isMetric}
+            onChange={e => setIsMetric(e.target.checked)}
+            style={{ width: 16, height: 16 }}
+          />
+          <span style={{ fontWeight: 600, color: 'var(--navy-100)' }}>Track as a metric</span>
+        </label>
+        <div style={{ fontSize: 12, color: 'var(--navy-400)', marginLeft: 26 }}>
+          Log a number each week (weight, net worth, revenue, etc.). Progress auto-computes.
+        </div>
+      </div>
+
+      {isMetric && (
+        <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, padding: '12px 14px', marginTop: 4 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', display: 'block', marginBottom: 4 }}>Unit</label>
+              <input className="input" value={metricUnit} onChange={e => setMetricUnit(e.target.value)} placeholder="lbs, $, %" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', display: 'block', marginBottom: 4 }}>Direction</label>
+              <select className="input" value={metricDirection} onChange={e => setMetricDirection(e.target.value as 'up' | 'down')}>
+                <option value="up">Up is better</option>
+                <option value="down">Down is better</option>
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', display: 'block', marginBottom: 4 }}>Start value</label>
+              <input className="input" type="number" inputMode="decimal" value={startValue} onChange={e => setStartValue(e.target.value)} placeholder="e.g. 215" />
+            </div>
+            <div>
+              <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', display: 'block', marginBottom: 4 }}>Target value</label>
+              <input className="input" type="number" inputMode="decimal" value={targetValue} onChange={e => setTargetValue(e.target.value)} placeholder="e.g. 190" />
+            </div>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', display: 'block', marginBottom: 4 }}>Target date <span style={{ color: 'var(--navy-500)', fontWeight: 400 }}>(optional)</span></label>
+            <input className="input" type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
+          </div>
+        </div>
+      )}
     </Modal>
   )
 }

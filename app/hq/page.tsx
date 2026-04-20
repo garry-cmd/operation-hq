@@ -12,6 +12,7 @@ import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import SpaceSwitcher from '@/components/SpaceSwitcher'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
+import MetricLogModal from '@/components/MetricLogModal'
 import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
@@ -45,6 +46,7 @@ export default function HQPage() {
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
   const [closingWizard, setClosingWizard] = useState<string | null>(null)
+  const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
 
   // Guards the once-per-space force-launch check. Reset when the user switches
   // spaces so a different space's unclosed last week can also trigger.
@@ -317,7 +319,7 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} />}
+            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}
@@ -377,6 +379,24 @@ export default function HQPage() {
           onClose={() => setClosingWizard(null)}
         />
       )}
+
+      {/* Metric log modal — lives at page level so any screen can open it.
+          Today only triggered from OKR cards, but Reflect history / wizard
+          nudges will hook in later without re-plumbing. */}
+      {loggingMetricKRId && (() => {
+        const kr = spaceRoadmapItems.find(i => i.id === loggingMetricKRId)
+        if (!kr) return null
+        return (
+          <MetricLogModal
+            kr={kr}
+            checkins={spaceMetricCheckins}
+            setMetricCheckins={setMetricCheckins}
+            setRoadmapItems={setRoadmapItems}
+            toast={setToast}
+            onClose={() => setLoggingMetricKRId(null)}
+          />
+        )
+      })()}
 
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
 

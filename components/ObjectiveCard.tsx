@@ -1,7 +1,7 @@
 'use client'
 import React, { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
 import Modal from './Modal'
 
@@ -29,6 +29,7 @@ interface Props {
   weekStart: string
   links: ObjectiveLink[]
   logs: ObjectiveLog[]
+  metricCheckins: MetricCheckin[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
@@ -37,10 +38,11 @@ interface Props {
   onAddLog: (log: ObjectiveLog) => void
   onDeleteLog: (id: string) => void
   onEditKR: (kr: RoadmapItem) => void
+  onLogMetric: (krId: string) => void
   toast: (m: string) => void
 }
 
-export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, setRoadmapItems, setObjectives, setActions, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, toast }: Props) {
+export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, metricCheckins, setRoadmapItems, setObjectives, setActions, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, onLogMetric, toast }: Props) {
   const [collapsed, setCollapsed] = useState(true)
   const [section, setSection] = useState<'notes' | 'links' | 'logs' | null>(null)
   const [notes, setNotes] = useState(obj.notes ?? '')
@@ -234,14 +236,51 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
           const actCount = weekActions.filter(a => a.roadmap_item_id === kr.id).length
           const h = kr.health_status ?? 'not_started'
           const hs = HEALTH[h]
+          // Metric KR context — latest value + whether this week's been logged.
+          // Only non-null for KRs flagged is_metric; normal rows render unchanged.
+          const metricCtx = (() => {
+            if (!kr.is_metric) return null
+            const krCheckins = metricCheckins.filter(c => c.roadmap_item_id === kr.id)
+            const sorted = [...krCheckins].sort((a, b) => b.week_start.localeCompare(a.week_start))
+            const latest = sorted[0]
+            const thisWeek = sorted.find(c => c.week_start === weekStart)
+            return { latest, loggedThisWeek: !!thisWeek, unit: kr.metric_unit ?? '' }
+          })()
           return (
             <React.Fragment key={kr.id}>
               <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 4 }}>{kr.title}</div>
-                  <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>
-                    {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    {kr.title}
+                    {kr.is_metric && (
+                      <span title="Metric KR" style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.5px' }}>metric</span>
+                    )}
                   </div>
+                  {metricCtx ? (
+                    <div style={{ fontSize: 11, color: 'var(--navy-500)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {metricCtx.latest ? (
+                        <span>
+                          Latest: <span style={{ color: 'var(--navy-200)', fontWeight: 600 }}>{metricCtx.latest.value}{metricCtx.unit && ` ${metricCtx.unit}`}</span>
+                        </span>
+                      ) : (
+                        <span style={{ fontStyle: 'italic' }}>No readings yet</span>
+                      )}
+                      <button onClick={() => onLogMetric(kr.id)}
+                        style={{
+                          fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99,
+                          border: metricCtx.loggedThisWeek ? '1px solid var(--navy-500)' : '1px solid var(--accent)',
+                          background: metricCtx.loggedThisWeek ? 'transparent' : 'var(--accent-dim)',
+                          color: metricCtx.loggedThisWeek ? 'var(--navy-300)' : 'var(--accent)',
+                          cursor: 'pointer', whiteSpace: 'nowrap',
+                        }}>
+                        {metricCtx.loggedThisWeek ? 'Update this week' : 'Log this week →'}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>
+                      {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
                   <button onClick={() => setAddingActionKRId(kr.id)}

@@ -40,6 +40,8 @@ export interface ObjectiveLink {
   created_at: string
 }
 
+export type MetricDirection = 'up' | 'down'
+
 export interface RoadmapItem {
   id: string
   annual_objective_id: string
@@ -51,6 +53,15 @@ export interface RoadmapItem {
   progress: number
   is_parked: boolean
   is_habit: boolean
+  // Metric KR fields — populated only when is_metric = true.
+  // A KR is either a metric, a habit, or a plain outcome; the app enforces
+  // single-flavor via UI, not a DB constraint.
+  is_metric: boolean
+  metric_unit: string | null
+  metric_direction: MetricDirection | null
+  start_value: number | null
+  target_value: number | null
+  target_date: string | null
   created_at: string
 }
 
@@ -101,11 +112,5 @@ export interface MetricCheckin {
   week_start: string
   value: number
   created_at: string
-}
-
-export interface MetricKR extends RoadmapItem {
-  metric_type: 'weight' | 'net_worth' | 'revenue' | 'custom'
-  target_value?: number
-  target_date?: string
-  unit?: string
+  updated_at: string
 }

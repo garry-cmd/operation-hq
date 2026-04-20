@@ -147,7 +147,8 @@ export default function GuidedObjectiveBuilder({ objectives, activeSpaceId, onCl
         .single()
 
       if (objectiveData) {
-        // Create key results
+        // Create key results. Metric fields default to null/false — metric
+        // config is opt-in via the edit modal after creation.
         const keyResultsToInsert = parsedKRs.map((kr, index) => ({
           annual_objective_id: objectiveData.id,
           title: kr.title,
@@ -158,6 +159,12 @@ export default function GuidedObjectiveBuilder({ objectives, activeSpaceId, onCl
           progress: 0,
           is_parked: false,
           is_habit: kr.isHabit,
+          is_metric: false,
+          metric_unit: null,
+          metric_direction: null,
+          start_value: null,
+          target_value: null,
+          target_date: null,
           created_at: new Date().toISOString()
         }))
 

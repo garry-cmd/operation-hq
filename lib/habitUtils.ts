@@ -1,4 +1,4 @@
-import { HabitCheckin, RoadmapItem, MetricCheckin, MetricKR } from './types'
+import { HabitCheckin, RoadmapItem, MetricCheckin } from './types'
 
 export interface HabitProgress {
   currentCount: number
