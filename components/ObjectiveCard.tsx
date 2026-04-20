@@ -41,7 +41,7 @@ interface Props {
 }
 
 export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, setRoadmapItems, setObjectives, setActions, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, toast }: Props) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
   const [section, setSection] = useState<'notes' | 'links' | 'logs' | null>(null)
   const [notes, setNotes] = useState(obj.notes ?? '')
   const [notesSaved, setNotesSaved] = useState(true)

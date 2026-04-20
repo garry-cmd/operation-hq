@@ -50,11 +50,6 @@ export default function Focus({
   const taskTotal = weekActions.length
   const taskPct = taskTotal > 0 ? Math.round(taskDone / taskTotal * 100) : 0
   const allDone = taskTotal > 0 && taskDone === taskTotal
-  const unplanned = activeKRs.filter(kr =>
-    !kr.is_habit && // Exclude habits from unplanned section
-    !weekActions.some(a => a.roadmap_item_id === kr.id) &&
-    (kr.health_status === 'on_track' || kr.health_status === 'off_track' || kr.health_status === 'blocked')
-  )
 
   // Habit progress calculations - only show weekly/daily habits in Focus
   const habitProgress = habitKRs.map(kr => {
@@ -412,71 +407,8 @@ export default function Focus({
           />
         )}
 
-        {/* Fallback: unplanned KRs */}
-        {taskTotal > 0 && unplanned.length > 0 && (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
-              <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--amber)', flexShrink: 0 }} />
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>
-                {unplanned.length} key result{unplanned.length > 1 ? 's' : ''} with nothing planned
-              </span>
-            </div>
-            {unplanned.map(kr => {
-              const obj = objectives.find(o => o.id === kr.annual_objective_id)
-              return (
-                <UnplannedRow key={kr.id} kr={kr} objective={obj}
-                  onAdd={async (title) => {
-                    const { data } = await supabase.from('weekly_actions')
-                      .insert({ roadmap_item_id: kr.id, title, week_start: weekStart }).select().single()
-                    if (data) setActions(prev => [...prev, data])
-                  }} />
-              )
-            })}
-          </div>
-        )}
-
       </div>
     </>
-  )
-}
-
-function UnplannedRow({ kr, objective, onAdd }: { kr: RoadmapItem; objective?: AnnualObjective; onAdd: (t: string) => Promise<void> }) {
-  const [open, setOpen] = useState(false)
-  const [value, setValue] = useState('')
-  const [saving, setSaving] = useState(false)
-  const ref = useRef<HTMLInputElement>(null)
-  useEffect(() => { if (open) ref.current?.focus() }, [open])
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault()
-    if (!value.trim() || saving) return
-    setSaving(true)
-    await onAdd(value.trim())
-    setValue(''); setOpen(false); setSaving(false)
-  }
-
-  return (
-    <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, marginBottom: 7, overflow: 'hidden' }}>
-      <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {objective && <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 2 }}>{objective.name}</div>}
-          <div style={{ fontSize: 13, color: 'var(--navy-200)', lineHeight: 1.35 }}>{kr.title}</div>
-        </div>
-        <button onClick={() => setOpen(o => !o)}
-          style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-dim)', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', flexShrink: 0 }}>
-          {open ? 'Cancel' : '+ add action'}
-        </button>
-      </div>
-      {open && (
-        <form onSubmit={save} style={{ padding: '0 14px 12px', borderTop: '1px solid var(--navy-600)' }}>
-          <input ref={ref} value={value} onChange={e => setValue(e.target.value)} placeholder="What are you doing about this?"
-            className="input" style={{ marginTop: 10, marginBottom: 8, fontSize: 13 }} />
-          <button type="submit" className="btn-primary" disabled={!value.trim() || saving} style={{ width: '100%', fontSize: 13 }}>
-            {saving ? 'Adding…' : 'Add action'}
-          </button>
-        </form>
-      )}
-    </div>
   )
 }
 

@@ -81,8 +81,6 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const weekActions = actions.filter(a => a.week_start === weekStart)
-  const onTrack  = activeKRs.filter(i => i.health_status === 'on_track').length
-  const offTrack = activeKRs.filter(i => i.health_status === 'off_track').length
 
   async function deleteKR(id: string) {
     try {
@@ -163,20 +161,6 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         </div>
       </div>
 
-      {/* Summary */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 20 }}>
-        {[
-          ['Key Results',      activeKRs.length,   'var(--accent)'],
-          ['On track',         onTrack,             'var(--teal-text)'],
-          ['Off track',        offTrack,            'var(--red-text)'],
-        ].map(([l, v, c]) => (
-          <div key={l as string} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '11px 13px' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '.4px' }}>{l}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, color: c as string }}>{v}</div>
-          </div>
-        ))}
-      </div>
-
       {/* KPI Dashboard */}
       {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => (kr as any).metric_type).length > 0) && (
         <div style={{ marginBottom: 20 }}>
@@ -187,26 +171,25 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               .filter(kr => kr.is_habit)
               .map(kr => {
                 const aggregate = calculateRollingAggregate(kr, habitCheckins, 4)
-                let status = 'poor'
-                if (aggregate.percent >= 80) status = 'good'
-                else if (aggregate.percent >= 50) status = 'okay'
-                
+                // Color thresholds: <50 red, 50–79 amber, ≥80 teal.
+                const tone = aggregate.percent >= 80 ? 'teal'
+                           : aggregate.percent >= 50 ? 'amber'
+                           : 'red'
                 return (
-                  <div key={kr.id} style={{ 
-                    background: 'var(--navy-800)', 
-                    border: '1px solid var(--navy-600)', 
-                    borderLeft: `3px solid ${status === 'good' ? 'var(--teal)' : status === 'okay' ? 'var(--accent)' : 'var(--red)'}`,
-                    borderRadius: 8, 
-                    padding: '14px 16px' 
+                  <div key={kr.id} style={{
+                    background: `var(--${tone}-bg)`,
+                    border: `1px solid var(--${tone}-text)`,
+                    borderRadius: 8,
+                    padding: '14px 16px',
                   }}>
-                    <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <p style={{ fontSize: 12, color: `var(--${tone}-text)`, opacity: 0.85, margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {kr.title}
                     </p>
-                    <p style={{ fontSize: 22, fontWeight: 500, color: 'var(--navy-50)', margin: '0 0 3px 0' }}>
+                    <p style={{ fontSize: 24, fontWeight: 600, color: `var(--${tone}-text)`, margin: '0 0 3px 0' }}>
                       {aggregate.percent}%
                     </p>
-                    <div style={{ fontSize: 11, color: 'var(--navy-500)', margin: 0, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span>{aggregate.sessions}/{aggregate.expected} sessions</span>
+                    <div style={{ fontSize: 11, color: `var(--${tone}-text)`, opacity: 0.7, margin: 0 }}>
+                      {aggregate.sessions}/{aggregate.expected} sessions
                     </div>
                   </div>
                 )
