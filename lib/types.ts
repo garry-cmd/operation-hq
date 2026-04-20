@@ -62,6 +62,7 @@ export interface WeeklyAction {
   week_start: string
   completed: boolean
   carried_over: boolean
+  is_recurring: boolean
   created_at: string
 }
 

@@ -136,9 +136,9 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
     setActions(prev => prev.map(a => a.id === action.id ? { ...a, completed: next } : a))
   }
 
-  async function saveEdit(action: WeeklyAction, title: string) {
-    await supabase.from('weekly_actions').update({ title }).eq('id', action.id)
-    setActions(prev => prev.map(a => a.id === action.id ? { ...a, title } : a))
+  async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean) {
+    await supabase.from('weekly_actions').update({ title, is_recurring: isRecurring }).eq('id', action.id)
+    setActions(prev => prev.map(a => a.id === action.id ? { ...a, title, is_recurring: isRecurring } : a))
     setEditAction(null)
     toast('Action updated.')
   }
@@ -150,25 +150,83 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
     toast('Action deleted.')
   }
 
-  async function goToWeek(dir: number) {
-    const target = addWeeks(weekStart, dir)
-    if (dir > 0) {
-      // Auto-carry incomplete actions to an empty week
-      const targetEmpty = !actions.some(a => a.week_start === target)
-      if (targetEmpty) {
-        const incomplete = actions.filter(a => a.week_start === weekStart && !a.completed)
-        if (incomplete.length > 0) {
-          const { data } = await supabase.from('weekly_actions')
-            .insert(incomplete.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: target, carried_over: true })))
-            .select()
-          if (data) {
-            setActions(prev => [...prev, ...data])
-            toast(`${data.length} incomplete action${data.length > 1 ? 's' : ''} carried forward`)
-          }
+  // Navigation is purely for browsing weeks. Carry-forward and recurring
+  // re-spawn happen only via the explicit "Close week" flow below.
+  function goToWeek(dir: number) {
+    setWeekStart(s => addWeeks(s, dir))
+  }
+
+  // --- Close Week ---------------------------------------------------------
+  // Snapshots the week by:
+  //   1. Re-spawning any actions flagged is_recurring fresh in the next week
+  //   2. Carrying forward incomplete (non-recurring) actions
+  //   3. Leaving completed (non-recurring) actions in place as the historical record
+  //   4. Advancing to the next week
+  // Habits already persist as date-keyed habit_checkins rows, so the new
+  // week naturally shows empty bubbles — no clearing required.
+  // De-dupes against any actions already present in the next week so an
+  // accidental double-press is harmless.
+  const [closing, setClosing] = useState(false)
+  const [closeBusy, setCloseBusy] = useState(false)
+
+  const closeStats = (() => {
+    const next = addWeeks(weekStart, 1)
+    const nextWeekActions = actions.filter(a => a.week_start === next)
+    const dup = (a: WeeklyAction) =>
+      nextWeekActions.some(n => n.roadmap_item_id === a.roadmap_item_id && n.title === a.title)
+    const recurring = weekActions.filter(a => a.is_recurring && !dup(a))
+    const carrying = weekActions.filter(a => !a.is_recurring && !a.completed && !dup(a))
+    const completed = weekActions.filter(a => !a.is_recurring && a.completed)
+    return { next, recurring, carrying, completed }
+  })()
+
+  async function closeWeek() {
+    if (closeBusy) return
+    setCloseBusy(true)
+    try {
+      const inserts = [
+        ...closeStats.recurring.map(a => ({
+          roadmap_item_id: a.roadmap_item_id,
+          title: a.title,
+          week_start: closeStats.next,
+          is_recurring: true,
+          carried_over: false,
+          completed: false,
+        })),
+        ...closeStats.carrying.map(a => ({
+          roadmap_item_id: a.roadmap_item_id,
+          title: a.title,
+          week_start: closeStats.next,
+          is_recurring: false,
+          carried_over: true,
+          completed: false,
+        })),
+      ]
+
+      if (inserts.length > 0) {
+        const { data, error } = await supabase.from('weekly_actions').insert(inserts).select()
+        if (error) {
+          console.error('closeWeek insert error:', error)
+          toast('Could not close week.')
+          setCloseBusy(false)
+          return
         }
+        if (data) setActions(prev => [...prev, ...data])
       }
+
+      const r = closeStats.recurring.length
+      const c = closeStats.carrying.length
+      setWeekStart(() => closeStats.next)
+      setClosing(false)
+      toast(`Week closed · ${r} recurring · ${c} carried`)
+    } finally {
+      setCloseBusy(false)
     }
-    setWeekStart(() => target)
+  }
+
+  async function setRecurring(action: WeeklyAction, isRecurring: boolean) {
+    await supabase.from('weekly_actions').update({ is_recurring: isRecurring }).eq('id', action.id)
+    setActions(prev => prev.map(a => a.id === action.id ? { ...a, is_recurring: isRecurring } : a))
   }
 
   const enriched = weekActions.map(action => {
@@ -324,6 +382,11 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
                   Re-plan
                 </button>
               )}
+              <button onClick={() => setClosing(true)}
+                title="Close this week — carry forward incomplete actions and re-spawn recurring ones"
+                style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', background: 'var(--accent-dim)', border: '1px solid var(--accent-dim)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>
+                Close week →
+              </button>
               <button style={navBtn} onClick={() => goToWeek(-1)}>‹</button>
               <button style={navBtn} onClick={() => goToWeek(1)}>›</button>
             </div>
@@ -379,6 +442,7 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
               <div style={{ fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 {action.title}
                 {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
+                {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
               </div>
               {obj && kr && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -399,9 +463,34 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
           <EditActionModal
             action={editAction}
             onClose={() => setEditAction(null)}
-            onSave={title => saveEdit(editAction, title)}
+            onSave={(title, isRecurring) => saveEdit(editAction, title, isRecurring)}
             onDelete={() => deleteAction(editAction.id)}
           />
+        )}
+
+        {/* Close-week confirm modal */}
+        {closing && (
+          <Modal title={`Close week of ${formatWeek(weekStart)}?`} onClose={() => !closeBusy && setClosing(false)}
+            footer={<>
+              <button className="btn" onClick={() => setClosing(false)} disabled={closeBusy}>Cancel</button>
+              <button className="btn-primary" onClick={closeWeek} disabled={closeBusy}>
+                {closeBusy ? 'Closing…' : `Close & advance to ${formatWeek(closeStats.next)}`}
+              </button>
+            </>}>
+            <div style={{ fontSize: 13, color: 'var(--navy-200)', lineHeight: 1.7 }}>
+              <CloseStatRow color="var(--accent)" label="Repeats next week" count={closeStats.recurring.length} />
+              <CloseStatRow color="var(--amber)" label="Carried forward (incomplete)" count={closeStats.carrying.length} />
+              <CloseStatRow color="var(--teal)" label="Done — stays in this week's history" count={closeStats.completed.length} />
+              {(closeStats.recurring.length === 0 && closeStats.carrying.length === 0 && closeStats.completed.length === 0) && (
+                <div style={{ color: 'var(--navy-400)', fontSize: 12, marginTop: 6 }}>
+                  Nothing to move. This will just advance the week.
+                </div>
+              )}
+              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--navy-600)', fontSize: 11, color: 'var(--navy-400)', lineHeight: 1.6 }}>
+                Habit history stays put — your habit bubbles for {formatWeek(weekStart)} remain in Reflect.
+              </div>
+            </div>
+          </Modal>
         )}
 
         {/* Fallback: unplanned KRs */}
@@ -475,16 +564,17 @@ function UnplannedRow({ kr, objective, onAdd }: { kr: RoadmapItem; objective?: A
 function EditActionModal({ action, onClose, onSave, onDelete }: {
   action: WeeklyAction
   onClose: () => void
-  onSave: (title: string) => void
+  onSave: (title: string, isRecurring: boolean) => void
   onDelete: () => void
 }) {
   const [title, setTitle] = useState(action.title)
+  const [isRecurring, setIsRecurring] = useState(action.is_recurring)
   const [saving, setSaving] = useState(false)
 
   async function save() {
     if (!title.trim()) return
     setSaving(true)
-    await onSave(title.trim())
+    await onSave(title.trim(), isRecurring)
     setSaving(false)
   }
 
@@ -505,6 +595,38 @@ function EditActionModal({ action, onClose, onSave, onDelete }: {
         <textarea className="input" rows={3} value={title}
           onChange={e => setTitle(e.target.value)} autoFocus />
       </div>
+      <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
+        onClick={() => setIsRecurring(v => !v)}>
+        <button type="button" onClick={e => { e.stopPropagation(); setIsRecurring(v => !v) }}
+          style={{
+            width: 36, height: 20, borderRadius: 10, padding: 2, border: 'none',
+            background: isRecurring ? 'var(--accent)' : 'var(--navy-600)',
+            display: 'flex', alignItems: 'center', cursor: 'pointer',
+            transition: 'background .15s', flexShrink: 0,
+          }}>
+          <div style={{
+            width: 16, height: 16, borderRadius: '50%', background: '#fff',
+            transform: isRecurring ? 'translateX(16px)' : 'translateX(0)',
+            transition: 'transform .15s',
+          }} />
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-50)' }}>Repeats weekly</div>
+          <div style={{ fontSize: 11, color: 'var(--navy-400)', lineHeight: 1.4, marginTop: 2 }}>
+            Re-spawns fresh every time you close the week, regardless of whether it was completed.
+          </div>
+        </div>
+      </div>
     </Modal>
+  )
+}
+
+function CloseStatRow({ color, label, count }: { color: string; label: string; count: number }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      <span style={{ flex: 1, fontSize: 13, color: count === 0 ? 'var(--navy-400)' : 'var(--navy-100)' }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: count === 0 ? 'var(--navy-500)' : 'var(--navy-50)' }}>{count}</span>
+    </div>
   )
 }
