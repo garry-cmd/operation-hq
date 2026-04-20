@@ -77,8 +77,11 @@ export default function MetricLogModal({ kr, checkins, setMetricCheckins, setRoa
 
       // Auto-compute progress. Skip the write if not enough config or if the
       // value hasn't changed the rounded progress (avoids pointless updates).
+      // Coerce kr.progress because Supabase numerics can arrive as strings;
+      // a string-vs-number !== will always fire spurious updates.
       const newProgress = computeMetricProgress(kr, num)
-      if (newProgress != null && newProgress !== kr.progress) {
+      const currentProgress = kr.progress == null ? null : Number(kr.progress)
+      if (newProgress != null && newProgress !== currentProgress) {
         const { error: progressErr } = await supabase
           .from('roadmap_items')
           .update({ progress: newProgress })
@@ -103,8 +106,9 @@ export default function MetricLogModal({ kr, checkins, setMetricCheckins, setRoa
   // coloring: "good" = moving toward target; "bad" = moving away.
   function deltaLabel(idx: number): { text: string; color: string } | null {
     if (idx >= history.length - 1) return null
-    const curr = history[idx].value
-    const prev = history[idx + 1].value
+    // Numeric columns arrive as strings from supabase — coerce at the boundary.
+    const curr = Number(history[idx].value)
+    const prev = Number(history[idx + 1].value)
     const d = curr - prev
     if (Math.abs(d) < 0.0001) return { text: '—', color: 'var(--navy-400)' }
     const sign = d > 0 ? '+' : ''

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
+import { recentCheckins, sparklineBounds, sparklineTrend } from '@/lib/metricUtils'
 import ObjectiveCard from './ObjectiveCard'
 import GuidedObjectiveBuilder from './GuidedObjectiveBuilder'
 import Modal from './Modal'
@@ -163,10 +164,10 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
       </div>
 
       {/* KPI Dashboard */}
-      {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => (kr as any).metric_type).length > 0) && (
+      {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => kr.is_metric).length > 0) && (
         <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: '0 0 12px 0' }}>Key metrics (last 4 weeks)</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: '0 0 12px 0' }}>Key metrics</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
             {/* Habit KPIs */}
             {activeKRs
               .filter(kr => kr.is_habit)
@@ -196,8 +197,18 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                 )
               })}
 
-            {/* Metric KPIs - Currently none since metric_type column doesn't exist yet */}
-            {/* This section will show metric cards once you add metric_type to roadmap_items table */}
+            {/* Metric KPIs — tap to open log modal. Tinted by progress%
+                (same thresholds as habits); sparkline inside shows 12-week trend. */}
+            {activeKRs
+              .filter(kr => kr.is_metric)
+              .map(kr => (
+                <MetricKPICard
+                  key={kr.id}
+                  kr={kr}
+                  checkins={metricCheckins}
+                  onTap={() => onLogMetric(kr.id)}
+                />
+              ))}
           </div>
         </div>
       )}
@@ -749,5 +760,175 @@ function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
         </select>
       </div>
     </Modal>
+  )
+}
+
+// =========================================================================
+// MetricKPICard — tinted card summarizing a metric KR, with 12-week sparkline.
+// Tap anywhere on the card to open the log modal.
+// =========================================================================
+function MetricKPICard({
+  kr, checkins, onTap,
+}: {
+  kr: RoadmapItem
+  checkins: MetricCheckin[]
+  onTap: () => void
+}) {
+  const unit = kr.metric_unit ?? ''
+
+  // Supabase returns `numeric` columns as strings — coerce here. Doing it at
+  // the boundary means the rest of this component can trust JS number math.
+  // (Same pattern should live at the page.tsx data-load layer eventually;
+  // for now, card-local is enough.)
+  const startNum  = kr.start_value  == null ? null : Number(kr.start_value)
+  const targetNum = kr.target_value == null ? null : Number(kr.target_value)
+  const progressNum = kr.progress == null ? null : Number(kr.progress)
+
+  // Last 12 weeks for the sparkline. Reverse for chronological plotting.
+  const latest12Desc = recentCheckins(checkins, kr.id, 12)
+  const chronological = [...latest12Desc].reverse()
+
+  const current = latest12Desc[0]?.value != null ? Number(latest12Desc[0].value) : null
+  const previous = latest12Desc[1]?.value != null ? Number(latest12Desc[1].value) : null
+  const delta = current != null && previous != null ? current - previous : null
+
+  // Direction-aware delta coloring: "good" = toward target.
+  const deltaIsGood = delta == null || Math.abs(delta) < 0.0001
+    ? null
+    : kr.metric_direction === 'up' ? delta > 0 : delta < 0
+
+  // Tint by progress, same thresholds as habits — unified language for the row
+  // of cards. Null progress (under-configured KR) falls through to navy neutral.
+  const tone: 'teal' | 'amber' | 'red' | 'neutral' =
+    progressNum == null ? 'neutral'
+    : progressNum >= 80 ? 'teal'
+    : progressNum >= 50 ? 'amber'
+    : 'red'
+
+  // For the neutral case (under-configured / no data yet) use navy vars so the
+  // card still reads like the others without false-signaling green/red.
+  const tintBg   = tone === 'neutral' ? 'var(--navy-800)' : `var(--${tone}-bg)`
+  const tintEdge = tone === 'neutral' ? 'var(--navy-600)' : `var(--${tone}-text)`
+  const tintText = tone === 'neutral' ? 'var(--navy-100)' : `var(--${tone}-text)`
+
+  return (
+    <button onClick={onTap} style={{
+      textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
+      background: tintBg, border: `1px solid ${tintEdge}`, borderRadius: 8,
+      padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8,
+      width: '100%',
+    }}>
+      <div style={{ fontSize: 12, color: tintText, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
+        {kr.title}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+        {current != null ? (
+          <>
+            <span style={{ fontSize: 24, fontWeight: 600, color: tintText, lineHeight: 1 }}>
+              {current}
+            </span>
+            {unit && <span style={{ fontSize: 13, color: tintText, opacity: 0.7 }}>{unit}</span>}
+            {delta != null && (
+              <span style={{
+                fontSize: 11, fontWeight: 700, marginLeft: 4,
+                color: deltaIsGood == null ? tintText : (deltaIsGood ? 'var(--teal-text)' : 'var(--red-text)'),
+                opacity: deltaIsGood == null ? 0.6 : 1,
+              }}>
+                {delta > 0 ? '↑ +' : delta < 0 ? '↓ ' : ''}
+                {Number(delta.toFixed(2))}
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 14, fontStyle: 'italic', color: tintText, opacity: 0.7 }}>
+            No readings yet
+          </span>
+        )}
+      </div>
+
+      <MetricSparkline
+        values={chronological.map(c => Number(c.value))}
+        start={startNum}
+        target={targetNum}
+        direction={kr.metric_direction}
+      />
+
+      <div style={{ fontSize: 10, color: tintText, opacity: 0.65, display: 'flex', justifyContent: 'space-between', marginTop: -2 }}>
+        <span>
+          {startNum != null && <>Start {startNum}{unit && ` ${unit}`}</>}
+        </span>
+        <span>
+          {targetNum != null && <>Target {targetNum}{unit && ` ${unit}`}</>}
+        </span>
+      </div>
+
+      {progressNum != null && (
+        <div style={{ fontSize: 10, color: tintText, opacity: 0.75, fontWeight: 600 }}>
+          {progressNum}% of the way there
+        </div>
+      )}
+    </button>
+  )
+}
+
+// =========================================================================
+// MetricSparkline — inline SVG polyline; ~30 lines of geometry.
+// Y-axis is anchored by start + target so "where you're going" is always
+// visible in the frame. Line color reflects trend-toward-target.
+// =========================================================================
+function MetricSparkline({
+  values, start, target, direction,
+}: {
+  values: number[]
+  start: number | null
+  target: number | null
+  direction: 'up' | 'down' | null
+}) {
+  const W = 200, H = 40, pad = 2
+
+  // Special cases: no data or bad axis config — render a flat placeholder
+  // so the card keeps its visual rhythm with the others in the row.
+  if (values.length === 0) {
+    return (
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="var(--navy-500)" strokeDasharray="3 3" strokeWidth="1" />
+      </svg>
+    )
+  }
+
+  const [yMin, yMax] = sparklineBounds(values, start, target)
+  const yToPx = (v: number) => pad + (1 - (v - yMin) / (yMax - yMin)) * (H - pad * 2)
+
+  // X positions: evenly spaced across the width. With one point, pin to the
+  // right edge — "this is where you are now."
+  const xToPx = (i: number) => {
+    if (values.length === 1) return W - pad
+    return pad + (i / (values.length - 1)) * (W - pad * 2)
+  }
+
+  const points = values.map((v, i) => `${xToPx(i)},${yToPx(v)}`).join(' ')
+  const trend = sparklineTrend(values, direction)
+  const strokeColor =
+    trend === 'improving' ? 'var(--teal)' :
+    trend === 'declining' ? 'var(--red)'  :
+                            'var(--navy-400)'
+
+  const targetY = target != null ? yToPx(target) : null
+  const lastX = xToPx(values.length - 1)
+  const lastY = yToPx(values[values.length - 1])
+
+  return (
+    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
+      {/* Target line — faint dashed reference */}
+      {targetY != null && (
+        <line x1={0} y1={targetY} x2={W} y2={targetY} stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" strokeWidth="1" />
+      )}
+      {values.length >= 2 && (
+        <polyline fill="none" stroke={strokeColor} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" points={points} />
+      )}
+      {/* Current-value dot */}
+      <circle cx={lastX} cy={lastY} r={2.5} fill={strokeColor} />
+    </svg>
   )
 }
