@@ -1,7 +1,7 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, WeeklyReview } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 
@@ -15,21 +15,31 @@ const LightningIcon = ({ size = 48, className = "" }: { size?: number, className
 
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
+import CloseWeekWizard from './CloseWeekWizard'
 
 type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
+  setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   actions: WeeklyAction[]
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   habitCheckins: HabitCheckin[]
   setHabitCheckins: (fn: (h: HabitCheckin[]) => HabitCheckin[]) => void
+  reviews: WeeklyReview[]
+  setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   weekStart: string
   setWeekStart: (fn: (s: string) => string) => void
+  activeSpaceId: string
   toast: (m: string) => void
 }
 
-export default function Focus({ objectives, roadmapItems, actions, setActions, habitCheckins, setHabitCheckins, weekStart, setWeekStart, toast }: Props) {
+export default function Focus({
+  objectives, roadmapItems, setRoadmapItems, actions, setActions,
+  habitCheckins, setHabitCheckins, reviews, setReviews,
+  weekStart, setWeekStart, activeSpaceId, toast,
+}: Props) {
   const [planning, setPlanning] = useState(false)
+  const [closingWizard, setClosingWizard] = useState<string | null>(null)
   const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
@@ -148,77 +158,9 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
   }
 
   // --- Close Week ---------------------------------------------------------
-  // Snapshots the week by:
-  //   1. Re-spawning any actions flagged is_recurring fresh in the next week
-  //   2. Carrying forward incomplete (non-recurring) actions
-  //   3. Leaving completed (non-recurring) actions in place as the historical record
-  //   4. Advancing to the next week
-  // Habits already persist as date-keyed habit_checkins rows, so the new
-  // week naturally shows empty bubbles — no clearing required.
-  // De-dupes against any actions already present in the next week so an
-  // accidental double-press is harmless.
-  const [closing, setClosing] = useState(false)
-  const [closeBusy, setCloseBusy] = useState(false)
-
-  const closeStats = (() => {
-    const next = addWeeks(weekStart, 1)
-    const nextWeekActions = actions.filter(a => a.week_start === next)
-    const dup = (a: WeeklyAction) =>
-      nextWeekActions.some(n => n.roadmap_item_id === a.roadmap_item_id && n.title === a.title)
-    const recurring = weekActions.filter(a => a.is_recurring && !dup(a))
-    const carrying = weekActions.filter(a => !a.is_recurring && !a.completed && !dup(a))
-    const completed = weekActions.filter(a => !a.is_recurring && a.completed)
-    return { next, recurring, carrying, completed }
-  })()
-
-  async function closeWeek() {
-    if (closeBusy) return
-    setCloseBusy(true)
-    try {
-      const inserts = [
-        ...closeStats.recurring.map(a => ({
-          roadmap_item_id: a.roadmap_item_id,
-          title: a.title,
-          week_start: closeStats.next,
-          is_recurring: true,
-          carried_over: false,
-          completed: false,
-        })),
-        ...closeStats.carrying.map(a => ({
-          roadmap_item_id: a.roadmap_item_id,
-          title: a.title,
-          week_start: closeStats.next,
-          is_recurring: false,
-          carried_over: true,
-          completed: false,
-        })),
-      ]
-
-      if (inserts.length > 0) {
-        const { data, error } = await supabase.from('weekly_actions').insert(inserts).select()
-        if (error) {
-          console.error('closeWeek insert error:', error)
-          toast('Could not close week.')
-          setCloseBusy(false)
-          return
-        }
-        if (data) setActions(prev => [...prev, ...data])
-      }
-
-      const r = closeStats.recurring.length
-      const c = closeStats.carrying.length
-      setWeekStart(() => closeStats.next)
-      setClosing(false)
-      toast(`Week closed · ${r} recurring · ${c} carried`)
-    } finally {
-      setCloseBusy(false)
-    }
-  }
-
-  async function setRecurring(action: WeeklyAction, isRecurring: boolean) {
-    await supabase.from('weekly_actions').update({ is_recurring: isRecurring }).eq('id', action.id)
-    setActions(prev => prev.map(a => a.id === action.id ? { ...a, is_recurring: isRecurring } : a))
-  }
+  // The Close Week button now opens CloseWeekWizard (a 2-step ceremony that
+  // covers reflect → plan in one sitting). The actual carry/recur logic lives
+  // inside the wizard; Focus just launches it.
 
   const enriched = weekActions.map(action => {
     const kr = roadmapItems.find(i => i.id === action.roadmap_item_id)
@@ -257,8 +199,8 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
             <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 2 }}>Focus this week</h1>
             <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: 0 }}>Week of {formatWeek(weekStart)}</p>
           </div>
-          <button onClick={() => setClosing(true)}
-            title="Close this week — carry forward incomplete actions and re-spawn recurring ones"
+          <button onClick={() => setClosingWizard(weekStart)}
+            title="Close this week — reflect, then plan the next one"
             style={{ padding: '10px 16px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
             Close week →
           </button>
@@ -451,29 +393,23 @@ export default function Focus({ objectives, roadmapItems, actions, setActions, h
           />
         )}
 
-        {/* Close-week confirm modal */}
-        {closing && (
-          <Modal title={`Close week of ${formatWeek(weekStart)}?`} onClose={() => !closeBusy && setClosing(false)}
-            footer={<>
-              <button className="btn" onClick={() => setClosing(false)} disabled={closeBusy}>Cancel</button>
-              <button className="btn-primary" onClick={closeWeek} disabled={closeBusy}>
-                {closeBusy ? 'Closing…' : `Close & advance to ${formatWeek(closeStats.next)}`}
-              </button>
-            </>}>
-            <div style={{ fontSize: 13, color: 'var(--navy-200)', lineHeight: 1.7 }}>
-              <CloseStatRow color="var(--accent)" label="Repeats next week" count={closeStats.recurring.length} />
-              <CloseStatRow color="var(--amber)" label="Carried forward (incomplete)" count={closeStats.carrying.length} />
-              <CloseStatRow color="var(--teal)" label="Done — stays in this week's history" count={closeStats.completed.length} />
-              {(closeStats.recurring.length === 0 && closeStats.carrying.length === 0 && closeStats.completed.length === 0) && (
-                <div style={{ color: 'var(--navy-400)', fontSize: 12, marginTop: 6 }}>
-                  Nothing to move. This will just advance the week.
-                </div>
-              )}
-              <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--navy-600)', fontSize: 11, color: 'var(--navy-400)', lineHeight: 1.6 }}>
-                Habit history stays put — your habit bubbles for {formatWeek(weekStart)} remain in Reflect.
-              </div>
-            </div>
-          </Modal>
+        {/* Close-week wizard */}
+        {closingWizard && (
+          <CloseWeekWizard
+            closingWeek={closingWizard}
+            objectives={objectives}
+            roadmapItems={roadmapItems}
+            setRoadmapItems={setRoadmapItems}
+            actions={actions}
+            setActions={setActions}
+            habitCheckins={habitCheckins}
+            reviews={reviews}
+            setReviews={setReviews}
+            setWeekStart={setWeekStart}
+            activeSpaceId={activeSpaceId}
+            toast={toast}
+            onClose={() => setClosingWizard(null)}
+          />
         )}
 
         {/* Fallback: unplanned KRs */}
@@ -604,12 +540,3 @@ function EditActionModal({ action, onClose, onSave, onDelete }: {
   )
 }
 
-function CloseStatRow({ color, label, count }: { color: string; label: string; count: number }) {
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
-      <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, flexShrink: 0 }} />
-      <span style={{ flex: 1, fontSize: 13, color: count === 0 ? 'var(--navy-400)' : 'var(--navy-100)' }}>{label}</span>
-      <span style={{ fontSize: 14, fontWeight: 700, color: count === 0 ? 'var(--navy-500)' : 'var(--navy-50)' }}>{count}</span>
-    </div>
-  )
-}
