@@ -7,9 +7,10 @@ import Modal from './Modal'
 
 type Section = 'notes' | 'links' | 'logs' | null
 
-const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'on_track', 'off_track', 'blocked', 'done']
+const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'backlog', 'on_track', 'off_track', 'blocked', 'done']
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
   not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
+  backlog:     { bg: 'var(--navy-600)',  color: 'var(--navy-200)', label: 'Backlog' },
   on_track:    { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'On track' },
   off_track:   { bg: 'var(--red-bg)',    color: 'var(--red-text)',  label: 'Off track' },
   blocked:     { bg: 'var(--amber-bg)',  color: 'var(--amber-text)', label: 'Blocked' },

@@ -15,6 +15,7 @@ const HEALTH_OPTIONS: { value: HealthStatus; label: string; bg: string; fg: stri
   { value: 'on_track',  label: 'on track',  bg: 'var(--teal-bg, #d4ecdf)',  fg: 'var(--teal-text, #2a6044)' },
   { value: 'off_track', label: 'off track', bg: 'var(--red-bg, #f4dcd2)',   fg: 'var(--red-text, #7a3a28)' },
   { value: 'blocked',   label: 'blocked',   bg: 'var(--amber-bg, #f4e4c2)', fg: 'var(--amber-text, #6a4a10)' },
+  { value: 'backlog',   label: 'backlog',   bg: 'var(--navy-600, #c0ccdc)', fg: 'var(--navy-100, #2a3a5a)' },
   { value: 'done',      label: 'done',      bg: 'var(--navy-700, #2a3a5a)', fg: 'var(--navy-50, #fff)' },
 ]
 
@@ -196,11 +197,52 @@ export default function CloseWeekWizard({
     if (data) setActions(prev => [...prev, data])
   }
 
-  async function finish() {
+  // Finish is two-phase: clicking Done shows a celebration splash; the splash's
+  // "Open the week" button (or auto-dismiss if you really wanted that) commits
+  // the week advance and dismisses the wizard. Keeps the close from feeling
+  // like a teleport — there's a moment of "yes, that happened."
+  const [celebrating, setCelebrating] = useState(false)
+
+  function finish() {
+    setCelebrating(true)
+  }
+
+  function commitFinish() {
     setWeekStart(() => nextWeek)
     try { window.localStorage.removeItem(storageKey) } catch { /* noop */ }
     toast(`Week of ${formatWeek(closingWeek)} closed`)
     onClose()
+  }
+
+  if (celebrating) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'var(--navy-900)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <style>{`
+          @keyframes hq-pop-in { 0% { transform: scale(0); opacity: 0 } 60% { transform: scale(1.1); opacity: 1 } 100% { transform: scale(1); opacity: 1 } }
+          @keyframes hq-fade-up { 0% { transform: translateY(8px); opacity: 0 } 100% { transform: translateY(0); opacity: 1 } }
+        `}</style>
+        <div style={{ width: 88, height: 88, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', animation: 'hq-pop-in .5s cubic-bezier(.2,.8,.2,1) both' }}>
+          <svg width="44" height="34" viewBox="0 0 12 9" fill="none">
+            <path d="M1 4L4.5 7.5L11 1" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <div style={{ marginTop: 28, textAlign: 'center', animation: 'hq-fade-up .4s .25s both' }}>
+          <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--navy-50)' }}>Week closed</div>
+          <div style={{ marginTop: 6, fontSize: 13, color: 'var(--navy-300)' }}>Week of {formatWeek(closingWeek)} reflected and archived.</div>
+        </div>
+        <div style={{ marginTop: 18, textAlign: 'center', animation: 'hq-fade-up .4s .45s both' }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Up next</div>
+          <div style={{ marginTop: 6, fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>Week of {formatWeek(nextWeek)}</div>
+          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--navy-300)' }}>
+            {nextWeekActions.length} action{nextWeekActions.length === 1 ? '' : 's'} on your list
+          </div>
+        </div>
+        <button onClick={commitFinish} className="btn-primary"
+          style={{ marginTop: 32, padding: '12px 28px', fontSize: 14, fontWeight: 600, animation: 'hq-fade-up .4s .65s both' }}>
+          Open the week →
+        </button>
+      </div>
+    )
   }
 
   return (

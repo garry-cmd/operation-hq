@@ -556,6 +556,7 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           value={healthStatus} 
           onChange={e => setHealthStatus(e.target.value as any)}
         >
+          <option value="backlog">Backlog</option>
           <option value="on_track">On Track</option>
           <option value="off_track">Off Track</option>
           <option value="blocked">Blocked</option>
