@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { addWeeks, formatWeek } from '@/lib/utils'
-import { calculateHabitProgress, getToday } from '@/lib/habitUtils'
+import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 
 // SVG Icons
 const LightningIcon = ({ size = 48, className = "" }: { size?: number, className?: string }) => (
@@ -218,7 +218,7 @@ export default function Focus({
                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayLabel, dayIndex) => {
                         const date = new Date(weekStart)
                         date.setDate(date.getDate() + dayIndex)
-                        const dateStr = date.toISOString().split('T')[0]
+                        const dateStr = formatDate(date)
                         
                         // Check if there's a session for this day
                         const hasSession = progress.completedSessions.some(session => session.date === dateStr)

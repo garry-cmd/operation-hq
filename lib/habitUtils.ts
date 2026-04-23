@@ -118,8 +118,8 @@ export function calculateHabitProgress(
   
   switch (pattern.mode) {
     case 'daily':
-      // For daily habits, check if completed today
-      const today = new Date().toISOString().split('T')[0]
+      // For daily habits, check if completed today (local date — see formatDate)
+      const today = getToday()
       const completedToday = weekCheckins.some(c => c.date === today)
       status = completedToday ? 'on_track' : 'off_track'
       displayText = completedToday ? 'Done today' : 'Pending today'
@@ -215,10 +215,10 @@ export function calculateMetricAggregate(
 
   const currentValue = krCheckins[0].value
 
-  // Find value from N weeks ago
+  // Find value from N weeks ago (local date — see formatDate)
   const weeksAgoDate = new Date()
   weeksAgoDate.setDate(weeksAgoDate.getDate() - (weeks * 7))
-  const weeksAgoStr = weeksAgoDate.toISOString().split('T')[0]
+  const weeksAgoStr = formatDate(weeksAgoDate)
 
   // Find closest previous value
   const previousCheckin = krCheckins.find(c => c.week_start <= weeksAgoStr)
@@ -291,22 +291,32 @@ export function calculateRollingAggregate(
 }
 
 /**
- * Get current week start (Monday)
+ * Get current week start (Monday). Note: this is currently dead code —
+ * page.tsx uses getMonday() from lib/utils.ts instead. Kept here only so
+ * future callers don't fall into the toISOString UTC trap.
  */
 export function getCurrentWeekStart(): string {
   const now = new Date()
   const day = now.getDay()
   const diff = now.getDate() - day + (day === 0 ? -6 : 1) // Monday = 1
   const monday = new Date(now.setDate(diff))
-  monday.setHours(0, 0, 0, 0)
-  return monday.toISOString().split('T')[0]
+  return formatDate(monday)
 }
 
 /**
- * Format date as YYYY-MM-DD for database storage
+ * Format date as YYYY-MM-DD using LOCAL date components.
+ *
+ * IMPORTANT: do NOT use toISOString().split('T')[0] here — that returns the
+ * UTC date, which shifts forward by a day when called late in the evening
+ * in negative-UTC timezones (e.g. 9pm Pacific Wednesday → 4am UTC Thursday).
+ * That's the bug that made the Focus tab show "Thursday" when it was still
+ * Wednesday locally. Same pattern as getMonday() in lib/utils.ts.
  */
 export function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0]
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 /**

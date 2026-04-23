@@ -3,6 +3,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
+import { getToday } from '@/lib/habitUtils'
 
 type Section = 'notes' | 'links' | 'logs' | null
 
@@ -105,7 +106,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   async function saveLog() {
     if (!logEntry.trim() || savingLog) return
     setSavingLog(true)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = getToday()
     const { data } = await supabase.from('objective_logs')
       .insert({ objective_id: obj.id, content: logEntry.trim(), log_date: today })
       .select().single()
