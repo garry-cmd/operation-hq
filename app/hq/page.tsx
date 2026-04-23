@@ -370,6 +370,8 @@ export default function HQPage() {
           actions={spaceActions}
           setActions={setActions}
           habitCheckins={spaceHabitCheckins}
+          metricCheckins={spaceMetricCheckins}
+          setMetricCheckins={setMetricCheckins}
           reviews={spaceReviews}
           setReviews={setReviews}
           setWeekStart={setWeekStart}

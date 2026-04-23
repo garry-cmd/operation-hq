@@ -2,11 +2,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin,
+  AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
   WeeklyReview, ReviewRating, HealthStatus,
 } from '@/lib/types'
 import { addWeeks, formatWeek, getMonday } from '@/lib/utils'
 import { calculateHabitProgress, parseHabitPattern } from '@/lib/habitUtils'
+import { computeMetricProgress } from '@/lib/metricUtils'
 
 const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
 
@@ -33,6 +34,8 @@ type Props = {
   actions: WeeklyAction[]
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   habitCheckins: HabitCheckin[]
+  metricCheckins: MetricCheckin[]
+  setMetricCheckins: (fn: (p: MetricCheckin[]) => MetricCheckin[]) => void
   reviews: WeeklyReview[]
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   setWeekStart: (fn: (s: string) => string) => void
@@ -63,7 +66,8 @@ const initialPersisted = (existing?: WeeklyReview): PersistedState => ({
 
 export default function CloseWeekWizard({
   closingWeek, objectives, roadmapItems, setRoadmapItems, actions, setActions,
-  habitCheckins, reviews, setReviews, setWeekStart, activeSpaceId, toast, onClose,
+  habitCheckins, metricCheckins, setMetricCheckins,
+  reviews, setReviews, setWeekStart, activeSpaceId, toast, onClose,
 }: Props) {
   // The week the new actions land in. If the user is closing a stale past week
   // (e.g. Wednesday, last Monday never closed), the new actions go in the
@@ -98,7 +102,11 @@ export default function CloseWeekWizard({
   // ---------- Derived data ----------
   const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
-  const outcomeKRs = activeKRs.filter(kr => !kr.is_habit && !(kr as { metric_type?: string }).metric_type)
+  const metricKRs = activeKRs.filter(kr => kr.is_metric && !kr.is_habit)
+  // Outcome KRs are everything else — the classic "did we hit it?" KRs that
+  // get health + progress pills and a next-week actions walkthrough. Metrics
+  // and habits each have their own dedicated surfaces above.
+  const outcomeKRs = activeKRs.filter(kr => !kr.is_habit && !kr.is_metric)
 
   // Habit recap for the week being closed.
   const habitRecap = habitKRs.map(kr => {
@@ -128,6 +136,43 @@ export default function CloseWeekWizard({
   async function setKRProgress(kr: RoadmapItem, progress: number) {
     await supabase.from('roadmap_items').update({ progress }).eq('id', kr.id)
     setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress } : i))
+  }
+
+  // Log this-closing-week's value for a metric KR. Mirrors MetricLogModal.save
+  // but against `closingWeek` instead of today's Monday. Upsert on
+  // (roadmap_item_id, week_start) so revising in-wizard overwrites cleanly.
+  // Also recomputes and writes kr.progress from start/target/value when
+  // possible — same pattern as the modal.
+  async function logMetric(kr: RoadmapItem, value: number) {
+    const { data: upserted, error } = await supabase
+      .from('metric_checkins')
+      .upsert({
+        roadmap_item_id: kr.id,
+        week_start: closingWeek,
+        value,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'roadmap_item_id,week_start' })
+      .select().single()
+    if (error || !upserted) {
+      toast('Could not log value.')
+      return
+    }
+    setMetricCheckins(prev => {
+      const without = prev.filter(c => !(c.roadmap_item_id === kr.id && c.week_start === closingWeek))
+      return [upserted, ...without]
+    })
+
+    const newProgress = computeMetricProgress(kr, value)
+    const currentProgress = kr.progress == null ? null : Number(kr.progress)
+    if (newProgress != null && newProgress !== currentProgress) {
+      const { error: progressErr } = await supabase
+        .from('roadmap_items')
+        .update({ progress: newProgress })
+        .eq('id', kr.id)
+      if (!progressErr) {
+        setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress: newProgress } : i))
+      }
+    }
   }
 
   // ---------- Step 1 → Step 2: write the review, seed next-week actions ----------
@@ -290,8 +335,11 @@ export default function CloseWeekWizard({
         {s.step === 1 ? (
           <Step1
             habitRecap={habitRecap}
+            metricKRs={metricKRs}
+            metricCheckins={metricCheckins}
             outcomeKRs={outcomeKRs}
             objectives={objectives}
+            closingWeek={closingWeek}
             rating={s.rating}
             win={s.win}
             slipped={s.slipped}
@@ -302,6 +350,7 @@ export default function CloseWeekWizard({
             onAdjust={v => patch({ adjustNotes: v })}
             onSetHealth={setKRHealth}
             onSetProgress={setKRProgress}
+            onLogMetric={logMetric}
             onContinue={continueToStep2}
             advancing={advancing}
           />
@@ -398,18 +447,24 @@ function Header({ step, closingWeek, onSkip, skipping }: {
 // Step 1 — Reflect
 // ============================================================================
 function Step1({
-  habitRecap, outcomeKRs, objectives, rating, win, slipped, adjustNotes,
-  onRating, onWin, onSlipped, onAdjust, onSetHealth, onSetProgress, onContinue, advancing,
+  habitRecap, metricKRs, metricCheckins, outcomeKRs, objectives, closingWeek,
+  rating, win, slipped, adjustNotes,
+  onRating, onWin, onSlipped, onAdjust, onSetHealth, onSetProgress, onLogMetric,
+  onContinue, advancing,
 }: {
   habitRecap: { kr: RoadmapItem; dots: string; label: string; labelColor: string }[]
+  metricKRs: RoadmapItem[]
+  metricCheckins: MetricCheckin[]
   outcomeKRs: RoadmapItem[]
   objectives: AnnualObjective[]
+  closingWeek: string
   rating: ReviewRating | null
   win: string; slipped: string; adjustNotes: string
   onRating: (r: ReviewRating) => void
   onWin: (v: string) => void; onSlipped: (v: string) => void; onAdjust: (v: string) => void
   onSetHealth: (kr: RoadmapItem, h: HealthStatus) => void
   onSetProgress: (kr: RoadmapItem, p: number) => void
+  onLogMetric: (kr: RoadmapItem, value: number) => Promise<void>
   onContinue: () => void
   advancing: boolean
 }) {
@@ -425,6 +480,26 @@ function Step1({
                 <span style={{ color: labelColor, fontWeight: 600, fontSize: 12 }}>{label}</span>
               </RowGroup>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {metricKRs.length > 0 && (
+        <Card title="Metrics this week">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {metricKRs.map(kr => {
+              const obj = objectives.find(o => o.id === kr.annual_objective_id)
+              return (
+                <MetricRow
+                  key={kr.id}
+                  kr={kr}
+                  objectiveName={obj?.name}
+                  closingWeek={closingWeek}
+                  checkins={metricCheckins}
+                  onLog={onLogMetric}
+                />
+              )
+            })}
           </div>
         </Card>
       )}
@@ -629,6 +704,84 @@ function Step2({
         Done — start week of {formatWeek(nextWeek)} →
       </button>
     </>
+  )
+}
+
+// ============================================================================
+// MetricRow — inline number entry for a metric KR in Step 1. Deliberately
+// simpler than MetricLogModal: no history chart, no delta-vs-last display
+// beyond a single "previous" line. This is a "quick log during the ritual"
+// UX, not an analysis surface.
+// ============================================================================
+function MetricRow({
+  kr, objectiveName, closingWeek, checkins, onLog,
+}: {
+  kr: RoadmapItem
+  objectiveName?: string
+  closingWeek: string
+  checkins: MetricCheckin[]
+  onLog: (kr: RoadmapItem, value: number) => Promise<void>
+}) {
+  // Current value for the week we're closing, if any.
+  const existing = checkins.find(c => c.roadmap_item_id === kr.id && c.week_start === closingWeek)
+  // Previous reading is the most recent check-in STRICTLY before closingWeek
+  // (not last-saved overall — that would spuriously show the value the user
+  // just typed as "previous" on re-entry after saving).
+  const previous = checkins
+    .filter(c => c.roadmap_item_id === kr.id && c.week_start < closingWeek)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start))[0]
+
+  const [value, setValue] = useState<string>(existing?.value != null ? String(existing.value) : '')
+  const [saving, setSaving] = useState(false)
+  const unit = kr.metric_unit ?? ''
+
+  // Has the user typed a value that differs from what's already saved?
+  const parsed = value === '' ? null : Number(value)
+  const dirty = parsed != null && !Number.isNaN(parsed) && (existing == null || Number(existing.value) !== parsed)
+
+  async function save() {
+    if (parsed == null || Number.isNaN(parsed) || saving || !dirty) return
+    setSaving(true)
+    try { await onLog(kr, parsed) } finally { setSaving(false) }
+  }
+
+  const arrow = kr.metric_direction === 'up' ? '↑' : kr.metric_direction === 'down' ? '↓' : ''
+
+  return (
+    <div style={{ paddingBottom: 12, borderBottom: '1px solid var(--navy-700)' }}>
+      {objectiveName && <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 2 }}>{objectiveName}</div>}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', flex: 1 }}>{kr.title}</span>
+        {arrow && <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>{arrow}</span>}
+      </div>
+      {(previous || kr.target_value != null) && (
+        <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 8 }}>
+          {previous && <>Previous: <span style={{ color: 'var(--navy-200)', fontWeight: 600 }}>{previous.value}{unit && ` ${unit}`}</span></>}
+          {previous && kr.target_value != null && <span>  ·  </span>}
+          {kr.target_value != null && <>Target: <span style={{ color: 'var(--navy-200)', fontWeight: 600 }}>{kr.target_value}{unit && ` ${unit}`}</span></>}
+        </div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input
+          className="input"
+          type="number"
+          inputMode="decimal"
+          value={value}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); save() } }}
+          placeholder={existing?.value != null ? String(existing.value) : (previous?.value != null ? String(previous.value) : '—')}
+          style={{ flex: 1, fontSize: 13, padding: '8px 10px' }}
+        />
+        {unit && <span style={{ fontSize: 12, color: 'var(--navy-300)', fontWeight: 500, minWidth: 28 }}>{unit}</span>}
+        <button onClick={save} disabled={!dirty || saving} className="btn-primary"
+          style={{ fontSize: 12, padding: '8px 14px', opacity: !dirty || saving ? 0.5 : 1 }}>
+          {saving ? '…' : existing ? 'Update' : 'Log'}
+        </button>
+      </div>
+      {existing && !dirty && (
+        <div style={{ fontSize: 11, color: 'var(--teal)', marginTop: 6, fontWeight: 600 }}>✓ Logged for this week</div>
+      )}
+    </div>
   )
 }
 
