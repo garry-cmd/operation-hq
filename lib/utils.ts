@@ -52,6 +52,18 @@ export function addWeeks(dateStr: string, n: number): string {
   return getMonday(d)
 }
 
+/**
+ * Parse a YYYY-MM-DD date string as a LOCAL calendar date (midnight local time).
+ *
+ * Avoids the trap where `new Date("2026-04-20")` parses as UTC midnight, which
+ * in negative-UTC timezones reads back as the previous day via getDate() —
+ * shifting day-bubble math one day backward in places like the Focus tab.
+ */
+export function parseDateLocal(dateStr: string): Date {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function formatWeek(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })

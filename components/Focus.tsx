@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
-import { addWeeks, formatWeek } from '@/lib/utils'
+import { addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 
 // SVG Icons
@@ -216,15 +216,20 @@ export default function Focus({
                     {/* Days of the week */}
                     <div style={{ display: 'flex', gap: 6 }}>
                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayLabel, dayIndex) => {
-                        const date = new Date(weekStart)
+                        // Parse weekStart as a LOCAL calendar date — `new Date("2026-04-20")`
+                        // would parse as UTC midnight, which reads back as the previous day
+                        // via getDate() in negative-UTC timezones (Pacific etc.) and shifts
+                        // every bubble back a day.
+                        const date = parseDateLocal(weekStart)
                         date.setDate(date.getDate() + dayIndex)
                         const dateStr = formatDate(date)
-                        
+                        const todayDate = parseDateLocal(today)
+
                         // Check if there's a session for this day
                         const hasSession = progress.completedSessions.some(session => session.date === dateStr)
                         const isToday = dateStr === today
-                        const isPastDay = date < new Date(today)
-                        const isFutureDay = date > new Date(today)
+                        const isPastDay = date < todayDate
+                        const isFutureDay = date > todayDate
                         
                         return (
                           <div key={dayIndex} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flex: 1 }}>
