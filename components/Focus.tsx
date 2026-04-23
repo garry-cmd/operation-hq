@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
+import { getActiveKRs } from '@/lib/krFilters'
 
 // SVG Icons
 const LightningIcon = ({ size = 48, className = "" }: { size?: number, className?: string }) => (
@@ -36,7 +37,7 @@ export default function Focus({
 }: Props) {
   const [planning, setPlanning] = useState(false)
   const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
-  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
+  const activeKRs = getActiveKRs(roadmapItems)
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
   const today = getToday()
   

@@ -5,6 +5,7 @@ import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
 import { recentCheckins, sparklineBounds, sparklineTrend } from '@/lib/metricUtils'
+import { getCurrentQuarterKRs } from '@/lib/krFilters'
 import ObjectiveCard from './ObjectiveCard'
 import Modal from './Modal'
 
@@ -82,12 +83,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   // OKRs tab = "what you're working on right now" → only KRs in the active quarter.
   // Future-quarter KRs (status 'planned') live on the Roadmap until their quarter
   // becomes active.
-  const activeKRs = roadmapItems.filter(i =>
-    !i.is_parked &&
-    i.quarter === ACTIVE_Q &&
-    i.status !== 'abandoned' &&
-    i.status !== 'done'
-  )
+  const activeKRs = getCurrentQuarterKRs(roadmapItems, ACTIVE_Q)
   const weekActions = actions.filter(a => a.week_start === weekStart)
 
   async function deleteKR(id: string) {

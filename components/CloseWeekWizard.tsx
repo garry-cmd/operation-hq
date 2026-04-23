@@ -8,6 +8,7 @@ import {
 import { addWeeks, formatWeek, getMonday } from '@/lib/utils'
 import { calculateHabitProgress, parseHabitPattern } from '@/lib/habitUtils'
 import { computeMetricProgress } from '@/lib/metricUtils'
+import { getActiveKRs, getHabitKRs, getMetricKRs, getOutcomeKRs } from '@/lib/krFilters'
 
 const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
 
@@ -100,13 +101,14 @@ export default function CloseWeekWizard({
   function patch(p: Partial<PersistedState>) { setS(prev => ({ ...prev, ...p })) }
 
   // ---------- Derived data ----------
-  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
-  const habitKRs = activeKRs.filter(kr => kr.is_habit)
-  const metricKRs = activeKRs.filter(kr => kr.is_metric && !kr.is_habit)
-  // Outcome KRs are everything else — the classic "did we hit it?" KRs that
-  // get health + progress pills and a next-week actions walkthrough. Metrics
-  // and habits each have their own dedicated surfaces above.
-  const outcomeKRs = activeKRs.filter(kr => !kr.is_habit && !kr.is_metric)
+  // Baseline "active" KRs; helpers below slice into flavor-specific sets.
+  // All of these live in lib/krFilters.ts as a single source of truth.
+  const activeKRs = getActiveKRs(roadmapItems)
+  const habitKRs = getHabitKRs(roadmapItems)
+  const metricKRs = getMetricKRs(roadmapItems)
+  // Outcome KRs get the health + progress pills and the Step 2 walkthrough.
+  // Metrics and habits each have their own dedicated surfaces.
+  const outcomeKRs = getOutcomeKRs(roadmapItems)
 
   // Habit recap for the week being closed.
   const habitRecap = habitKRs.map(kr => {

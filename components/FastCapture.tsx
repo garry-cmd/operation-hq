@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
+import { getActiveKRs } from '@/lib/krFilters'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -33,7 +34,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
   const [secondVal, setSecondVal] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
+  const activeKRs = getActiveKRs(roadmapItems)
   const activeObjs = objectives.filter(o => o.status === 'active')
 
   useEffect(() => {
