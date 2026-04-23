@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
-import { COLORS } from '@/lib/utils'
+import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
 import { recentCheckins, sparklineBounds, sparklineTrend } from '@/lib/metricUtils'
 import ObjectiveCard from './ObjectiveCard'
@@ -79,7 +79,15 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
   
-  const activeKRs = roadmapItems.filter(i => !i.is_parked && i.status !== 'abandoned' && i.status !== 'done')
+  // OKRs tab = "what you're working on right now" → only KRs in the active quarter.
+  // Future-quarter KRs (status 'planned') live on the Roadmap until their quarter
+  // becomes active.
+  const activeKRs = roadmapItems.filter(i =>
+    !i.is_parked &&
+    i.quarter === ACTIVE_Q &&
+    i.status !== 'abandoned' &&
+    i.status !== 'done'
+  )
   const weekActions = actions.filter(a => a.week_start === weekStart)
 
   async function deleteKR(id: string) {
