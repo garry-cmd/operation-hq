@@ -203,6 +203,43 @@ export default function CloseWeekWizard({
   // like a teleport — there's a moment of "yes, that happened."
   const [celebrating, setCelebrating] = useState(false)
 
+  // ---------- Skip escape hatch ----------
+  // Only exposed on Step 1 (Step 2 already has a natural escape: hit Finish
+  // without planning). Writes a marker review row so forced-launch won't
+  // retrigger for this week. Does NOT advance weekStart — skip means "unblock
+  // me," not "move me forward."
+  const [skipping, setSkipping] = useState(false)
+  async function skipWeek() {
+    if (skipping) return
+    setSkipping(true)
+    try {
+      const payload = {
+        week_start: closingWeek,
+        rating: 'steady' as ReviewRating,
+        win: '',
+        slipped: '',
+        adjust_notes: '[skipped]',
+        krs_hit: 0,
+        krs_total: 0,
+      }
+      if (existingReview) {
+        await supabase.from('weekly_reviews').update(payload).eq('id', existingReview.id)
+        setReviews(prev => prev.map(r => r.id === existingReview.id ? { ...r, ...payload } : r))
+      } else {
+        const { data, error } = await supabase.from('weekly_reviews')
+          .insert({ ...payload, space_id: activeSpaceId }).select().single()
+        if (error) { toast('Could not skip week.'); setSkipping(false); return }
+        if (data) setReviews(prev => [data, ...prev])
+      }
+      try { window.localStorage.removeItem(storageKey) } catch { /* noop */ }
+      toast(`Week of ${formatWeek(closingWeek)} skipped`)
+      onClose()
+    } catch {
+      toast('Could not skip week.')
+      setSkipping(false)
+    }
+  }
+
   function finish() {
     setCelebrating(true)
   }
@@ -247,7 +284,7 @@ export default function CloseWeekWizard({
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 60, background: 'var(--navy-900)', display: 'flex', flexDirection: 'column' }}>
-      <Header step={s.step} closingWeek={closingWeek} />
+      <Header step={s.step} closingWeek={closingWeek} onSkip={skipWeek} skipping={skipping} />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 100px', maxWidth: 700, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
         {s.step === 1 ? (
@@ -287,9 +324,16 @@ export default function CloseWeekWizard({
 }
 
 // ============================================================================
-// Header — step indicator, no close button (deliberate; the wizard is mandatory)
+// Header — step indicator + Step-1 skip escape. No generic close button by
+// design: the wizard is meant to be finished or deliberately skipped.
 // ============================================================================
-function Header({ step, closingWeek }: { step: 1 | 2; closingWeek: string }) {
+function Header({ step, closingWeek, onSkip, skipping }: {
+  step: 1 | 2
+  closingWeek: string
+  onSkip: () => void
+  skipping: boolean
+}) {
+  const [confirming, setConfirming] = useState(false)
   const dot = (n: 1 | 2, label: string) => {
     const active = step === n
     const done = step > n
@@ -311,16 +355,40 @@ function Header({ step, closingWeek }: { step: 1 | 2; closingWeek: string }) {
   }
   return (
     <div style={{ background: 'var(--navy-800)', borderBottom: '1px solid var(--navy-600)', padding: '12px 16px', flexShrink: 0 }}>
-      <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 11, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Closing</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>Week of {formatWeek(closingWeek)}</div>
+      <div style={{ maxWidth: 700, margin: '0 auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Closing</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>Week of {formatWeek(closingWeek)}</div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {dot(1, 'Reflect')}
+            <div style={{ width: 30, height: 2, background: step > 1 ? 'var(--accent)' : 'var(--navy-600)' }} />
+            {dot(2, 'Plan')}
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {dot(1, 'Reflect')}
-          <div style={{ width: 30, height: 2, background: step > 1 ? 'var(--accent)' : 'var(--navy-600)' }} />
-          {dot(2, 'Plan')}
-        </div>
+        {step === 1 && (
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 6, minHeight: 22 }}>
+            {!confirming ? (
+              <button onClick={() => setConfirming(true)}
+                style={{ background: 'none', border: 'none', color: 'var(--navy-400)', fontSize: 11, cursor: 'pointer', padding: '2px 0', textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                Skip this week
+              </button>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <span style={{ fontSize: 11, color: 'var(--navy-300)' }}>Skip without reflecting?</span>
+                <button onClick={() => setConfirming(false)} disabled={skipping}
+                  style={{ background: 'transparent', border: '1px solid var(--navy-600)', color: 'var(--navy-300)', fontSize: 11, padding: '3px 10px', borderRadius: 6, cursor: skipping ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
+                  Cancel
+                </button>
+                <button onClick={onSkip} disabled={skipping}
+                  style={{ background: 'var(--red, #c07060)', border: 'none', color: '#fff', fontSize: 11, padding: '3px 10px', borderRadius: 6, cursor: skipping ? 'not-allowed' : 'pointer', fontWeight: 600 }}>
+                  {skipping ? 'Skipping…' : 'Yes, skip'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
