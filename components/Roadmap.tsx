@@ -23,7 +23,6 @@ type ModalState =
 
 const ROLLING = getRollingQuarters()
 
-// hex → rgba helper
 function hex2rgba(hex: string, a: number) {
   const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
   return `rgba(${r},${g},${b},${a})`
@@ -31,7 +30,9 @@ function hex2rgba(hex: string, a: number) {
 
 export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, activeSpaceId, toast }: Props) {
   const [modal, setModal] = useState<ModalState>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)   // mobile: tap-to-select fallback
+  const [draggingId, setDraggingId] = useState<string | null>(null)   // desktop: drag-and-drop
+  const [dragOverCell, setDragOverCell] = useState<string | null>(null) // "objId:quarter"
 
   const activeObjs = objectives.filter(o => o.status !== 'abandoned')
   const items = roadmapItems.filter(i => !i.is_parked)
@@ -55,35 +56,49 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     setModal(null); toast('Key result deleted.')
   }
 
-  // Tap-to-select, tap-anywhere-in-target-quarter-to-place
+  // Shared validate-and-move (used by both drop and tap-to-place)
+  function attemptMove(itemId: string, objId: string, quarter: string) {
+    const item = items.find(i => i.id === itemId)
+    if (!item) return
+    if (item.annual_objective_id !== objId) {
+      toast('KRs can only move within the same objective'); return
+    }
+    if (item.quarter === quarter) return
+    moveKR(itemId, quarter)
+  }
+
+  // Mobile fallback: tap chip to select, tap cell to place
   function handleChipTap(item: RoadmapItem) {
     if (selectedId === item.id) { setSelectedId(null); return }
     setSelectedId(item.id)
   }
-
   function placeAt(objId: string, quarter: string) {
     if (!selectedId) return
-    const item = items.find(i => i.id === selectedId)
-    if (!item) { setSelectedId(null); return }
-    if (item.annual_objective_id !== objId) {
-      toast('KRs can only move within the same objective')
-      setSelectedId(null); return
-    }
-    if (item.quarter === quarter) { setSelectedId(null); return }
-    moveKR(selectedId, quarter)
+    attemptMove(selectedId, objId, quarter)
     setSelectedId(null)
   }
 
-  // Column widths: 4 rolling quarters only
   const COLS = 'repeat(4, 1fr)'
   const MIN_W = 480
+
+  function cellAcceptsDrag(objId: string, quarter: string): boolean {
+    if (!draggingId) return false
+    const item = items.find(i => i.id === draggingId)
+    return !!item && item.annual_objective_id === objId && item.quarter !== quarter
+  }
 
   return (
     <div onClick={() => setSelectedId(null)}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
-          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>{selectedId ? '✓ Tap any cell or chip in a destination quarter — same objective only' : 'Tap a key result to move it · tap ✎ to edit'}</p>
+          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+            {draggingId
+              ? '⊕ Drop in a quarter cell — same objective only'
+              : selectedId
+                ? '✓ Tap any cell or chip in a destination quarter — same objective only'
+                : 'Drag a key result between quarters · or tap to select on mobile · ✎ to edit'}
+          </p>
         </div>
         <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
           style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -122,7 +137,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
               return (
                 <div key={obj.id} style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 10, background: hex2rgba(obj.color, 0.07), border: `1px solid ${hex2rgba(obj.color, 0.25)}` }}>
 
-                  {/* Lane header — full width */}
+                  {/* Lane header */}
                   <div style={{ padding: '9px 14px', background: hex2rgba(obj.color, 0.14), display: 'flex', alignItems: 'center', gap: 8 }}>
                     <div style={{ width: 9, height: 9, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-50)', flex: 1, textTransform: 'uppercase', letterSpacing: '.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -134,33 +149,72 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                     </button>
                   </div>
 
-                  {/* Quarter cells — tap chip to select, tap anywhere in destination cell to place */}
+                  {/* Quarter cells */}
                   <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, padding: '8px 8px 10px' }}>
                     {ROLLING.map(q => {
+                      const cellKey = `${obj.id}:${q}`
+                      const acceptsDrag = cellAcceptsDrag(obj.id, q)
+                      const isDragOver = dragOverCell === cellKey && acceptsDrag
                       const selectedItem = selectedId ? items.find(i => i.id === selectedId) : null
-                      const canReceive = !!selectedItem && selectedItem.annual_objective_id === obj.id && selectedItem.quarter !== q
-                      const cellsInThisLane = selectedItem?.annual_objective_id === obj.id
+                      const acceptsTap = !!selectedItem && selectedItem.annual_objective_id === obj.id && selectedItem.quarter !== q
+                      const highlighted = isDragOver || acceptsTap
                       return (
                         <div key={q}
                           onClick={e => { e.stopPropagation(); if (selectedId) placeAt(obj.id, q) }}
+                          onDragOver={e => {
+                            if (acceptsDrag) {
+                              e.preventDefault()
+                              e.dataTransfer.dropEffect = 'move'
+                              if (dragOverCell !== cellKey) setDragOverCell(cellKey)
+                            }
+                          }}
+                          onDragLeave={e => {
+                            const related = e.relatedTarget as Node | null
+                            if (!related || !e.currentTarget.contains(related)) {
+                              if (dragOverCell === cellKey) setDragOverCell(null)
+                            }
+                          }}
+                          onDrop={e => {
+                            e.preventDefault()
+                            const id = e.dataTransfer.getData('text/plain') || draggingId
+                            if (id) attemptMove(id, obj.id, q)
+                            setDragOverCell(null)
+                            setDraggingId(null)
+                          }}
                           style={{ minHeight: 64, borderRadius: 9, padding: '5px 5px 3px',
-                            background: canReceive ? hex2rgba(obj.color, 0.18) : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
-                            border: canReceive ? `2px solid ${obj.color}` : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--navy-600)',
-                            cursor: cellsInThisLane ? 'pointer' : 'default',
+                            background: isDragOver
+                              ? hex2rgba(obj.color, 0.28)
+                              : acceptsTap
+                                ? hex2rgba(obj.color, 0.18)
+                                : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
+                            border: highlighted
+                              ? `2px solid ${obj.color}`
+                              : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--navy-600)',
+                            cursor: highlighted ? 'pointer' : 'default',
                             WebkitTapHighlightColor: 'transparent',
                             transition: 'background .12s, border .12s' }}>
-                          {canReceive && (
-                            <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .8 }}>
-                              Tap to place here
+                          {highlighted && (
+                            <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .85 }}>
+                              {isDragOver ? 'Drop here' : 'Tap to place here'}
                             </div>
                           )}
                           {objItems.filter(i => i.quarter === q).map(item => (
                             <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
                               selected={selectedId === item.id}
+                              dragging={draggingId === item.id}
                               hasSelectionElsewhere={!!selectedId && selectedId !== item.id}
+                              onDragStart={e => {
+                                e.dataTransfer.setData('text/plain', item.id)
+                                e.dataTransfer.effectAllowed = 'move'
+                                setDraggingId(item.id)
+                                setSelectedId(null)
+                              }}
+                              onDragEnd={() => {
+                                setDraggingId(null)
+                                setDragOverCell(null)
+                              }}
                               onTap={e => {
                                 e.stopPropagation()
-                                // If a different chip is selected, treat this tap as "place at this chip's quarter"
                                 if (selectedId && selectedId !== item.id) {
                                   placeAt(obj.id, q)
                                 } else {
@@ -239,33 +293,45 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   )
 }
 
-/* ── KR chip — tap to select/move, ✎ to edit ── */
-function KRChip({ item, objColor, quarter, selected, hasSelectionElsewhere, onTap, onEdit }: {
+/* ── KR chip — drag with mouse, tap to select on mobile, ✎ to edit ── */
+function KRChip({ item, objColor, quarter, selected, dragging, hasSelectionElsewhere, onTap, onEdit, onDragStart, onDragEnd }: {
   item: RoadmapItem; objColor: string; quarter: string
   selected: boolean
+  dragging: boolean
   hasSelectionElsewhere: boolean
   onTap: (e: React.MouseEvent) => void
   onEdit: (e: React.MouseEvent) => void
+  onDragStart: (e: React.DragEvent) => void
+  onDragEnd: (e: React.DragEvent) => void
 }) {
   const isActive = quarter === ACTIVE_Q
   return (
-    <div onClick={onTap} onDoubleClick={e => { e.stopPropagation(); onEdit(e) }}
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={onTap}
+      onDoubleClick={e => { e.stopPropagation(); onEdit(e) }}
       style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '6px 8px', borderRadius: 7, marginBottom: 4,
-        cursor: 'pointer', userSelect: 'none', lineHeight: 1.35, transition: 'all .12s',
+        cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none', lineHeight: 1.35, transition: 'transform .12s, opacity .12s, background .12s',
         background: selected ? objColor : isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
         border: selected ? `2px solid ${objColor}` : isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
         color: selected ? '#fff' : isActive ? 'var(--navy-50)' : 'var(--navy-200)',
         outline: selected ? `2px solid ${hex2rgba(objColor, 0.4)}` : 'none',
         outlineOffset: selected ? 2 : 0,
         transform: selected ? 'scale(1.03)' : 'scale(1)',
+        opacity: dragging ? 0.4 : 1,
         WebkitTapHighlightColor: 'transparent',
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
       {isActive && <span style={{ marginRight: 2, flexShrink: 0 }}>⚡</span>}
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
-      {/* Edit pencil — hidden when another chip is selected (so taps go to "place" instead) */}
       {!hasSelectionElsewhere && (
-        <button onClick={onEdit} aria-label="Edit"
+        <button
+          onClick={onEdit}
+          onMouseDown={e => e.stopPropagation()}
+          draggable={false}
+          aria-label="Edit"
           style={{
             flexShrink: 0, width: 22, height: 22, padding: 0, borderRadius: 4,
             background: selected ? 'rgba(255,255,255,0.2)' : 'transparent',
