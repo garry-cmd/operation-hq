@@ -89,31 +89,22 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
 
   return (
     <div onClick={() => setSelectedId(null)}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
-          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
-            {draggingId
-              ? '⊕ Drop in a quarter cell — same objective only'
-              : selectedId
-                ? '✓ Tap any cell or chip in a destination quarter — same objective only'
-                : 'Drag a key result between quarters · or tap to select on mobile · ✎ to edit'}
-          </p>
-        </div>
-        <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
-          style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-          </svg>
-          Add Key Results
-        </button>
+      <div style={{ marginBottom: 16 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
+        <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+          {draggingId
+            ? '⊕ Drop in a quarter cell — same objective only'
+            : selectedId
+              ? '✓ Tap any cell or chip in a destination quarter — same objective only'
+              : 'Drag a key result between quarters · or tap to select on mobile · ✎ to edit'}
+        </p>
       </div>
 
       {activeObjs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
           <div style={{ fontSize: 36, marginBottom: 10 }}>🗺</div>
           No objectives yet.<br />
-          <span style={{ fontSize: 13 }}>Tap "Add Objective" to get started.</span>
+          <span style={{ fontSize: 13 }}>Tap the + button to add your first objective.</span>
         </div>
       ) : (
         <div style={{ overflowX: 'auto', paddingBottom: 8 }}>

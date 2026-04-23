@@ -354,6 +354,8 @@ export default function HQPage() {
         objectives={spaceObjectives}
         roadmapItems={spaceRoadmapItems}
         weekStart={weekStart}
+        activeSpaceId={activeSpaceId}
+        setObjectives={setObjectives}
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}
         toast={setToast}

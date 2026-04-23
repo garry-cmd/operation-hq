@@ -6,7 +6,6 @@ import { COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
 import { recentCheckins, sparklineBounds, sparklineTrend } from '@/lib/metricUtils'
 import ObjectiveCard from './ObjectiveCard'
-import GuidedObjectiveBuilder from './GuidedObjectiveBuilder'
 import Modal from './Modal'
 
 // Naval-themed SVG Icons
@@ -77,7 +76,6 @@ type Props = {
 }
 
 export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric }: Props) {
-  const [modal, setModal] = useState<'smart' | 'manual' | null>(null)
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
   
@@ -131,36 +129,9 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
-        <div>
-          <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>My OKRs</h1>
-          <p style={{ fontSize: 12, color: 'var(--navy-300)' }}>What you're working on right now</p>
-        </div>
-        
-        {/* Creation Buttons */}
-        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-          <button 
-            onClick={() => setModal('smart')} 
-            className="btn-primary"
-            style={{ fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path d="M7 2L9 6h4l-3 3 1 4-4-2-4 2 1-4-3-3h4l2-4z" fill="currentColor"/>
-            </svg>
-            Smart Builder
-          </button>
-          
-          <button 
-            onClick={() => setModal('manual')} 
-            className="btn"
-            style={{ fontSize: 12, padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 6 }}
-          >
-            <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
-              <path d="M7 2v10M2 7h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
-            </svg>
-            Manual
-          </button>
-        </div>
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>My OKRs</h1>
+        <p style={{ fontSize: 12, color: 'var(--navy-300)' }}>What you're working on right now</p>
       </div>
 
       {/* KPI Dashboard */}
@@ -217,7 +188,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
           <div style={{ marginBottom: 16 }}><TargetIcon size={48} /></div>
           No active key results yet.<br />
-          <span style={{ fontSize: 13 }}>Use Smart Builder or Manual creation above to get started.</span>
+          <span style={{ fontSize: 13 }}>Tap the + button to add your first objective.</span>
         </div>
       )}
 
@@ -272,46 +243,6 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         })}
 
       {/* Modals */}
-      {modal === 'smart' && (
-        <GuidedObjectiveBuilder
-          objectives={objectives}
-          activeSpaceId={activeSpaceId}
-          onClose={() => setModal(null)}
-          onSave={async (objective, keyResults) => {
-            // Add objective to state
-            setObjectives(prev => [...prev, objective])
-            
-            // Add key results to state (they're already created in DB by GuidedObjectiveBuilder)
-            if (keyResults.length > 0) {
-              const { data: createdKRs } = await supabase
-                .from('roadmap_items')
-                .select('*')
-                .eq('annual_objective_id', objective.id)
-              
-              if (createdKRs) {
-                setRoadmapItems(prev => [...prev, ...createdKRs])
-              }
-            }
-            
-            setModal(null)
-            toast('Smart builder created your objective!')
-          }}
-        />
-      )}
-
-      {modal === 'manual' && (
-        <ManualObjectiveBuilder
-          objectives={objectives}
-          activeSpaceId={activeSpaceId}
-          onClose={() => setModal(null)}
-          onSave={(objective) => {
-            setObjectives(prev => [...prev, objective])
-            setModal(null)
-            toast('Objective created! Add key results on the Roadmap.')
-          }}
-        />
-      )}
-
       {editingKR && (
         <EditKRModal
           kr={editingKR}
@@ -370,113 +301,6 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         />
       )}
     </div>
-  )
-}
-
-// Simple manual objective creation
-function ManualObjectiveBuilder({ objectives, activeSpaceId, onClose, onSave }: {
-  objectives: AnnualObjective[]
-  activeSpaceId: string
-  onClose: () => void
-  onSave: (objective: AnnualObjective) => void
-}) {
-  const [name, setName] = useState('')
-  const [color, setColor] = useState(COLORS[objectives.length % COLORS.length])
-  const [saving, setSaving] = useState(false)
-
-  async function save() {
-    if (!name.trim()) return
-    setSaving(true)
-    
-    try {
-      const { data } = await supabase.from('annual_objectives')
-        .insert({ 
-          name: name.trim(), 
-          color, 
-          sort_order: objectives.length, 
-          status: 'active', 
-          space_id: activeSpaceId 
-        })
-        .select()
-        .single()
-      
-      if (data) onSave(data)
-    } catch (error) {
-      console.error('Failed to create objective:', error)
-    }
-    
-    setSaving(false)
-  }
-
-  return (
-    <Modal 
-      title="New Objective" 
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn" onClick={onClose}>Cancel</button>
-          <button 
-            className="btn-primary" 
-            onClick={save} 
-            disabled={saving || !name.trim()}
-          >
-            {saving ? 'Creating...' : 'Create Objective'}
-          </button>
-        </>
-      }
-    >
-      <div className="field">
-        <label>Objective</label>
-        <textarea 
-          className="input" 
-          rows={3} 
-          value={name} 
-          onChange={e => setName(e.target.value)} 
-          autoFocus
-          placeholder="e.g. Get in amazing shape this year" 
-        />
-      </div>
-      
-      <div className="field">
-        <label>Color</label>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {COLORS.map(c => (
-            <button 
-              key={c} 
-              onClick={() => setColor(c)}
-              style={{ 
-                width: 32, 
-                height: 32, 
-                borderRadius: '50%', 
-                background: c, 
-                border: color === c ? '3px solid var(--navy-50)' : '2px solid transparent', 
-                cursor: 'pointer', 
-                outline: color === c ? '2px solid ' + c : 'none', 
-                outlineOffset: 2 
-              }} 
-            />
-          ))}
-        </div>
-      </div>
-      
-      <div style={{
-        background: 'var(--navy-700)',
-        border: '1px solid var(--navy-600)',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 12,
-        color: 'var(--navy-400)',
-        lineHeight: 1.4,
-        display: 'flex',
-        gap: 8,
-        alignItems: 'flex-start'
-      }}>
-        <LightbulbIcon size={16} />
-        <div>
-          <strong>Tip:</strong> After creating the objective, you can add key results on the Roadmap tab or use the Smart Builder for a complete setup.
-        </div>
-      </div>
-    </Modal>
   )
 }
 

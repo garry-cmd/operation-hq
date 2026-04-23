@@ -2,26 +2,31 @@
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
-import { ACTIVE_Q, COLORS, getMonday } from '@/lib/utils'
+import { ACTIVE_Q, COLORS } from '@/lib/utils'
 
 type Props = {
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
   weekStart: string
+  activeSpaceId: string
+  setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   toast: (m: string) => void
 }
 
-type CaptureType = 'keyresult' | 'action' | 'parking'
+type CaptureType = 'objective' | 'keyresult' | 'action' | 'parking'
 
+// Order matters: index 0 sits closest to the FAB, last index sits highest in the stack.
+// Most-immediate (Parking Lot) at the bottom, most-strategic (Objective) at the top.
 const TYPES: { id: CaptureType; label: string; color: string; icon: string }[] = [
   { id: 'parking',   label: 'Parking Lot', color: 'var(--accent)',     icon: 'P'  },
   { id: 'action',    label: 'Action',      color: 'var(--teal-text)',  icon: '✓'  },
   { id: 'keyresult', label: 'Key Result',  color: 'var(--navy-300)',   icon: 'KR' },
+  { id: 'objective', label: 'Objective',   color: '#5a6a9a',           icon: 'O'  },
 ]
 
-export default function FastCapture({ objectives, roadmapItems, weekStart, setRoadmapItems, setActions, toast }: Props) {
+export default function FastCapture({ objectives, roadmapItems, weekStart, activeSpaceId, setObjectives, setRoadmapItems, setActions, toast }: Props) {
   const [dialOpen, setDialOpen] = useState(false)
   const [active, setActive] = useState<CaptureType | null>(null)
   const [title, setTitle] = useState('')
@@ -36,6 +41,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
       if (active === 'action')    setSecondVal(activeKRs[0]?.id ?? '')
       if (active === 'keyresult') setSecondVal(activeObjs[0]?.id ?? '')
       if (active === 'parking')   setSecondVal(activeObjs[0]?.id ?? '')
+      if (active === 'objective') setSecondVal('') // no parent
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [active])
@@ -47,6 +53,20 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
     e.preventDefault()
     if (!title.trim()) return
     try {
+      if (active === 'objective') {
+        // Auto-pick the next color in the palette by current objective count.
+        const color = COLORS[objectives.length % COLORS.length]
+        const { data } = await supabase.from('annual_objectives')
+          .insert({
+            name: title.trim(),
+            color,
+            sort_order: objectives.length,
+            status: 'active',
+            space_id: activeSpaceId,
+          })
+          .select().single()
+        if (data) { setObjectives(prev => [...prev, data]); toast('Objective added!') }
+      }
       if (active === 'keyresult' && secondVal) {
         const count = roadmapItems.filter(i => i.annual_objective_id === secondVal && i.quarter === ACTIVE_Q).length
         const { data } = await supabase.from('roadmap_items')
@@ -70,10 +90,11 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
     } catch { toast('Something went wrong.') }
   }
 
+  // No second field for Objective — it's the top of the hierarchy.
   const secondField: { label: string; options: { value: string; label: string }[] } | null =
-    active === 'keyresult' ? { label: 'For which objective?',     options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
-    active === 'action'    ? { label: 'Which key result?',        options: activeKRs.map(k => ({ value: k.id, label: k.title })) } :
-    active === 'parking'   ? { label: 'Which objective?',         options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
+    active === 'keyresult' ? { label: 'For which objective?', options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
+    active === 'action'    ? { label: 'Which key result?',    options: activeKRs.map(k => ({ value: k.id, label: k.title })) } :
+    active === 'parking'   ? { label: 'Which objective?',     options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
     null
 
   const typeInfo = TYPES.find(t => t.id === active)
@@ -104,7 +125,12 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
           </div>
           <form onSubmit={save}>
             <input ref={inputRef} value={title} onChange={e => setTitle(e.target.value)}
-              placeholder={active === 'keyresult' ? 'e.g. Lose 40 lbs by June 30' : active === 'action' ? 'e.g. Wednesday strength session' : 'e.g. 200 KB swings sub-15 min'}
+              placeholder={
+                active === 'objective' ? 'e.g. Get in amazing shape this year' :
+                active === 'keyresult' ? 'e.g. Lose 40 lbs by June 30' :
+                active === 'action'    ? 'e.g. Wednesday strength session' :
+                                         'e.g. 200 KB swings sub-15 min'
+              }
               style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 12, padding: '13px 14px', fontSize: 15, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
             {secondField && secondField.options.length > 0 && (
               <select value={secondVal} onChange={e => setSecondVal(e.target.value)}
@@ -115,6 +141,11 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, setRo
             {secondField && secondField.options.length === 0 && (
               <div style={{ fontSize: 12, color: 'var(--amber-text)', background: 'var(--amber-bg)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
                 {active === 'keyresult' ? 'Add an objective first.' : active === 'action' ? 'Add key results first on the Roadmap.' : 'Add an objective first.'}
+              </div>
+            )}
+            {active === 'objective' && (
+              <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 14, lineHeight: 1.4 }}>
+                Color is auto-assigned. Change it later via the Edit link in OKRs or Roadmap.
               </div>
             )}
             <button type="submit" disabled={!title.trim() || (!!secondField && secondField.options.length === 0)}
