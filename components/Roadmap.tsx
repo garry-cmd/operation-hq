@@ -55,14 +55,13 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     setModal(null); toast('Key result deleted.')
   }
 
-  // Tap-to-select, tap-cell-to-place — works on mobile and desktop
-  function handleChipTap(e: React.MouseEvent, item: RoadmapItem) {
-    e.stopPropagation()
+  // Tap-to-select, tap-anywhere-in-target-quarter-to-place
+  function handleChipTap(item: RoadmapItem) {
     if (selectedId === item.id) { setSelectedId(null); return }
     setSelectedId(item.id)
   }
 
-  function handleCellTap(objId: string, quarter: string) {
+  function placeAt(objId: string, quarter: string) {
     if (!selectedId) return
     const item = items.find(i => i.id === selectedId)
     if (!item) { setSelectedId(null); return }
@@ -84,7 +83,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
-          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>{selectedId ? '✓ Tap a quarter cell to move · tap chip again to cancel' : 'Tap a key result to move it between quarters'}</p>
+          <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>{selectedId ? '✓ Tap any cell or chip in a destination quarter — same objective only' : 'Tap a key result to move it · tap ✎ to edit'}</p>
         </div>
         <button onClick={() => setModal({ type: 'add_obj' })} className="btn-primary"
           style={{ fontSize: 13, padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -135,18 +134,20 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                     </button>
                   </div>
 
-                  {/* Quarter cells — tap chip to select, tap cell to place */}
+                  {/* Quarter cells — tap chip to select, tap anywhere in destination cell to place */}
                   <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, padding: '8px 8px 10px' }}>
                     {ROLLING.map(q => {
                       const selectedItem = selectedId ? items.find(i => i.id === selectedId) : null
-                      const canReceive = selectedItem?.annual_objective_id === obj.id && selectedItem?.quarter !== q
+                      const canReceive = !!selectedItem && selectedItem.annual_objective_id === obj.id && selectedItem.quarter !== q
+                      const cellsInThisLane = selectedItem?.annual_objective_id === obj.id
                       return (
                         <div key={q}
-                          onClick={e => { e.stopPropagation(); handleCellTap(obj.id, q) }}
-                          style={{ minHeight: 52, borderRadius: 9, padding: '5px 5px 3px',
+                          onClick={e => { e.stopPropagation(); if (selectedId) placeAt(obj.id, q) }}
+                          style={{ minHeight: 64, borderRadius: 9, padding: '5px 5px 3px',
                             background: canReceive ? hex2rgba(obj.color, 0.18) : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
                             border: canReceive ? `2px solid ${obj.color}` : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--navy-600)',
-                            cursor: canReceive ? 'pointer' : 'default',
+                            cursor: cellsInThisLane ? 'pointer' : 'default',
+                            WebkitTapHighlightColor: 'transparent',
                             transition: 'background .12s, border .12s' }}>
                           {canReceive && (
                             <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .8 }}>
@@ -156,12 +157,17 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                           {objItems.filter(i => i.quarter === q).map(item => (
                             <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
                               selected={selectedId === item.id}
+                              hasSelectionElsewhere={!!selectedId && selectedId !== item.id}
                               onTap={e => {
                                 e.stopPropagation()
-                                if (selectedId && selectedId !== item.id) { setModal({ type: 'edit_kr', item }); setSelectedId(null) }
-                                else handleChipTap(e, item)
+                                // If a different chip is selected, treat this tap as "place at this chip's quarter"
+                                if (selectedId && selectedId !== item.id) {
+                                  placeAt(obj.id, q)
+                                } else {
+                                  handleChipTap(item)
+                                }
                               }}
-                              onEdit={() => setModal({ type: 'edit_kr', item })} />
+                              onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }); setSelectedId(null) }} />
                           ))}
                           <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
                         </div>
@@ -233,14 +239,17 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   )
 }
 
-/* ── KR chip — tap to select/move ── */
-function KRChip({ item, objColor, quarter, selected, onTap, onEdit }: {
+/* ── KR chip — tap to select/move, ✎ to edit ── */
+function KRChip({ item, objColor, quarter, selected, hasSelectionElsewhere, onTap, onEdit }: {
   item: RoadmapItem; objColor: string; quarter: string
-  selected: boolean; onTap: (e: React.MouseEvent) => void; onEdit: () => void
+  selected: boolean
+  hasSelectionElsewhere: boolean
+  onTap: (e: React.MouseEvent) => void
+  onEdit: (e: React.MouseEvent) => void
 }) {
   const isActive = quarter === ACTIVE_Q
   return (
-    <div onClick={onTap} onDoubleClick={e => { e.stopPropagation(); onEdit() }}
+    <div onClick={onTap} onDoubleClick={e => { e.stopPropagation(); onEdit(e) }}
       style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '6px 8px', borderRadius: 7, marginBottom: 4,
         cursor: 'pointer', userSelect: 'none', lineHeight: 1.35, transition: 'all .12s',
         background: selected ? objColor : isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
@@ -249,8 +258,27 @@ function KRChip({ item, objColor, quarter, selected, onTap, onEdit }: {
         outline: selected ? `2px solid ${hex2rgba(objColor, 0.4)}` : 'none',
         outlineOffset: selected ? 2 : 0,
         transform: selected ? 'scale(1.03)' : 'scale(1)',
+        WebkitTapHighlightColor: 'transparent',
+        display: 'flex', alignItems: 'center', gap: 4,
       }}>
-      {isActive && <span style={{ marginRight: 4 }}>⚡</span>}{item.title}
+      {isActive && <span style={{ marginRight: 2, flexShrink: 0 }}>⚡</span>}
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+      {/* Edit pencil — hidden when another chip is selected (so taps go to "place" instead) */}
+      {!hasSelectionElsewhere && (
+        <button onClick={onEdit} aria-label="Edit"
+          style={{
+            flexShrink: 0, width: 22, height: 22, padding: 0, borderRadius: 4,
+            background: selected ? 'rgba(255,255,255,0.2)' : 'transparent',
+            border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: selected ? '#fff' : isActive ? 'var(--navy-200)' : 'var(--navy-300)',
+            opacity: selected ? 1 : 0.55,
+            WebkitTapHighlightColor: 'transparent',
+          }}>
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+            <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
     </div>
   )
 }
@@ -388,4 +416,3 @@ function KRModal({ item, objId, defaultQuarter, objectives, quarters, onClose, o
     </Modal>
   )
 }
-
