@@ -263,7 +263,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
         />
       )}
 
-      {modal?.type === 'edit_kr' && (
+      {modal?.type === 'edit_kr' && modal.item.annual_objective_id && (
         <KRModal
           item={modal.item}
           objId={modal.item.annual_objective_id}
@@ -429,9 +429,11 @@ function KRModal({ item, objId, defaultQuarter, objectives, quarters, onClose, o
       await supabase.from('roadmap_items').update({ title, quarter, status }).eq('id', item.id)
       onSave({ ...item, title, quarter, status })
     } else {
+      const parent = objectives.find(o => o.id === objId)
+      if (!parent) { setSaving(false); return }
       const count = (await supabase.from('roadmap_items').select('id').eq('annual_objective_id', objId)).data?.length ?? 0
       const { data } = await supabase.from('roadmap_items')
-        .insert({ annual_objective_id: objId, title, quarter, status, sort_order: count, health_status: 'not_started', progress: 0 })
+        .insert({ space_id: parent.space_id, annual_objective_id: objId, title, quarter, status, sort_order: count, health_status: 'not_started', progress: 0 })
         .select().single()
       if (data) onSave(data)
     }

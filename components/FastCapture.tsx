@@ -40,8 +40,8 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
     if (active) {
       if (active === 'action')    setSecondVal(activeKRs[0]?.id ?? '')
       if (active === 'keyresult') setSecondVal(activeObjs[0]?.id ?? '')
-      if (active === 'parking')   setSecondVal(activeObjs[0]?.id ?? '')
-      if (active === 'objective') setSecondVal('') // no parent
+      if (active === 'parking')   setSecondVal('') // standalone — no parent
+      if (active === 'objective') setSecondVal('') // top of hierarchy
       setTimeout(() => inputRef.current?.focus(), 50)
     }
   }, [active])
@@ -68,9 +68,11 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
         if (data) { setObjectives(prev => [...prev, data]); toast('Objective added!') }
       }
       if (active === 'keyresult' && secondVal) {
+        const parent = objectives.find(o => o.id === secondVal)
+        if (!parent) return
         const count = roadmapItems.filter(i => i.annual_objective_id === secondVal && i.quarter === ACTIVE_Q).length
         const { data } = await supabase.from('roadmap_items')
-          .insert({ annual_objective_id: secondVal, title, quarter: ACTIVE_Q, status: 'active', health_status: 'not_started', sort_order: count })
+          .insert({ space_id: parent.space_id, annual_objective_id: secondVal, title, quarter: ACTIVE_Q, status: 'active', health_status: 'not_started', sort_order: count })
           .select().single()
         if (data) { setRoadmapItems(prev => [...prev, data]); toast('Key result added!') }
       }
@@ -80,9 +82,19 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
           .select().single()
         if (data) { setActions(prev => [...prev, data]); toast('Action added to Focus!') }
       }
-      if (active === 'parking' && secondVal) {
+      if (active === 'parking') {
+        // Standalone — not tied to any objective. The whole point of parking
+        // is to get the idea out of your head without categorizing yet.
         const { data } = await supabase.from('roadmap_items')
-          .insert({ annual_objective_id: secondVal, title, quarter: null, status: 'planned', is_parked: true, sort_order: roadmapItems.filter(i => i.is_parked).length })
+          .insert({
+            space_id: activeSpaceId,
+            annual_objective_id: null,
+            title,
+            quarter: null,
+            status: 'planned',
+            is_parked: true,
+            sort_order: roadmapItems.filter(i => i.is_parked).length,
+          })
           .select().single()
         if (data) { setRoadmapItems(prev => [...prev, data]); toast('Idea parked!') }
       }
@@ -90,11 +102,11 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
     } catch { toast('Something went wrong.') }
   }
 
-  // No second field for Objective — it's the top of the hierarchy.
+  // No second field for Objective (top of hierarchy) or Parking (the whole point
+  // is to get the idea out of your head without categorizing).
   const secondField: { label: string; options: { value: string; label: string }[] } | null =
     active === 'keyresult' ? { label: 'For which objective?', options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
     active === 'action'    ? { label: 'Which key result?',    options: activeKRs.map(k => ({ value: k.id, label: k.title })) } :
-    active === 'parking'   ? { label: 'Which objective?',     options: activeObjs.map(o => ({ value: o.id, label: o.name })) } :
     null
 
   const typeInfo = TYPES.find(t => t.id === active)
@@ -140,7 +152,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
             )}
             {secondField && secondField.options.length === 0 && (
               <div style={{ fontSize: 12, color: 'var(--amber-text)', background: 'var(--amber-bg)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
-                {active === 'keyresult' ? 'Add an objective first.' : active === 'action' ? 'Add key results first on the Roadmap.' : 'Add an objective first.'}
+                {active === 'keyresult' ? 'Add an objective first.' : 'Add key results first on the Roadmap.'}
               </div>
             )}
             {active === 'objective' && (

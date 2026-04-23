@@ -154,6 +154,7 @@ Otherwise, continue the conversation naturally by asking questions or providing 
         // created via AI builder are always plain outcomes or habits; metric
         // config is opt-in via the edit modal after creation.
         const keyResultsToInsert = parsedObjective.keyResults.map((kr, index) => ({
+          space_id: activeSpaceId,
           annual_objective_id: objectiveData.id,
           title: kr.title,
           quarter: kr.habitType === 'outcome' ? ACTIVE_Q : ACTIVE_Q, // All start in active quarter

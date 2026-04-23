@@ -44,7 +44,8 @@ export type MetricDirection = 'up' | 'down'
 
 export interface RoadmapItem {
   id: string
-  annual_objective_id: string
+  space_id: string
+  annual_objective_id: string | null
   title: string
   quarter: string | null
   sort_order: number

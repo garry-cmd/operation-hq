@@ -159,11 +159,8 @@ export default function HQPage() {
 
     // Space-scope on the fly — cheap and avoids depending on derived state
     // that's recomputed later in this render.
-    const spaceObjIds = new Set(
-      objectives.filter(o => o.space_id === activeSpaceId).map(o => o.id)
-    )
     const spaceKRIds = new Set(
-      roadmapItems.filter(i => spaceObjIds.has(i.annual_objective_id)).map(i => i.id)
+      roadmapItems.filter(i => i.space_id === activeSpaceId).map(i => i.id)
     )
 
     const hasReview = reviews.some(
@@ -216,7 +213,7 @@ export default function HQPage() {
   const activeSpace = spaces.find(s => s.id === activeSpaceId)
   const spaceObjectives = objectives.filter(o => o.space_id === activeSpaceId)
   const spaceObjectiveIds = new Set(spaceObjectives.map(o => o.id))
-  const spaceRoadmapItems = roadmapItems.filter(i => spaceObjectiveIds.has(i.annual_objective_id))
+  const spaceRoadmapItems = roadmapItems.filter(i => i.space_id === activeSpaceId)
   const spaceRoadmapItemIds = new Set(spaceRoadmapItems.map(i => i.id))
   const spaceActions = actions.filter(a => spaceRoadmapItemIds.has(a.roadmap_item_id))
   const spaceCheckins = checkins.filter(c => spaceRoadmapItemIds.has(c.roadmap_item_id))
@@ -323,7 +320,7 @@ export default function HQPage() {
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}
-            {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setRoadmapItems={setRoadmapItems} toast={setToast} />}
+            {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
       </main>

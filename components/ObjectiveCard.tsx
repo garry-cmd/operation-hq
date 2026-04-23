@@ -130,6 +130,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
       .select('id', { count: 'exact', head: true }).eq('annual_objective_id', obj.id)
     const { data } = await supabase.from('roadmap_items')
       .insert({
+        space_id: obj.space_id,
         annual_objective_id: obj.id,
         title: newKRTitle.trim(),
         quarter: ACTIVE_Q,
