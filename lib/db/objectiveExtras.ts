@@ -54,6 +54,7 @@ export const links = {
 
 export type NewLogInput = {
   objective_id: string
+  title?: string | null
   content: string
   log_date: string
 }
@@ -72,6 +73,20 @@ export const logs = {
     const { data, error } = await supabase
       .from('objective_logs')
       .insert(input)
+      .select()
+      .single()
+    if (error) throw error
+    return data
+  },
+
+  async update(
+    id: string,
+    patch: Partial<{ title: string | null; content: string; log_date: string }>,
+  ): Promise<ObjectiveLog> {
+    const { data, error } = await supabase
+      .from('objective_logs')
+      .update(patch)
+      .eq('id', id)
       .select()
       .single()
     if (error) throw error

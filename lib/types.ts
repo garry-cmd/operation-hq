@@ -26,6 +26,9 @@ export interface AnnualObjective {
 export interface ObjectiveLog {
   id: string
   objective_id: string
+  // Optional human-set title; null means the entry is shown labeled by date alone.
+  // Body content (`content`) is markdown; rendered with `marked` at display time.
+  title: string | null
   content: string
   log_date: string
   created_at: string
@@ -66,6 +69,11 @@ export interface RoadmapItem {
   created_at: string
 }
 
+// User-set workflow state on actions. Distinct from `carried_over`, which is
+// system-flagged when an incomplete action rolls over at week-close. New tags
+// can be added here without a DB migration since the column has no CHECK.
+export type ActionTag = 'backlog' | 'waiting' | 'doing'
+
 export interface WeeklyAction {
   id: string
   roadmap_item_id: string
@@ -75,6 +83,7 @@ export interface WeeklyAction {
   completed: boolean
   carried_over: boolean
   is_recurring: boolean
+  tag: ActionTag | null
   created_at: string
 }
 
