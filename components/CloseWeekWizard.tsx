@@ -5,7 +5,7 @@ import {
   AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
   WeeklyReview, ReviewRating, HealthStatus,
 } from '@/lib/types'
-import { addWeeks, formatWeek, getMonday } from '@/lib/utils'
+import { ACTIVE_Q, addWeeks, formatWeek, getMonday } from '@/lib/utils'
 import { calculateHabitProgress, parseHabitPattern } from '@/lib/habitUtils'
 import { computeMetricProgress } from '@/lib/metricUtils'
 import { getActiveKRs, getHabitKRs, getMetricKRs, getOutcomeKRs } from '@/lib/krFilters'
@@ -101,14 +101,19 @@ export default function CloseWeekWizard({
   function patch(p: Partial<PersistedState>) { setS(prev => ({ ...prev, ...p })) }
 
   // ---------- Derived data ----------
+  // Scope to the active quarter — future-quarter KRs are planned but not
+  // yet in play, so they shouldn't pollute the weekly reflection (matches
+  // the OKRs tab convention in OKRs.tsx). Past-quarter KRs that are still
+  // status='active' are stale by construction and are also excluded.
+  const currentQuarterItems = roadmapItems.filter(i => i.quarter === ACTIVE_Q)
   // Baseline "active" KRs; helpers below slice into flavor-specific sets.
   // All of these live in lib/krFilters.ts as a single source of truth.
-  const activeKRs = getActiveKRs(roadmapItems)
-  const habitKRs = getHabitKRs(roadmapItems)
-  const metricKRs = getMetricKRs(roadmapItems)
+  const activeKRs = getActiveKRs(currentQuarterItems)
+  const habitKRs = getHabitKRs(currentQuarterItems)
+  const metricKRs = getMetricKRs(currentQuarterItems)
   // Outcome KRs get the health + progress pills and the Step 2 walkthrough.
   // Metrics and habits each have their own dedicated surfaces.
-  const outcomeKRs = getOutcomeKRs(roadmapItems)
+  const outcomeKRs = getOutcomeKRs(currentQuarterItems)
 
   // Habit recap for the week being closed.
   const habitRecap = habitKRs.map(kr => {
