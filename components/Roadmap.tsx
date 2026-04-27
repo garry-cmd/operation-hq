@@ -123,8 +123,8 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
         <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
           <div style={{ minWidth: MIN_W }}>
 
-            {/* Quarter headers */}
-            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 8 }}>
+            {/* Quarter headers — padding matches the inner KR cells grid (1px obj-card border + 8px inner padding) so columns line up vertically. */}
+            <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 8, padding: '0 9px' }}>
               {ROLLING.map(q => (
                 <div key={q} style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '7px 6px', borderRadius: 8, lineHeight: 1.3,
                   background: q === ACTIVE_Q ? 'var(--accent-dim)' : 'var(--navy-700)',
