@@ -39,6 +39,10 @@
   --amber-bg:   #181008;
   --amber-text: #c09838;
 
+  /* Indigo — waiting/paused (used for action tags; distinct from amber) */
+  --indigo-bg:   #160a1e;
+  --indigo-text: #a890c8;
+
   color-scheme: dark;
 }
 
@@ -73,6 +77,10 @@
   --amber:      #6a4810;
   --amber-bg:   #ecdcc8;
   --amber-text: #402808;
+
+  /* Indigo — waiting/paused (used for action tags; distinct from amber) */
+  --indigo-bg:   #e0d8ec;
+  --indigo-text: #3a1a4a;
 
   color-scheme: light;
 }

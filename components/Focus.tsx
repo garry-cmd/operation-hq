@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import * as actionsDb from '@/lib/db/actions'
 import * as checkinsDb from '@/lib/db/checkins'
-import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
@@ -13,6 +13,16 @@ const LightningIcon = ({ size = 48, className = "" }: { size?: number, className
     <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
   </svg>
 )
+
+// Per-tag color treatment. Single source of truth — used both by the inline
+// pill on action rows and by the picker in EditActionModal so they always
+// agree visually. Color choices are deliberately distinct from `carried`
+// (which uses --amber-*) so the four states read at a glance.
+const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }> = {
+  backlog: { bg: 'var(--navy-600)', color: 'var(--navy-200)', label: 'backlog' },
+  waiting: { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'waiting' },
+  doing:   { bg: 'var(--teal-bg)',   color: 'var(--teal-text)',   label: 'doing' },
+}
 
 
 import PlanWeek from './PlanWeek'
@@ -106,9 +116,9 @@ export default function Focus({
     }
   }
 
-  async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean) {
+  async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean, tag: ActionTag | null) {
     try {
-      const updated = await actionsDb.update(action.id, { title, is_recurring: isRecurring })
+      const updated = await actionsDb.update(action.id, { title, is_recurring: isRecurring, tag })
       setActions(prev => prev.map(a => a.id === action.id ? updated : a))
       setEditAction(null)
       toast('Action updated.')
@@ -410,6 +420,7 @@ export default function Focus({
                         </button>
                         <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                           {action.title}
+                          {action.tag && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: TAG_STYLE[action.tag].bg, color: TAG_STYLE[action.tag].color, flexShrink: 0 }}>{TAG_STYLE[action.tag].label}</span>}
                           {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
                           {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
                         </div>
@@ -431,7 +442,7 @@ export default function Focus({
           <EditActionModal
             action={editAction}
             onClose={() => setEditAction(null)}
-            onSave={(title, isRecurring) => saveEdit(editAction, title, isRecurring)}
+            onSave={(title, isRecurring, tag) => saveEdit(editAction, title, isRecurring, tag)}
             onDelete={() => deleteAction(editAction.id)}
           />
         )}
@@ -444,17 +455,18 @@ export default function Focus({
 function EditActionModal({ action, onClose, onSave, onDelete }: {
   action: WeeklyAction
   onClose: () => void
-  onSave: (title: string, isRecurring: boolean) => void
+  onSave: (title: string, isRecurring: boolean, tag: ActionTag | null) => void
   onDelete: () => void
 }) {
   const [title, setTitle] = useState(action.title)
   const [isRecurring, setIsRecurring] = useState(action.is_recurring)
+  const [tag, setTag] = useState<ActionTag | null>(action.tag)
   const [saving, setSaving] = useState(false)
 
   async function save() {
     if (!title.trim()) return
     setSaving(true)
-    await onSave(title.trim(), isRecurring)
+    await onSave(title.trim(), isRecurring, tag)
     setSaving(false)
   }
 
@@ -474,6 +486,18 @@ function EditActionModal({ action, onClose, onSave, onDelete }: {
         <label>Action</label>
         <textarea className="input" rows={3} value={title}
           onChange={e => setTitle(e.target.value)} autoFocus />
+      </div>
+      <div className="field" style={{ marginTop: 14 }}>
+        <label>Status</label>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <TagPickerPill active={tag === null} onClick={() => setTag(null)}
+            bg="var(--navy-700)" color="var(--navy-400)" label="—" outlineColor="var(--navy-300)" />
+          {(['backlog', 'waiting', 'doing'] as ActionTag[]).map(t => (
+            <TagPickerPill key={t} active={tag === t} onClick={() => setTag(tag === t ? null : t)}
+              bg={TAG_STYLE[t].bg} color={TAG_STYLE[t].color} label={TAG_STYLE[t].label}
+              outlineColor={TAG_STYLE[t].color} />
+          ))}
+        </div>
       </div>
       <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
         onClick={() => setIsRecurring(v => !v)}>
@@ -501,3 +525,30 @@ function EditActionModal({ action, onClose, onSave, onDelete }: {
   )
 }
 
+
+// Small pill button used in the tag picker. `active` dims the unselected ones
+// and adds an outline ring on the selected one. Bg/color come from TAG_STYLE
+// (or a neutral pair for the "—" / no-tag option).
+function TagPickerPill({ active, onClick, bg, color, label, outlineColor }: {
+  active: boolean
+  onClick: () => void
+  bg: string
+  color: string
+  label: string
+  outlineColor: string
+}) {
+  return (
+    <button type="button" onClick={onClick}
+      style={{
+        fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 99,
+        background: bg, color, border: 'none',
+        outline: active ? `2px solid ${outlineColor}` : 'none',
+        outlineOffset: 1,
+        opacity: active ? 1 : 0.55,
+        cursor: 'pointer',
+        transition: 'opacity .12s, outline .12s',
+      }}>
+      {label}
+    </button>
+  )
+}
