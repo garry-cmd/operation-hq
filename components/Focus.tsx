@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import * as actionsDb from '@/lib/db/actions'
 import * as checkinsDb from '@/lib/db/checkins'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog, HabitCheckin } from '@/lib/types'
@@ -251,99 +251,94 @@ export default function Focus({
           </button>
         </div>
 
-        {/* Habits Section */}
+        {/* Habits Section — unified grid: one row of day labels at top,
+            then each habit on a single row [title | 7 bubbles]. Replaces the
+            previous per-habit stacked layout (title above its own day-label
+            row above bubbles), which was ~3x taller for the same info. */}
         {habitProgress.length > 0 && (
-          <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '16px 18px', marginBottom: 16 }}>
-            <h3 style={{ margin: '0 0 14px', fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>Habits</h3>
+          <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '12px 16px', marginBottom: 16 }}>
+            <h3 style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: 1 }}>Habits</h3>
 
-            {/* Habit list with bubbles */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(7, 28px)', columnGap: 8, rowGap: 6, alignItems: 'center' }}>
+              {/* Day-label header row. The first cell is a spacer aligning with
+                  the habit-title column underneath. */}
+              <div></div>
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayLabel, dayIndex) => {
+                const date = parseDateLocal(weekStart)
+                date.setDate(date.getDate() + dayIndex)
+                const dateStr = formatDate(date)
+                const isToday = dateStr === today
+                return (
+                  <div key={dayLabel} style={{
+                    fontSize: 9,
+                    textAlign: 'center',
+                    color: isToday ? 'var(--accent)' : 'var(--navy-400)',
+                    fontWeight: isToday ? 700 : 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5,
+                  }}>
+                    {dayLabel}
+                  </div>
+                )
+              })}
+
+              {/* One row per habit: title left, then 7 day bubbles aligned to
+                  the columns above. */}
               {habitProgress.map(({ kr, progress }) => (
-                <div key={kr.id} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {/* Habit title */}
-                  <div style={{ fontSize: 14, color: 'var(--navy-50)', fontWeight: 500 }}>
+                <Fragment key={kr.id}>
+                  <div style={{ fontSize: 13, color: 'var(--navy-50)', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                     {kr.title}
                   </div>
+                  {[0, 1, 2, 3, 4, 5, 6].map(dayIndex => {
+                    // Same date math as before — parse weekStart locally to
+                    // avoid the negative-UTC off-by-one that bit us in the
+                    // earlier session.
+                    const date = parseDateLocal(weekStart)
+                    date.setDate(date.getDate() + dayIndex)
+                    const dateStr = formatDate(date)
+                    const todayDate = parseDateLocal(today)
+                    const hasSession = progress.completedSessions.some(session => session.date === dateStr)
+                    const isToday = dateStr === today
+                    const isFutureDay = date > todayDate
 
-                  {/* Progress bubbles */}
-                  {/* Weekly daily bubbles */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {/* Days of the week */}
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayLabel, dayIndex) => {
-                        // Parse weekStart as a LOCAL calendar date — `new Date("2026-04-20")`
-                        // would parse as UTC midnight, which reads back as the previous day
-                        // via getDate() in negative-UTC timezones (Pacific etc.) and shifts
-                        // every bubble back a day.
-                        const date = parseDateLocal(weekStart)
-                        date.setDate(date.getDate() + dayIndex)
-                        const dateStr = formatDate(date)
-                        const todayDate = parseDateLocal(today)
-
-                        // Check if there's a session for this day
-                        const hasSession = progress.completedSessions.some(session => session.date === dateStr)
-                        const isToday = dateStr === today
-                        const isPastDay = date < todayDate
-                        const isFutureDay = date > todayDate
-                        
-                        return (
-                          <div key={dayIndex} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, flex: 1 }}>
-                            {/* Day label */}
-                            <div style={{ 
-                              fontSize: 9, 
-                              color: isToday ? 'var(--accent)' : 'var(--navy-400)', 
-                              fontWeight: isToday ? 600 : 400,
-                              textTransform: 'uppercase',
-                              letterSpacing: '0.5px'
-                            }}>
-                              {dayLabel}
-                            </div>
-                            
-                            {/* Day bubble */}
-                            <button
-                              onClick={() => {
-                                console.log(`Clicked ${dayLabel} (${dateStr}) for ${kr.title}`)
-                                if (hasSession) {
-                                  // Remove session for this day
-                                  const sessionToRemove = progress.completedSessions.find(s => s.date === dateStr)
-                                  if (sessionToRemove) {
-                                    console.log('Removing session:', sessionToRemove.id)
-                                    removeHabitSession(sessionToRemove.id)
-                                  }
-                                } else {
-                                  // Add session for this day
-                                  console.log('Adding session for date:', dateStr)
-                                  addHabitSessionForDate(kr.id, dateStr)
-                                }
-                              }}
-                              disabled={isFutureDay}
-                              style={{
-                                width: 22,
-                                height: 22,
-                                borderRadius: '50%', // BUBBLE!
-                                background: hasSession ? 'var(--teal)' : 'transparent',
-                                border: `2px solid ${hasSession ? 'var(--teal)' : isToday ? 'var(--accent)' : 'var(--navy-500)'}`,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                cursor: isFutureDay ? 'not-allowed' : 'pointer',
-                                transition: 'all 0.15s',
-                                opacity: isFutureDay ? 0.3 : 1,
-                                flexShrink: 0
-                              }}
-                            >
-                              {hasSession && (
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
-                                  <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
-                                </svg>
-                              )}
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                </div>
+                    return (
+                      <div key={dayIndex} style={{ display: 'flex', justifyContent: 'center' }}>
+                        <button
+                          onClick={() => {
+                            if (hasSession) {
+                              const sessionToRemove = progress.completedSessions.find(s => s.date === dateStr)
+                              if (sessionToRemove) removeHabitSession(sessionToRemove.id)
+                            } else {
+                              addHabitSessionForDate(kr.id, dateStr)
+                            }
+                          }}
+                          disabled={isFutureDay}
+                          style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: '50%',
+                            background: hasSession ? 'var(--teal)' : 'transparent',
+                            border: `2px solid ${hasSession ? 'var(--teal)' : isToday ? 'var(--accent)' : 'var(--navy-500)'}`,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: isFutureDay ? 'not-allowed' : 'pointer',
+                            transition: 'all 0.15s',
+                            opacity: isFutureDay ? 0.3 : 1,
+                            flexShrink: 0,
+                            padding: 0,
+                          }}
+                        >
+                          {hasSession && (
+                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none">
+                              <path d="m9 12 2 2 4-4" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </Fragment>
               ))}
             </div>
           </div>
