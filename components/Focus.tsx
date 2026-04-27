@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import * as actionsDb from '@/lib/db/actions'
+import * as checkinsDb from '@/lib/db/checkins'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
@@ -57,24 +57,12 @@ export default function Focus({
 
   async function addHabitSession(krId: string) {
     console.log('Adding habit session for KR:', krId, 'date:', today)
-    
+
     try {
-      const { data, error } = await supabase
-        .from('habit_checkins')
-        .insert({ roadmap_item_id: krId, date: today })
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Insert error:', error)
-        return
-      }
-      
-      if (data) {
-        console.log('Session created:', data)
-        setHabitCheckins(prev => [...prev, data])
-        toast('Session logged!')
-      }
+      const created = await checkinsDb.habit.create(krId, today)
+      console.log('Session created:', created)
+      setHabitCheckins(prev => [...prev, created])
+      toast('Session logged!')
     } catch (err) {
       console.error('addHabitSession error:', err)
     }
@@ -82,40 +70,25 @@ export default function Focus({
 
   async function addHabitSessionForDate(krId: string, date: string) {
     console.log('Adding habit session for KR:', krId, 'date:', date)
-    
+
     try {
-      const { data, error } = await supabase
-        .from('habit_checkins')
-        .insert({ roadmap_item_id: krId, date })
-        .select()
-        .single()
-      
-      if (error) {
-        console.error('Insert error:', error)
-        toast('Could not log session - may already exist for this date')
-        return
-      }
-      
-      if (data) {
-        console.log('Session created:', data)
-        setHabitCheckins(prev => [...prev, data])
-        toast('Session logged!')
-      }
+      const created = await checkinsDb.habit.create(krId, date)
+      console.log('Session created:', created)
+      setHabitCheckins(prev => [...prev, created])
+      toast('Session logged!')
     } catch (err) {
       console.error('addHabitSessionForDate error:', err)
-      toast('Error logging session')
+      // Most common failure here is the unique (krId, date) constraint —
+      // surface the helpful hint to the user.
+      toast('Could not log session - may already exist for this date')
     }
   }
 
   async function removeHabitSession(checkinId: string) {
     console.log('Removing habit session:', checkinId)
-    
+
     try {
-      const { error } = await supabase.from('habit_checkins').delete().eq('id', checkinId)
-      if (error) {
-        console.error('Delete error:', error)
-        return
-      }
+      await checkinsDb.habit.remove(checkinId)
       setHabitCheckins(prev => prev.filter(c => c.id !== checkinId))
       toast('Session removed')
     } catch (err) {

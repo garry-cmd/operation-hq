@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
+import * as checkinsDb from '@/lib/db/checkins'
 import { RoadmapItem, MetricCheckin } from '@/lib/types'
 import { getMonday, formatWeek } from '@/lib/utils'
 import { computeMetricProgress } from '@/lib/metricUtils'
@@ -51,19 +51,10 @@ export default function MetricLogModal({ kr, checkins, setMetricCheckins, setRoa
     setSaving(true)
 
     try {
-      // Upsert: unique(roadmap_item_id, week_start) means the second insert
-      // for the same week overwrites. supabase .upsert() handles this atomically.
-      const { data: upserted, error: upsertErr } = await supabase
-        .from('metric_checkins')
-        .upsert({
-          roadmap_item_id: kr.id,
-          week_start: thisWeek,
-          value: num,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'roadmap_item_id,week_start' })
-        .select().single()
-
-      if (upsertErr || !upserted) {
+      let upserted
+      try {
+        upserted = await checkinsDb.metric.upsertWeekValue(kr.id, thisWeek, num)
+      } catch (upsertErr) {
         console.error('metric_checkin upsert error:', upsertErr)
         toast('Could not save value.')
         setSaving(false)

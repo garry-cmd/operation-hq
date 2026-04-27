@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
+import * as checkinsDb from '@/lib/db/checkins'
 import {
   AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
   WeeklyReview, ReviewRating, HealthStatus,
@@ -159,16 +160,11 @@ export default function CloseWeekWizard({
   // Also recomputes and writes kr.progress from start/target/value when
   // possible — same pattern as the modal.
   async function logMetric(kr: RoadmapItem, value: number) {
-    const { data: upserted, error } = await supabase
-      .from('metric_checkins')
-      .upsert({
-        roadmap_item_id: kr.id,
-        week_start: closingWeek,
-        value,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'roadmap_item_id,week_start' })
-      .select().single()
-    if (error || !upserted) {
+    let upserted
+    try {
+      upserted = await checkinsDb.metric.upsertWeekValue(kr.id, closingWeek, value)
+    } catch (err) {
+      console.error('metric_checkin upsert error:', err)
       toast('Could not log value.')
       return
     }
