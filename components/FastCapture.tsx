@@ -1,8 +1,8 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
+import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
@@ -86,10 +86,13 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
         toast('Key result added!')
       }
       if (active === 'action' && secondVal) {
-        const { data } = await supabase.from('weekly_actions')
-          .insert({ roadmap_item_id: secondVal, title, week_start: weekStart })
-          .select().single()
-        if (data) { setActions(prev => [...prev, data]); toast('Action added to Focus!') }
+        const created = await actionsDb.create({
+          roadmap_item_id: secondVal,
+          title,
+          week_start: weekStart,
+        })
+        setActions(prev => [...prev, created])
+        toast('Action added to Focus!')
       }
       if (active === 'parking') {
         // Standalone — not tied to any objective. The whole point of parking

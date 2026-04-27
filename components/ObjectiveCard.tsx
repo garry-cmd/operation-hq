@@ -3,6 +3,7 @@ import React, { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
+import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
 import { getToday } from '@/lib/habitUtils'
@@ -164,18 +165,18 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   async function addAction(krId: string) {
     if (!newActionTitle.trim() || savingAction) return
     setSavingAction(true)
-    const { data } = await supabase.from('weekly_actions')
-      .insert({
+    try {
+      const created = await actionsDb.create({
         roadmap_item_id: krId,
         title: newActionTitle.trim(),
         week_start: weekStart,
       })
-      .select().single()
-    if (data) {
-      setActions(prev => [...prev, data])
+      setActions(prev => [...prev, created])
       setNewActionTitle('')
       setAddingActionKRId(null)
       toast('Action added.')
+    } catch (err) {
+      console.error('addAction failed:', err)
     }
     setSavingAction(false)
   }

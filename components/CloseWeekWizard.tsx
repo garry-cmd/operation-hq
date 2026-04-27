@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
+import * as actionsDb from '@/lib/db/actions'
 import {
   AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
   WeeklyReview, ReviewRating, HealthStatus,
@@ -230,9 +231,13 @@ export default function CloseWeekWizard({
           ...carrying.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: nextWeek, is_recurring: false, carried_over: true,  completed: false })),
         ]
         if (inserts.length > 0) {
-          const { data, error } = await supabase.from('weekly_actions').insert(inserts).select()
-          if (error) { toast('Could not seed next week.'); setAdvancing(false); return }
-          if (data) setActions(prev => [...prev, ...data])
+          try {
+            const created = await actionsDb.createMany(inserts)
+            setActions(prev => [...prev, ...created])
+          } catch (err) {
+            console.error('seed next week error:', err)
+            toast('Could not seed next week.'); setAdvancing(false); return
+          }
         }
         patch({ step: 2, seeded: true })
       } else {
@@ -247,14 +252,21 @@ export default function CloseWeekWizard({
   const nextWeekActions = actions.filter(a => a.week_start === nextWeek)
 
   async function removeAction(id: string) {
-    await supabase.from('weekly_actions').delete().eq('id', id)
-    setActions(prev => prev.filter(a => a.id !== id))
+    try {
+      await actionsDb.remove(id)
+      setActions(prev => prev.filter(a => a.id !== id))
+    } catch (err) {
+      console.error('removeAction failed:', err)
+    }
   }
 
   async function addActionForKR(krId: string, title: string) {
-    const { data } = await supabase.from('weekly_actions')
-      .insert({ roadmap_item_id: krId, title, week_start: nextWeek }).select().single()
-    if (data) setActions(prev => [...prev, data])
+    try {
+      const created = await actionsDb.create({ roadmap_item_id: krId, title, week_start: nextWeek })
+      setActions(prev => [...prev, created])
+    } catch (err) {
+      console.error('addActionForKR failed:', err)
+    }
   }
 
   // Finish is two-phase: clicking Done shows a celebration splash; the splash's

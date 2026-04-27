@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 import { ACTIVE_Q, formatWeek } from '@/lib/utils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
@@ -30,9 +30,18 @@ export default function PlanWeek({ objectives, roadmapItems, weekStart, onClose,
   async function addAction() {
     if (!input.trim() || !current || saving) return
     setSaving(true)
-    const { data } = await supabase.from('weekly_actions')
-      .insert({ roadmap_item_id: current.id, title: input.trim(), week_start: weekStart }).select().single()
-    if (data) { onAddAction(data); setStepActions(p => [...p, input.trim()]); setTotalAdded(n => n + 1) }
+    try {
+      const created = await actionsDb.create({
+        roadmap_item_id: current.id,
+        title: input.trim(),
+        week_start: weekStart,
+      })
+      onAddAction(created)
+      setStepActions(p => [...p, input.trim()])
+      setTotalAdded(n => n + 1)
+    } catch (err) {
+      console.error('addAction failed:', err)
+    }
     setInput('')
     setSaving(false)
     inputRef.current?.focus()

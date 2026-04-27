@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
@@ -124,22 +125,34 @@ export default function Focus({
 
   async function toggleAction(action: WeeklyAction) {
     const next = !action.completed
-    await supabase.from('weekly_actions').update({ completed: next }).eq('id', action.id)
-    setActions(prev => prev.map(a => a.id === action.id ? { ...a, completed: next } : a))
+    try {
+      const updated = await actionsDb.update(action.id, { completed: next })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+    } catch (err) {
+      console.error('toggleAction failed:', err)
+    }
   }
 
   async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean) {
-    await supabase.from('weekly_actions').update({ title, is_recurring: isRecurring }).eq('id', action.id)
-    setActions(prev => prev.map(a => a.id === action.id ? { ...a, title, is_recurring: isRecurring } : a))
-    setEditAction(null)
-    toast('Action updated.')
+    try {
+      const updated = await actionsDb.update(action.id, { title, is_recurring: isRecurring })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+      setEditAction(null)
+      toast('Action updated.')
+    } catch (err) {
+      console.error('saveEdit failed:', err)
+    }
   }
 
   async function deleteAction(id: string) {
-    await supabase.from('weekly_actions').delete().eq('id', id)
-    setActions(prev => prev.filter(a => a.id !== id))
-    setEditAction(null)
-    toast('Action deleted.')
+    try {
+      await actionsDb.remove(id)
+      setActions(prev => prev.filter(a => a.id !== id))
+      setEditAction(null)
+      toast('Action deleted.')
+    } catch (err) {
+      console.error('deleteAction failed:', err)
+    }
   }
 
   // Navigation is purely for browsing weeks. Carry-forward and recurring
