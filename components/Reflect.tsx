@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import * as reviewsDb from '@/lib/db/reviews'
 import { WeeklyReview, ReviewRating } from '@/lib/types'
 import { formatWeek } from '@/lib/utils'
 
@@ -116,16 +116,17 @@ function ReviewCard({
     if (saving) return
     setSaving(true)
     const payload = { rating, win, slipped, adjust_notes: adjustNotes }
-    const { error } = await supabase.from('weekly_reviews').update(payload).eq('id', review.id)
-    if (error) {
+    try {
+      const updated = await reviewsDb.update(review.id, payload)
+      setReviews(prev => prev.map(x => x.id === review.id ? updated : x))
+      setSaving(false)
+      setEditing(false)
+      toast('Review updated.')
+    } catch (err) {
+      console.error('Reflect save failed:', err)
       toast('Could not save changes.')
       setSaving(false)
-      return
     }
-    setReviews(prev => prev.map(x => x.id === review.id ? { ...x, ...payload } : x))
-    setSaving(false)
-    setEditing(false)
-    toast('Review updated.')
   }
 
   return (

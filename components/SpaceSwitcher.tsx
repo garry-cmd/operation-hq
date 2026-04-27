@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import * as spacesDb from '@/lib/db/spaces'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 import { COLORS } from '@/lib/utils'
 
@@ -48,18 +48,30 @@ export default function SpaceSwitcher({ spaces, activeSpaceId, objectives, roadm
   async function saveNew() {
     if (!name.trim() || saving) return
     setSaving(true)
-    const { data } = await supabase.from('spaces')
-      .insert({ name: name.trim(), color, sort_order: spaces.length })
-      .select().single()
-    if (data) { onSpaceCreated(data); onSelect(data.id); setOpen(false) }
+    try {
+      const created = await spacesDb.create({
+        name: name.trim(),
+        color,
+        sort_order: spaces.length,
+      })
+      onSpaceCreated(created)
+      onSelect(created.id)
+      setOpen(false)
+    } catch (err) {
+      console.error('saveNew space failed:', err)
+    }
     setAdding(false); setSaving(false)
   }
 
   async function saveEdit() {
     if (!name.trim() || saving || !editingId) return
     setSaving(true)
-    await supabase.from('spaces').update({ name: name.trim(), color }).eq('id', editingId)
-    onSpaceUpdated({ ...spaces.find(s => s.id === editingId)!, name: name.trim(), color })
+    try {
+      const updated = await spacesDb.update(editingId, { name: name.trim(), color })
+      onSpaceUpdated(updated)
+    } catch (err) {
+      console.error('saveEdit space failed:', err)
+    }
     setEditingId(null); setSaving(false)
   }
 

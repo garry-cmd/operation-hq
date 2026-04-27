@@ -1,9 +1,9 @@
 'use client'
 import React, { useState, useRef, useCallback } from 'react'
-import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as actionsDb from '@/lib/db/actions'
+import * as extrasDb from '@/lib/db/objectiveExtras'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
 import { getToday } from '@/lib/habitUtils'
@@ -107,10 +107,18 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
     let url = linkUrl.trim()
     if (!url.startsWith('http')) url = 'https://' + url
     const domain = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0]
-    const { data } = await supabase.from('objective_links')
-      .insert({ objective_id: obj.id, url, title: domain, sort_order: objLinks.length })
-      .select().single()
-    if (data) { onAddLink(data); setLinkUrl('') }
+    try {
+      const created = await extrasDb.links.create({
+        objective_id: obj.id,
+        url,
+        title: domain,
+        sort_order: objLinks.length,
+      })
+      onAddLink(created)
+      setLinkUrl('')
+    } catch (err) {
+      console.error('addLink failed:', err)
+    }
     setAddingLink(false)
   }
 
@@ -118,21 +126,36 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
     if (!logEntry.trim() || savingLog) return
     setSavingLog(true)
     const today = getToday()
-    const { data } = await supabase.from('objective_logs')
-      .insert({ objective_id: obj.id, content: logEntry.trim(), log_date: today })
-      .select().single()
-    if (data) { onAddLog(data); setLogEntry('') }
+    try {
+      const created = await extrasDb.logs.create({
+        objective_id: obj.id,
+        content: logEntry.trim(),
+        log_date: today,
+      })
+      onAddLog(created)
+      setLogEntry('')
+    } catch (err) {
+      console.error('saveLog failed:', err)
+    }
     setSavingLog(false)
   }
 
   async function deleteLogEntry(id: string) {
-    await supabase.from('objective_logs').delete().eq('id', id)
-    onDeleteLog(id)
+    try {
+      await extrasDb.logs.remove(id)
+      onDeleteLog(id)
+    } catch (err) {
+      console.error('deleteLogEntry failed:', err)
+    }
   }
 
   async function deleteLink(id: string) {
-    await supabase.from('objective_links').delete().eq('id', id)
-    onDeleteLink(id)
+    try {
+      await extrasDb.links.remove(id)
+      onDeleteLink(id)
+    } catch (err) {
+      console.error('deleteLink failed:', err)
+    }
   }
 
   async function addKR() {

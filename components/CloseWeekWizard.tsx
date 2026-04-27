@@ -1,9 +1,9 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { supabase } from '@/lib/supabase'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
 import * as checkinsDb from '@/lib/db/checkins'
+import * as reviewsDb from '@/lib/db/reviews'
 import {
   AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
   WeeklyReview, ReviewRating, HealthStatus,
@@ -206,11 +206,19 @@ export default function CloseWeekWizard({
         krs_total: activeKRs.length,
       }
       if (existingReview) {
-        await supabase.from('weekly_reviews').update(payload).eq('id', existingReview.id)
-        setReviews(prev => prev.map(r => r.id === existingReview.id ? { ...r, ...payload } : r))
+        try {
+          const updated = await reviewsDb.update(existingReview.id, payload)
+          setReviews(prev => prev.map(r => r.id === existingReview.id ? updated : r))
+        } catch (err) {
+          console.error('review update failed:', err)
+        }
       } else {
-        const { data } = await supabase.from('weekly_reviews').insert({ ...payload, space_id: activeSpaceId }).select().single()
-        if (data) setReviews(prev => [data, ...prev])
+        try {
+          const created = await reviewsDb.create({ ...payload, space_id: activeSpaceId })
+          setReviews(prev => [created, ...prev])
+        } catch (err) {
+          console.error('review create failed:', err)
+        }
       }
 
       // 2. Seed next-week actions (carries + recurring re-spawns), if not already done.
@@ -291,13 +299,21 @@ export default function CloseWeekWizard({
         krs_total: 0,
       }
       if (existingReview) {
-        await supabase.from('weekly_reviews').update(payload).eq('id', existingReview.id)
-        setReviews(prev => prev.map(r => r.id === existingReview.id ? { ...r, ...payload } : r))
+        try {
+          const updated = await reviewsDb.update(existingReview.id, payload)
+          setReviews(prev => prev.map(r => r.id === existingReview.id ? updated : r))
+        } catch (err) {
+          console.error('skipWeek review update failed:', err)
+          toast('Could not skip week.'); setSkipping(false); return
+        }
       } else {
-        const { data, error } = await supabase.from('weekly_reviews')
-          .insert({ ...payload, space_id: activeSpaceId }).select().single()
-        if (error) { toast('Could not skip week.'); setSkipping(false); return }
-        if (data) setReviews(prev => [data, ...prev])
+        try {
+          const created = await reviewsDb.create({ ...payload, space_id: activeSpaceId })
+          setReviews(prev => [created, ...prev])
+        } catch (err) {
+          console.error('skipWeek review create failed:', err)
+          toast('Could not skip week.'); setSkipping(false); return
+        }
       }
       try { window.localStorage.removeItem(storageKey) } catch { /* noop */ }
       toast(`Week of ${formatWeek(closingWeek)} skipped`)
