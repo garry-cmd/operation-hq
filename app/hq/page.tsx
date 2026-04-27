@@ -3,6 +3,14 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { getMonday, ACTIVE_Q, addWeeks } from '@/lib/utils'
+import * as objectivesDb from '@/lib/db/objectives'
+import * as krsDb from '@/lib/db/krs'
+import * as actionsDb from '@/lib/db/actions'
+import * as checkinsDb from '@/lib/db/checkins'
+import * as reviewsDb from '@/lib/db/reviews'
+import * as extrasDb from '@/lib/db/objectiveExtras'
+import * as spacesDb from '@/lib/db/spaces'
+import * as shareTokensDb from '@/lib/db/shareTokens'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
@@ -109,34 +117,41 @@ export default function HQPage() {
 
   const loadAll = useCallback(async () => {
     setLoading(true)
+    // Per-call fallbacks preserve the original behavior: if a single table
+    // query fails, the app still loads with empty state for that table
+    // rather than failing the whole boot. Errors that previously vanished
+    // into supabase's `{data, error}` shape now surface in console.
+    const fallback = <T,>(label: string, value: T) => (err: unknown): T => {
+      console.error(`loadAll: ${label} failed:`, err)
+      return value
+    }
     const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st] = await Promise.all([
-      supabase.from('annual_objectives').select('*').order('sort_order'),
-      supabase.from('roadmap_items').select('*').order('sort_order'),
-      supabase.from('weekly_actions').select('*').order('created_at'),
-      supabase.from('daily_checkins').select('*').order('checkin_date', { ascending: false }),
-      supabase.from('habit_checkins').select('*').order('date', { ascending: false }),
-      supabase.from('metric_checkins').select('*').order('created_at', { ascending: false }),
-      supabase.from('weekly_reviews').select('*').order('week_start', { ascending: false }),
-      supabase.from('objective_links').select('*').order('sort_order'),
-      supabase.from('objective_logs').select('*').order('created_at', { ascending: false }),
-      supabase.from('spaces').select('*').order('sort_order'),
-      supabase.from('share_tokens').select('token').eq('label', 'Melissa').eq('active', true).single(),
+      objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
+      krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
+      actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
+      checkinsDb.daily.listAll().catch(fallback('daily_checkins', [] as DailyCheckin[])),
+      checkinsDb.habit.listAll().catch(fallback('habit_checkins', [] as HabitCheckin[])),
+      checkinsDb.metric.listAll().catch(fallback('metric_checkins', [] as MetricCheckin[])),
+      reviewsDb.listAll().catch(fallback('weekly_reviews', [] as WeeklyReview[])),
+      extrasDb.links.listAll().catch(fallback('objective_links', [] as ObjectiveLink[])),
+      extrasDb.logs.listAll().catch(fallback('objective_logs', [] as ObjectiveLog[])),
+      spacesDb.listAll().catch(fallback('spaces', [] as Space[])),
+      shareTokensDb.findActiveByLabel('Melissa').catch(fallback('share_tokens', null)),
     ])
-    setObjectives(o.data ?? [])
-    setRoadmapItems(r.data ?? [])
-    setActions(a.data ?? [])
-    setCheckins(ci.data ?? [])
-    setHabitCheckins(hc.data ?? [])
-    setMetricCheckins(mc.data ?? [])
-    setReviews(rv.data ?? [])
-    setLinks(lk.data ?? [])
-    setLogs(lg.data ?? [])
-    const loadedSpaces: Space[] = sp.data ?? []
-    setSpaces(loadedSpaces)
-    if (st.data) setShareToken(st.data.token)
+    setObjectives(o)
+    setRoadmapItems(r)
+    setActions(a)
+    setCheckins(ci)
+    setHabitCheckins(hc)
+    setMetricCheckins(mc)
+    setReviews(rv)
+    setLinks(lk)
+    setLogs(lg)
+    setSpaces(sp)
+    if (st) setShareToken(st.token)
     // Set active space from localStorage or default to first
     const savedSpaceId = localStorage.getItem('hq-active-space')
-    const validId = loadedSpaces.find(s => s.id === savedSpaceId)?.id ?? loadedSpaces[0]?.id ?? ''
+    const validId = sp.find(s => s.id === savedSpaceId)?.id ?? sp[0]?.id ?? ''
     setActiveSpaceId(validId)
     setLoading(false)
   }, [])

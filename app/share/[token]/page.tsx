@@ -1,8 +1,10 @@
 'use client'
 import { use, useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, HealthStatus } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
+import * as objectivesDb from '@/lib/db/objectives'
+import * as krsDb from '@/lib/db/krs'
+import * as shareTokensDb from '@/lib/db/shareTokens'
 
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
   not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
@@ -21,17 +23,20 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
 
   useEffect(() => {
     async function load() {
-      const { data } = await supabase.from('share_tokens').select('*').eq('token', token).eq('active', true).single()
-      setValid(!!data)
-      if (!data) return
+      const tokenRow = await shareTokensDb.findActiveByToken(token).catch(err => {
+        console.error('share_tokens lookup failed:', err)
+        return null
+      })
+      setValid(!!tokenRow)
+      if (!tokenRow) return
       const [o, r] = await Promise.all([
-        supabase.from('annual_objectives').select('*').eq('space_id', data.space_id).order('sort_order'),
-        supabase.from('roadmap_items').select('*').eq('quarter', ACTIVE_Q).order('sort_order'),
+        objectivesDb.listBySpace(tokenRow.space_id).catch(() => [] as AnnualObjective[]),
+        krsDb.listByQuarter(ACTIVE_Q).catch(() => [] as RoadmapItem[]),
       ])
-      setObjectives(o.data ?? [])
+      setObjectives(o)
       // Filter roadmap items to only those belonging to objectives in this space
-      const objectiveIds = o.data?.map(obj => obj.id) ?? []
-      setItems((r.data ?? []).filter(item => objectiveIds.includes(item.annual_objective_id)))
+      const objectiveIds = o.map(obj => obj.id)
+      setItems(r.filter(item => item.annual_objective_id !== null && objectiveIds.includes(item.annual_objective_id)))
     }
     load()
   }, [token])

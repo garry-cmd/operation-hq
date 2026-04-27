@@ -115,3 +115,11 @@ export interface MetricCheckin {
   created_at: string
   updated_at: string
 }
+
+// Minimal — the share_tokens table has more columns (id, label, active,
+// created_at) but the app only reads token + space_id, so the type stays
+// narrow. Expand if a write path is ever added.
+export interface ShareToken {
+  token: string
+  space_id: string
+}
