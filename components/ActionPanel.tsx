@@ -54,6 +54,12 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
   const [savingNew, setSavingNew] = useState(false)
+  // Title editing state. Title is read-only by default; clicking the small
+  // pencil icon flips into edit mode (textarea + Save/Cancel). Pattern mirrors
+  // the new-note form — explicit Save button rather than autosave-on-blur.
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [titleDraft, setTitleDraft] = useState(action.title)
+  const [savingTitle, setSavingTitle] = useState(false)
 
   const objLogs = logs
     .filter(l => l.objective_id === parentObjective.id)
@@ -66,6 +72,60 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
     } catch (err) {
       console.error('setTag failed:', err)
       toast('Failed to update tag.')
+    }
+  }
+
+  async function saveTitle() {
+    const trimmed = titleDraft.trim()
+    if (!trimmed) return // don't allow empty title — Save button is disabled anyway
+    if (trimmed === action.title) {
+      // no change — just exit edit mode silently
+      setEditingTitle(false)
+      return
+    }
+    setSavingTitle(true)
+    try {
+      const updated = await actionsDb.update(action.id, { title: trimmed })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+      setEditingTitle(false)
+    } catch (err) {
+      console.error('saveTitle failed:', err)
+      toast('Failed to save title.')
+    } finally {
+      setSavingTitle(false)
+    }
+  }
+
+  function startEditingTitle() {
+    setTitleDraft(action.title)
+    setEditingTitle(true)
+  }
+
+  function cancelEditingTitle() {
+    setTitleDraft(action.title)
+    setEditingTitle(false)
+  }
+
+  async function toggleRecurring() {
+    try {
+      const updated = await actionsDb.update(action.id, { is_recurring: !action.is_recurring })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+    } catch (err) {
+      console.error('toggleRecurring failed:', err)
+      toast('Failed to update recurring.')
+    }
+  }
+
+  async function deleteAction() {
+    if (!confirm('Delete this action? This cannot be undone.')) return
+    try {
+      await actionsDb.remove(action.id)
+      setActions(prev => prev.filter(a => a.id !== action.id))
+      onClose() // close the panel since the underlying action is gone
+      toast('Action deleted.')
+    } catch (err) {
+      console.error('deleteAction failed:', err)
+      toast('Failed to delete action.')
     }
   }
 
@@ -134,10 +194,47 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
 
       {/* Action title + tag picker */}
       <div style={{ padding: '14px 16px 16px' }}>
-        <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', lineHeight: 1.35, marginBottom: 10 }}>
-          {action.title}
-        </div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {editingTitle ? (
+          <div style={{ marginBottom: 12 }}>
+            <textarea
+              value={titleDraft}
+              onChange={e => setTitleDraft(e.target.value)}
+              autoFocus
+              rows={2}
+              style={{ width: '100%', background: 'var(--navy-700)', border: '1px solid var(--accent)', outline: 'none', fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', lineHeight: 1.35, padding: '6px 8px', borderRadius: 6, fontFamily: 'inherit', resize: 'vertical' }}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { e.preventDefault(); cancelEditingTitle() }
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveTitle() }
+              }}
+            />
+            <div style={{ display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' }}>
+              <button onClick={cancelEditingTitle}
+                style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', background: 'transparent', color: 'var(--navy-400)', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={saveTitle} disabled={savingTitle || !titleDraft.trim() || titleDraft.trim() === action.title}
+                style={{ fontSize: 11, fontWeight: 700, padding: '4px 12px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', opacity: savingTitle || !titleDraft.trim() || titleDraft.trim() === action.title ? 0.5 : 1 }}>
+                {savingTitle ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 12 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', lineHeight: 1.35 }}>
+              {action.title}
+            </div>
+            <button onClick={startEditingTitle}
+              title="Edit title"
+              style={{ width: 24, height: 24, padding: 0, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--navy-400)', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
+              </svg>
+            </button>
+          </div>
+        )}
+
+        {/* Tag picker — backlog/waiting/doing or none */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
           <TagPickerPill active={action.tag === null} onClick={() => setTag(null)}
             bg="var(--navy-700)" color="var(--navy-400)" label="—" outlineColor="var(--navy-300)" />
           {(['backlog', 'waiting', 'doing'] as ActionTag[]).map(t => (
@@ -145,6 +242,14 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
               bg={TAG_STYLE[t].bg} color={TAG_STYLE[t].color} label={TAG_STYLE[t].label}
               outlineColor={TAG_STYLE[t].color} />
           ))}
+        </div>
+
+        {/* Recurring toggle — separate row since it's a different axis (schedule
+            vs status). Same pill component as tags so it visually belongs to the
+            same family. */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <TagPickerPill active={action.is_recurring} onClick={toggleRecurring}
+            bg="var(--accent-dim)" color="var(--accent)" label="↻ weekly" outlineColor="var(--accent)" />
         </div>
       </div>
 
@@ -210,6 +315,15 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
             />
           ))
         )}
+      </div>
+
+      {/* Footer — delete affordance. Muted by default; the user reaches for
+          it deliberately. confirm() is the safety net before removal. */}
+      <div style={{ borderTop: '1px solid var(--navy-700)', padding: '10px 16px', textAlign: 'center' }}>
+        <button onClick={deleteAction}
+          style={{ fontSize: 11, fontWeight: 600, padding: '4px 10px', background: 'transparent', color: 'var(--red-text)', border: 'none', cursor: 'pointer', opacity: 0.75 }}>
+          Delete action
+        </button>
       </div>
     </div>
   )

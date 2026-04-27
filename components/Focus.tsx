@@ -14,10 +14,9 @@ const LightningIcon = ({ size = 48, className = "" }: { size?: number, className
   </svg>
 )
 
-// Per-tag color treatment. Single source of truth — used both by the inline
-// pill on action rows and by the picker in EditActionModal so they always
-// agree visually. Color choices are deliberately distinct from `carried`
-// (which uses --amber-*) so the four states read at a glance.
+// Per-tag color treatment. Single source of truth — used by the inline pill
+// on action rows and (mirrored) by the picker in ActionPanel. If they ever
+// drift, the row pill and panel picker will look different.
 const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }> = {
   backlog: { bg: 'var(--navy-600)', color: 'var(--navy-200)', label: 'backlog' },
   waiting: { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'waiting' },
@@ -26,7 +25,6 @@ const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }>
 
 
 import PlanWeek from './PlanWeek'
-import Modal from './Modal'
 import ActionPanel from './ActionPanel'
 
 type Props = {
@@ -56,7 +54,6 @@ export default function Focus({
   logs, setLogs, openActionId, setOpenActionId,
 }: Props) {
   const [planning, setPlanning] = useState(false)
-  const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
   const activeKRs = getCurrentQuarterKRs(roadmapItems, ACTIVE_Q)
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
   const today = getToday()
@@ -130,28 +127,6 @@ export default function Focus({
       setActions(prev => prev.map(a => a.id === action.id ? updated : a))
     } catch (err) {
       console.error('toggleAction failed:', err)
-    }
-  }
-
-  async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean) {
-    try {
-      const updated = await actionsDb.update(action.id, { title, is_recurring: isRecurring })
-      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
-      setEditAction(null)
-      toast('Action updated.')
-    } catch (err) {
-      console.error('saveEdit failed:', err)
-    }
-  }
-
-  async function deleteAction(id: string) {
-    try {
-      await actionsDb.remove(id)
-      setActions(prev => prev.filter(a => a.id !== id))
-      setEditAction(null)
-      toast('Action deleted.')
-    } catch (err) {
-      console.error('deleteAction failed:', err)
     }
   }
 
@@ -440,10 +415,6 @@ export default function Focus({
                           {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
                           {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
                         </div>
-                        <button onClick={() => setEditAction(action)}
-                          style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                        </button>
                       </div>
                     ))}
                   </div>
@@ -470,77 +441,7 @@ export default function Focus({
           )}
         </div>
 
-        {/* Edit action modal */}
-        {editAction && (
-          <EditActionModal
-            action={editAction}
-            onClose={() => setEditAction(null)}
-            onSave={(title, isRecurring) => saveEdit(editAction, title, isRecurring)}
-            onDelete={() => deleteAction(editAction.id)}
-          />
-        )}
-
       </div>
     </>
-  )
-}
-
-function EditActionModal({ action, onClose, onSave, onDelete }: {
-  action: WeeklyAction
-  onClose: () => void
-  onSave: (title: string, isRecurring: boolean) => void
-  onDelete: () => void
-}) {
-  const [title, setTitle] = useState(action.title)
-  const [isRecurring, setIsRecurring] = useState(action.is_recurring)
-  const [saving, setSaving] = useState(false)
-
-  async function save() {
-    if (!title.trim()) return
-    setSaving(true)
-    await onSave(title.trim(), isRecurring)
-    setSaving(false)
-  }
-
-  return (
-    <Modal title="Edit Action" onClose={onClose}
-      footer={<>
-        <button className="btn" onClick={onDelete}
-          style={{ color: 'var(--red-text)', background: 'var(--red-bg)', border: 'none' }}>
-          Delete
-        </button>
-        <button className="btn" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" onClick={save} disabled={saving || !title.trim()}>
-          {saving ? 'Saving…' : 'Save'}
-        </button>
-      </>}>
-      <div className="field">
-        <label>Action</label>
-        <textarea className="input" rows={3} value={title}
-          onChange={e => setTitle(e.target.value)} autoFocus />
-      </div>
-      <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
-        onClick={() => setIsRecurring(v => !v)}>
-        <button type="button" onClick={e => { e.stopPropagation(); setIsRecurring(v => !v) }}
-          style={{
-            width: 36, height: 20, borderRadius: 10, padding: 2, border: 'none',
-            background: isRecurring ? 'var(--accent)' : 'var(--navy-600)',
-            display: 'flex', alignItems: 'center', cursor: 'pointer',
-            transition: 'background .15s', flexShrink: 0,
-          }}>
-          <div style={{
-            width: 16, height: 16, borderRadius: '50%', background: '#fff',
-            transform: isRecurring ? 'translateX(16px)' : 'translateX(0)',
-            transition: 'transform .15s',
-          }} />
-        </button>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-50)' }}>Repeats weekly</div>
-          <div style={{ fontSize: 11, color: 'var(--navy-400)', lineHeight: 1.4, marginTop: 2 }}>
-            Re-spawns fresh every time you close the week, regardless of whether it was completed.
-          </div>
-        </div>
-      </div>
-    </Modal>
   )
 }
