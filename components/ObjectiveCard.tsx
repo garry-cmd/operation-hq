@@ -1,14 +1,17 @@
 'use client'
-import React, { useState, useRef, useCallback } from 'react'
+import React, { useState } from 'react'
 import * as krsDb from '@/lib/db/krs'
-import * as objectivesDb from '@/lib/db/objectives'
 import * as actionsDb from '@/lib/db/actions'
 import * as extrasDb from '@/lib/db/objectiveExtras'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
 import { getToday } from '@/lib/habitUtils'
 
-type Section = 'notes' | 'links' | 'logs' | null
+// Notes UI moved out of this card. The legacy `obj.notes` text field is
+// no longer rendered anywhere in v1; `objective_logs` (titled, dated entries)
+// is the canonical notes substrate going forward, surfaced via the action
+// panel work in commit 4. The DB column stays put — drop, don't migrate.
+type Section = 'links' | 'logs' | null
 
 const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'backlog', 'on_track', 'off_track', 'blocked', 'done']
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
@@ -47,9 +50,7 @@ interface Props {
 
 export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, metricCheckins, setRoadmapItems, setObjectives, setActions, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, onLogMetric, toast }: Props) {
   const [collapsed, setCollapsed] = useState(true)
-  const [section, setSection] = useState<'notes' | 'links' | 'logs' | null>(null)
-  const [notes, setNotes] = useState(obj.notes ?? '')
-  const [notesSaved, setNotesSaved] = useState(true)
+  const [section, setSection] = useState<Section>(null)
   const [linkUrl, setLinkUrl] = useState('')
   const [addingLink, setAddingLink] = useState(false)
   const [logEntry, setLogEntry] = useState('')
@@ -61,7 +62,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const [addingActionKRId, setAddingActionKRId] = useState<string | null>(null)
   const [newActionTitle, setNewActionTitle] = useState('')
   const [savingAction, setSavingAction] = useState(false)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack  = krs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
@@ -84,22 +84,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
       console.error('cycleStatus failed:', err)
     }
   }
-
-  // Debounced notes save
-  const handleNotesChange = useCallback((val: string) => {
-    setNotes(val)
-    setNotesSaved(false)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(async () => {
-      try {
-        const updated = await objectivesDb.update(obj.id, { notes: val })
-        setObjectives(prev => prev.map(o => o.id === obj.id ? updated : o))
-        setNotesSaved(true)
-      } catch (err) {
-        console.error('notes save failed:', err)
-      }
-    }, 800)
-  }, [obj.id])
 
   async function addLink() {
     if (!linkUrl.trim() || addingLink) return
@@ -406,17 +390,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
 
         {/* Footer tabs */}
         <div style={{ display: 'flex', borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
-          {/* Notes tab */}
-          <button onClick={() => toggleSection('notes')}
-            style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'notes' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', borderRight: `1px solid ${divColor}`, cursor: 'pointer', color: section === 'notes' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <path d="M3 2h7l3 3v9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-              <path d="M10 2v3h3" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/>
-              <path d="M5 8h6M5 11h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-            </svg>
-            Notes
-            {notes.trim() && <div style={{ width: 5, height: 5, borderRadius: '50%', background: obj.color, marginLeft: 1 }} />}
-          </button>
           {/* Links tab */}
           <button onClick={() => toggleSection('links')}
             style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'links' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', borderRight: `1px solid ${divColor}`, cursor: 'pointer', color: section === 'links' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
@@ -446,22 +419,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
             )}
           </button>
         </div>
-
-        {/* Notes section */}
-        {section === 'notes' && (
-          <div style={{ padding: '12px 14px', background: 'var(--navy-700)', borderTop: `1px solid ${divColor}` }}>
-            <textarea
-              value={notes}
-              onChange={e => handleNotesChange(e.target.value)}
-              placeholder="Why does this objective matter? What's the strategy? Context you'll want in 3 months…"
-              style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.7, resize: 'none', color: 'var(--navy-100)', minHeight: 80 }}
-              rows={4}
-            />
-            <div style={{ fontSize: 10, color: notesSaved ? 'var(--navy-500)' : 'var(--amber-text)', textAlign: 'right', marginTop: 2 }}>
-              {notesSaved ? 'Saved' : 'Saving…'}
-            </div>
-          </div>
-        )}
 
         {/* Links section */}
         {section === 'links' && (
