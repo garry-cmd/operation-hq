@@ -1,6 +1,8 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
+import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
@@ -57,25 +59,31 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
       if (active === 'objective') {
         // Auto-pick the next color in the palette by current objective count.
         const color = COLORS[objectives.length % COLORS.length]
-        const { data } = await supabase.from('annual_objectives')
-          .insert({
-            name: title.trim(),
-            color,
-            sort_order: objectives.length,
-            status: 'active',
-            space_id: activeSpaceId,
-          })
-          .select().single()
-        if (data) { setObjectives(prev => [...prev, data]); toast('Objective added!') }
+        const created = await objectivesDb.create({
+          name: title.trim(),
+          color,
+          sort_order: objectives.length,
+          status: 'active',
+          space_id: activeSpaceId,
+        })
+        setObjectives(prev => [...prev, created])
+        toast('Objective added!')
       }
       if (active === 'keyresult' && secondVal) {
         const parent = objectives.find(o => o.id === secondVal)
         if (!parent) return
         const count = roadmapItems.filter(i => i.annual_objective_id === secondVal && i.quarter === ACTIVE_Q).length
-        const { data } = await supabase.from('roadmap_items')
-          .insert({ space_id: parent.space_id, annual_objective_id: secondVal, title, quarter: ACTIVE_Q, status: 'active', health_status: 'not_started', sort_order: count })
-          .select().single()
-        if (data) { setRoadmapItems(prev => [...prev, data]); toast('Key result added!') }
+        const created = await krsDb.create({
+          space_id: parent.space_id,
+          annual_objective_id: secondVal,
+          title,
+          quarter: ACTIVE_Q,
+          status: 'active',
+          health_status: 'not_started',
+          sort_order: count,
+        })
+        setRoadmapItems(prev => [...prev, created])
+        toast('Key result added!')
       }
       if (active === 'action' && secondVal) {
         const { data } = await supabase.from('weekly_actions')
@@ -86,18 +94,17 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
       if (active === 'parking') {
         // Standalone — not tied to any objective. The whole point of parking
         // is to get the idea out of your head without categorizing yet.
-        const { data } = await supabase.from('roadmap_items')
-          .insert({
-            space_id: activeSpaceId,
-            annual_objective_id: null,
-            title,
-            quarter: null,
-            status: 'planned',
-            is_parked: true,
-            sort_order: roadmapItems.filter(i => i.is_parked).length,
-          })
-          .select().single()
-        if (data) { setRoadmapItems(prev => [...prev, data]); toast('Idea parked!') }
+        const created = await krsDb.create({
+          space_id: activeSpaceId,
+          annual_objective_id: null,
+          title,
+          quarter: null,
+          status: 'planned',
+          is_parked: true,
+          sort_order: roadmapItems.filter(i => i.is_parked).length,
+        })
+        setRoadmapItems(prev => [...prev, created])
+        toast('Idea parked!')
       }
       close()
     } catch { toast('Something went wrong.') }

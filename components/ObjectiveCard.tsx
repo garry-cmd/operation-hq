@@ -1,6 +1,8 @@
 'use client'
 import React, { useState, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
+import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
 import { getToday } from '@/lib/habitUtils'
@@ -74,8 +76,12 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   async function cycleStatus(kr: RoadmapItem) {
     const idx = HEALTH_CYCLE.indexOf(kr.health_status ?? 'not_started')
     const next = HEALTH_CYCLE[(idx + 1) % HEALTH_CYCLE.length]
-    await supabase.from('roadmap_items').update({ health_status: next }).eq('id', kr.id)
-    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, health_status: next } : i))
+    try {
+      const updated = await krsDb.setHealth(kr.id, next)
+      setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
+    } catch (err) {
+      console.error('cycleStatus failed:', err)
+    }
   }
 
   // Debounced notes save
@@ -84,9 +90,13 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
     setNotesSaved(false)
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {
-      await supabase.from('annual_objectives').update({ notes: val }).eq('id', obj.id)
-      setObjectives(prev => prev.map(o => o.id === obj.id ? { ...o, notes: val } : o))
-      setNotesSaved(true)
+      try {
+        const updated = await objectivesDb.update(obj.id, { notes: val })
+        setObjectives(prev => prev.map(o => o.id === obj.id ? updated : o))
+        setNotesSaved(true)
+      } catch (err) {
+        console.error('notes save failed:', err)
+      }
     }, 800)
   }, [obj.id])
 
@@ -127,27 +137,26 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   async function addKR() {
     if (!newKRTitle.trim() || savingKR) return
     setSavingKR(true)
-    const { count } = await supabase.from('roadmap_items')
-      .select('id', { count: 'exact', head: true }).eq('annual_objective_id', obj.id)
-    const { data } = await supabase.from('roadmap_items')
-      .insert({
+    try {
+      const count = await krsDb.countByObjective(obj.id)
+      const created = await krsDb.create({
         space_id: obj.space_id,
         annual_objective_id: obj.id,
         title: newKRTitle.trim(),
         quarter: ACTIVE_Q,
         status: 'active',
-        sort_order: count ?? 0,
+        sort_order: count,
         health_status: 'not_started',
         progress: 0,
         is_habit: newKRIsHabit,
       })
-      .select().single()
-    if (data) {
-      setRoadmapItems(prev => [...prev, data])
+      setRoadmapItems(prev => [...prev, created])
       setNewKRTitle('')
       setNewKRIsHabit(false)
       setAddingKR(false)
       toast('Key result added.')
+    } catch (err) {
+      console.error('addKR failed:', err)
     }
     setSavingKR(false)
   }

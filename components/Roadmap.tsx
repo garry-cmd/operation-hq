@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
+import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
 import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ } from '@/lib/utils'
 import Modal from './Modal'
@@ -39,21 +40,33 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
 
   async function moveKR(itemId: string, quarter: string) {
     const newStatus = quarter === ACTIVE_Q ? 'active' : 'planned'
-    await supabase.from('roadmap_items').update({ quarter, status: newStatus }).eq('id', itemId)
-    setRoadmapItems(prev => prev.map(i => i.id === itemId ? { ...i, quarter, status: newStatus } : i))
-    toast(`Moved to ${formatQ(quarter)}`)
+    try {
+      const updated = await krsDb.update(itemId, { quarter, status: newStatus })
+      setRoadmapItems(prev => prev.map(i => i.id === itemId ? updated : i))
+      toast(`Moved to ${formatQ(quarter)}`)
+    } catch (err) {
+      console.error('moveKR failed:', err)
+    }
   }
 
   async function parkKR(item: RoadmapItem) {
-    await supabase.from('roadmap_items').update({ is_parked: true, quarter: null, status: 'planned' }).eq('id', item.id)
-    setRoadmapItems(prev => prev.map(i => i.id === item.id ? { ...i, is_parked: true, quarter: null, status: 'planned' } : i))
-    toast('Moved to Parking Lot')
+    try {
+      const updated = await krsDb.update(item.id, { is_parked: true, quarter: null, status: 'planned' })
+      setRoadmapItems(prev => prev.map(i => i.id === item.id ? updated : i))
+      toast('Moved to Parking Lot')
+    } catch (err) {
+      console.error('parkKR failed:', err)
+    }
   }
 
   async function deleteKR(id: string) {
-    await supabase.from('roadmap_items').delete().eq('id', id)
-    setRoadmapItems(prev => prev.filter(i => i.id !== id))
-    setModal(null); toast('Key result deleted.')
+    try {
+      await krsDb.remove(id)
+      setRoadmapItems(prev => prev.filter(i => i.id !== id))
+      setModal(null); toast('Key result deleted.')
+    } catch (err) {
+      console.error('deleteKR failed:', err)
+    }
   }
 
   // Shared validate-and-move (used by both drop and tap-to-place)
@@ -240,10 +253,14 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
           }}
           onAbandon={modal.type === 'edit_obj' ? async (obj) => {
             const next = obj.status === 'abandoned' ? 'active' : 'abandoned'
-            await supabase.from('annual_objectives').update({ status: next }).eq('id', obj.id)
-            setObjectives(prev => prev.map(o => o.id === obj.id ? { ...o, status: next } : o))
-            setModal(null)
-            toast(next === 'abandoned' ? 'Objective abandoned.' : 'Objective restored.')
+            try {
+              const updated = await objectivesDb.update(obj.id, { status: next })
+              setObjectives(prev => prev.map(o => o.id === obj.id ? updated : o))
+              setModal(null)
+              toast(next === 'abandoned' ? 'Objective abandoned.' : 'Objective restored.')
+            } catch (err) {
+              console.error('abandon/restore failed:', err)
+            }
           } : undefined}
         />
       )}
@@ -367,15 +384,25 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon }
   async function save() {
     if (!name.trim()) return
     setSaving(true)
-    if (obj) {
-      await supabase.from('annual_objectives').update({ name, color }).eq('id', obj.id)
-      onSave({ ...obj, name, color })
-    } else {
-      const { data } = await supabase.from('annual_objectives')
-        .insert({ name, color, sort_order: objectives.length, status: 'active', space_id: activeSpaceId }).select().single()
-      if (data) onSave(data)
+    try {
+      if (obj) {
+        const updated = await objectivesDb.update(obj.id, { name, color })
+        onSave(updated)
+      } else {
+        const created = await objectivesDb.create({
+          name,
+          color,
+          sort_order: objectives.length,
+          status: 'active',
+          space_id: activeSpaceId,
+        })
+        onSave(created)
+      }
+    } catch (err) {
+      console.error('objective save failed:', err)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   return (
@@ -425,19 +452,31 @@ function KRModal({ item, objId, defaultQuarter, objectives, quarters, onClose, o
     if (!title.trim()) return
     setSaving(true)
     const status = quarter === ACTIVE_Q ? 'active' : 'planned'
-    if (item) {
-      await supabase.from('roadmap_items').update({ title, quarter, status }).eq('id', item.id)
-      onSave({ ...item, title, quarter, status })
-    } else {
-      const parent = objectives.find(o => o.id === objId)
-      if (!parent) { setSaving(false); return }
-      const count = (await supabase.from('roadmap_items').select('id').eq('annual_objective_id', objId)).data?.length ?? 0
-      const { data } = await supabase.from('roadmap_items')
-        .insert({ space_id: parent.space_id, annual_objective_id: objId, title, quarter, status, sort_order: count, health_status: 'not_started', progress: 0 })
-        .select().single()
-      if (data) onSave(data)
+    try {
+      if (item) {
+        const updated = await krsDb.update(item.id, { title, quarter, status })
+        onSave(updated)
+      } else {
+        const parent = objectives.find(o => o.id === objId)
+        if (!parent) { setSaving(false); return }
+        const count = await krsDb.countByObjective(objId)
+        const created = await krsDb.create({
+          space_id: parent.space_id,
+          annual_objective_id: objId,
+          title,
+          quarter,
+          status,
+          sort_order: count,
+          health_status: 'not_started',
+          progress: 0,
+        })
+        onSave(created)
+      }
+    } catch (err) {
+      console.error('KR save failed:', err)
+    } finally {
+      setSaving(false)
     }
-    setSaving(false)
   }
 
   const obj = objectives.find(o => o.id === objId)

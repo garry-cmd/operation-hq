@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
 import { RoadmapItem, MetricCheckin } from '@/lib/types'
 import { getMonday, formatWeek } from '@/lib/utils'
 import { computeMetricProgress } from '@/lib/metricUtils'
@@ -82,16 +83,13 @@ export default function MetricLogModal({ kr, checkins, setMetricCheckins, setRoa
       const newProgress = computeMetricProgress(kr, num)
       const currentProgress = kr.progress == null ? null : Number(kr.progress)
       if (newProgress != null && newProgress !== currentProgress) {
-        const { error: progressErr } = await supabase
-          .from('roadmap_items')
-          .update({ progress: newProgress })
-          .eq('id', kr.id)
-        if (progressErr) {
+        try {
+          const updated = await krsDb.setProgress(kr.id, newProgress)
+          setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
+        } catch (progressErr) {
           // Value saved but progress didn't — non-fatal, surface it but don't
           // roll back the value write. User will see the right value next load.
           console.error('progress update error:', progressErr)
-        } else {
-          setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress: newProgress } : i))
         }
       }
 

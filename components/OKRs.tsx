@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
+import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
@@ -88,13 +89,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
 
   async function deleteKR(id: string) {
     try {
-      const { error } = await supabase.from('roadmap_items').delete().eq('id', id)
-      if (error) {
-        console.error('Delete KR error:', error)
-        toast('Failed to delete KR')
-        return
-      }
-      
+      await krsDb.remove(id)
       setRoadmapItems(prev => prev.filter(kr => kr.id !== id))
       toast('Key Result deleted')
     } catch (err) {
@@ -106,21 +101,23 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   async function deleteObjective(id: string) {
     try {
       // First delete all KRs for this objective
-      const { error: krError } = await supabase.from('roadmap_items').delete().eq('annual_objective_id', id)
-      if (krError) {
-        console.error('Delete objective KRs error:', krError)
+      try {
+        await krsDb.removeByObjective(id)
+      } catch (krErr) {
+        console.error('Delete objective KRs error:', krErr)
         toast('Failed to delete objective - could not remove key results')
         return
       }
-      
+
       // Then delete the objective
-      const { error: objError } = await supabase.from('annual_objectives').delete().eq('id', id)
-      if (objError) {
-        console.error('Delete objective error:', objError)
+      try {
+        await objectivesDb.remove(id)
+      } catch (objErr) {
+        console.error('Delete objective error:', objErr)
         toast('Failed to delete objective')
         return
       }
-      
+
       // Update local state
       setRoadmapItems(prev => prev.filter(kr => kr.annual_objective_id !== id))
       setObjectives(prev => prev.filter(obj => obj.id !== id))
@@ -253,14 +250,8 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
           onClose={() => setEditingKR(null)}
           onSave={async (updatedKR) => {
             try {
-              const { error } = await supabase.from('roadmap_items').update(updatedKR).eq('id', editingKR.id)
-              if (error) {
-                console.error('Update KR error:', error)
-                toast('Failed to update KR')
-                return
-              }
-              
-              setRoadmapItems(prev => prev.map(kr => kr.id === editingKR.id ? { ...kr, ...updatedKR } : kr))
+              const updated = await krsDb.update(editingKR.id, updatedKR)
+              setRoadmapItems(prev => prev.map(kr => kr.id === editingKR.id ? updated : kr))
               setEditingKR(null)
               toast('Key Result updated')
             } catch (err) {
@@ -282,14 +273,8 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
           onClose={() => setEditingObjective(null)}
           onSave={async (updatedObjective) => {
             try {
-              const { error } = await supabase.from('annual_objectives').update(updatedObjective).eq('id', editingObjective.id)
-              if (error) {
-                console.error('Update objective error:', error)
-                toast('Failed to update objective')
-                return
-              }
-              
-              setObjectives(prev => prev.map(obj => obj.id === editingObjective.id ? { ...obj, ...updatedObjective } : obj))
+              const updated = await objectivesDb.update(editingObjective.id, updatedObjective)
+              setObjectives(prev => prev.map(obj => obj.id === editingObjective.id ? updated : obj))
               setEditingObjective(null)
               toast('Objective updated')
             } catch (err) {

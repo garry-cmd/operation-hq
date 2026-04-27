@@ -1,6 +1,6 @@
 'use client'
 import { useState, useRef, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
 import { QUARTERS, ACTIVE_Q } from '@/lib/utils'
 
@@ -26,8 +26,8 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
     e.preventDefault()
     if (!newTitle.trim() || saving) return
     setSaving(true)
-    const { data } = await supabase.from('roadmap_items')
-      .insert({
+    try {
+      const created = await krsDb.create({
         space_id: activeSpaceId,
         annual_objective_id: null,
         title: newTitle.trim(),
@@ -36,8 +36,11 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
         is_parked: true,
         sort_order: parked.length,
       })
-      .select().single()
-    if (data) { setRoadmapItems(prev => [...prev, data]); toast('Idea parked.') }
+      setRoadmapItems(prev => [...prev, created])
+      toast('Idea parked.')
+    } catch (err) {
+      console.error('parkIdea failed:', err)
+    }
     setNewTitle('')
     setSaving(false)
     inputRef.current?.focus()
@@ -45,8 +48,12 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
 
   async function removeIdea(item: RoadmapItem) {
     if (!confirm('Remove this idea?')) return
-    await supabase.from('roadmap_items').delete().eq('id', item.id)
-    setRoadmapItems(prev => prev.filter(i => i.id !== item.id))
+    try {
+      await krsDb.remove(item.id)
+      setRoadmapItems(prev => prev.filter(i => i.id !== item.id))
+    } catch (err) {
+      console.error('removeIdea failed:', err)
+    }
   }
 
   // Group: items grouped under their objective name; orphan items at the top under "Unassigned"
@@ -169,8 +176,12 @@ function ScheduleSheet({ item, objectives, onClose, onScheduled }: {
     setSaving(true)
     const newStatus: 'active' | 'planned' = quarter === ACTIVE_Q ? 'active' : 'planned'
     const updates = { is_parked: false, quarter, status: newStatus, annual_objective_id: objId }
-    await supabase.from('roadmap_items').update(updates).eq('id', item.id)
-    onScheduled({ ...item, ...updates })
+    try {
+      const updated = await krsDb.update(item.id, updates)
+      onScheduled(updated)
+    } catch (err) {
+      console.error('schedule failed:', err)
+    }
     setSaving(false)
   }
 

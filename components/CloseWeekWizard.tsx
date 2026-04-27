@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import * as krsDb from '@/lib/db/krs'
 import {
   AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
   WeeklyReview, ReviewRating, HealthStatus,
@@ -135,12 +136,20 @@ export default function CloseWeekWizard({
 
   // ---------- Step 1: KR mutations save immediately (matches Reflect today) ----------
   async function setKRHealth(kr: RoadmapItem, health: HealthStatus) {
-    await supabase.from('roadmap_items').update({ health_status: health }).eq('id', kr.id)
-    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, health_status: health } : i))
+    try {
+      const updated = await krsDb.setHealth(kr.id, health)
+      setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
+    } catch (err) {
+      console.error('setKRHealth failed:', err)
+    }
   }
   async function setKRProgress(kr: RoadmapItem, progress: number) {
-    await supabase.from('roadmap_items').update({ progress }).eq('id', kr.id)
-    setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress } : i))
+    try {
+      const updated = await krsDb.setProgress(kr.id, progress)
+      setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
+    } catch (err) {
+      console.error('setKRProgress failed:', err)
+    }
   }
 
   // Log this-closing-week's value for a metric KR. Mirrors MetricLogModal.save
@@ -170,12 +179,13 @@ export default function CloseWeekWizard({
     const newProgress = computeMetricProgress(kr, value)
     const currentProgress = kr.progress == null ? null : Number(kr.progress)
     if (newProgress != null && newProgress !== currentProgress) {
-      const { error: progressErr } = await supabase
-        .from('roadmap_items')
-        .update({ progress: newProgress })
-        .eq('id', kr.id)
-      if (!progressErr) {
-        setRoadmapItems(prev => prev.map(i => i.id === kr.id ? { ...i, progress: newProgress } : i))
+      try {
+        const updated = await krsDb.setProgress(kr.id, newProgress)
+        setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
+      } catch (err) {
+        // Value saved but progress didn't — non-fatal, surface in console
+        // but don't roll back the value write. User sees right value next load.
+        console.error('progress update error:', err)
       }
     }
   }
