@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import * as actionsDb from '@/lib/db/actions'
 import * as checkinsDb from '@/lib/db/checkins'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, HabitCheckin } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog, HabitCheckin } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
@@ -27,6 +27,7 @@ const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }>
 
 import PlanWeek from './PlanWeek'
 import Modal from './Modal'
+import ActionPanel from './ActionPanel'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -39,18 +40,34 @@ type Props = {
   setWeekStart: (fn: (s: string) => string) => void
   toast: (m: string) => void
   onRequestCloseWeek: (week: string) => void
+  // ActionPanel-related props (commit 4a). Logs are scoped to the active
+  // space upstream; openActionId is lifted to page level so <main> can
+  // widen when the panel is open.
+  logs: ObjectiveLog[]
+  setLogs: (fn: (p: ObjectiveLog[]) => ObjectiveLog[]) => void
+  openActionId: string | null
+  setOpenActionId: (id: string | null) => void
 }
 
 export default function Focus({
   objectives, roadmapItems, actions, setActions,
   habitCheckins, setHabitCheckins,
   weekStart, setWeekStart, toast, onRequestCloseWeek,
+  logs, setLogs, openActionId, setOpenActionId,
 }: Props) {
   const [planning, setPlanning] = useState(false)
   const [editAction, setEditAction] = useState<WeeklyAction | null>(null)
   const activeKRs = getCurrentQuarterKRs(roadmapItems, ACTIVE_Q)
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
   const today = getToday()
+
+  // Resolve which action's panel is open (if any), plus its parent KR and
+  // objective. The panel is only rendered if all three resolve — defensive
+  // against orphans (deleted KR or objective with stale openActionId).
+  const openAction = openActionId ? actions.find(a => a.id === openActionId) ?? null : null
+  const openKR = openAction ? roadmapItems.find(k => k.id === openAction.roadmap_item_id) ?? null : null
+  const openObj = openKR?.annual_objective_id ? objectives.find(o => o.id === openKR.annual_objective_id) ?? null : null
+  const panelOpen = !!(openAction && openKR && openObj)
   
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const taskDone = weekActions.filter(a => a.completed).length
@@ -116,9 +133,9 @@ export default function Focus({
     }
   }
 
-  async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean, tag: ActionTag | null) {
+  async function saveEdit(action: WeeklyAction, title: string, isRecurring: boolean) {
     try {
-      const updated = await actionsDb.update(action.id, { title, is_recurring: isRecurring, tag })
+      const updated = await actionsDb.update(action.id, { title, is_recurring: isRecurring })
       setActions(prev => prev.map(a => a.id === action.id ? updated : a))
       setEditAction(null)
       toast('Action updated.')
@@ -332,6 +349,9 @@ export default function Focus({
           </div>
         )}
 
+        <div style={panelOpen ? { display: 'flex', gap: 24, alignItems: 'flex-start' } : undefined}>
+          <div style={panelOpen ? { flex: 1, maxWidth: 800, minWidth: 0 } : undefined}>
+
         {/* Week bar for actions */}
         <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: taskTotal > 0 ? 10 : 0 }}>
@@ -413,12 +433,13 @@ export default function Focus({
                       </div>
                     )}
                     {krGroup.actions.map(action => (
-                      <div key={action.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s' }}>
+                      <div key={action.id} style={{ background: 'var(--navy-800)', border: `1px solid ${openActionId === action.id ? 'var(--accent)' : 'var(--navy-600)'}`, borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s, border-color .12s' }}>
                         <button onClick={() => toggleAction(action)}
                           style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
                           {action.completed && <svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                         </button>
-                        <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <div onClick={() => setOpenActionId(openActionId === action.id ? null : action.id)}
+                          style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', cursor: 'pointer' }}>
                           {action.title}
                           {action.tag && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: TAG_STYLE[action.tag].bg, color: TAG_STYLE[action.tag].color, flexShrink: 0 }}>{TAG_STYLE[action.tag].label}</span>}
                           {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
@@ -437,12 +458,29 @@ export default function Focus({
           )
         })}
 
+          </div>
+          {panelOpen && (
+            <div style={{ flex: '0 0 420px', minWidth: 0 }}>
+              <ActionPanel
+                action={openAction!}
+                parentKR={openKR!}
+                parentObjective={openObj!}
+                logs={logs}
+                setActions={setActions}
+                setLogs={setLogs}
+                onClose={() => setOpenActionId(null)}
+                toast={toast}
+              />
+            </div>
+          )}
+        </div>
+
         {/* Edit action modal */}
         {editAction && (
           <EditActionModal
             action={editAction}
             onClose={() => setEditAction(null)}
-            onSave={(title, isRecurring, tag) => saveEdit(editAction, title, isRecurring, tag)}
+            onSave={(title, isRecurring) => saveEdit(editAction, title, isRecurring)}
             onDelete={() => deleteAction(editAction.id)}
           />
         )}
@@ -455,18 +493,17 @@ export default function Focus({
 function EditActionModal({ action, onClose, onSave, onDelete }: {
   action: WeeklyAction
   onClose: () => void
-  onSave: (title: string, isRecurring: boolean, tag: ActionTag | null) => void
+  onSave: (title: string, isRecurring: boolean) => void
   onDelete: () => void
 }) {
   const [title, setTitle] = useState(action.title)
   const [isRecurring, setIsRecurring] = useState(action.is_recurring)
-  const [tag, setTag] = useState<ActionTag | null>(action.tag)
   const [saving, setSaving] = useState(false)
 
   async function save() {
     if (!title.trim()) return
     setSaving(true)
-    await onSave(title.trim(), isRecurring, tag)
+    await onSave(title.trim(), isRecurring)
     setSaving(false)
   }
 
@@ -486,18 +523,6 @@ function EditActionModal({ action, onClose, onSave, onDelete }: {
         <label>Action</label>
         <textarea className="input" rows={3} value={title}
           onChange={e => setTitle(e.target.value)} autoFocus />
-      </div>
-      <div className="field" style={{ marginTop: 14 }}>
-        <label>Status</label>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <TagPickerPill active={tag === null} onClick={() => setTag(null)}
-            bg="var(--navy-700)" color="var(--navy-400)" label="—" outlineColor="var(--navy-300)" />
-          {(['backlog', 'waiting', 'doing'] as ActionTag[]).map(t => (
-            <TagPickerPill key={t} active={tag === t} onClick={() => setTag(tag === t ? null : t)}
-              bg={TAG_STYLE[t].bg} color={TAG_STYLE[t].color} label={TAG_STYLE[t].label}
-              outlineColor={TAG_STYLE[t].color} />
-          ))}
-        </div>
       </div>
       <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
         onClick={() => setIsRecurring(v => !v)}>
@@ -522,33 +547,5 @@ function EditActionModal({ action, onClose, onSave, onDelete }: {
         </div>
       </div>
     </Modal>
-  )
-}
-
-
-// Small pill button used in the tag picker. `active` dims the unselected ones
-// and adds an outline ring on the selected one. Bg/color come from TAG_STYLE
-// (or a neutral pair for the "—" / no-tag option).
-function TagPickerPill({ active, onClick, bg, color, label, outlineColor }: {
-  active: boolean
-  onClick: () => void
-  bg: string
-  color: string
-  label: string
-  outlineColor: string
-}) {
-  return (
-    <button type="button" onClick={onClick}
-      style={{
-        fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 99,
-        background: bg, color, border: 'none',
-        outline: active ? `2px solid ${outlineColor}` : 'none',
-        outlineOffset: 1,
-        opacity: active ? 1 : 0.55,
-        cursor: 'pointer',
-        transition: 'opacity .12s, outline .12s',
-      }}>
-      {label}
-    </button>
   )
 }
