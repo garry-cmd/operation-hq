@@ -139,34 +139,51 @@ export default function Focus({
   // covers reflect → plan in one sitting). The actual carry/recur logic lives
   // inside the wizard; Focus just launches it.
 
-  // Group week's actions by their KR for display. Each group carries the KR
-  // and its parent objective (for the colored dot). Orphan actions — those
-  // whose KR no longer exists — bucket into a header-less group at the end;
-  // shouldn't occur with FK constraints but stays defensive.
-  type ActionGroup = {
+  // Group week's actions two levels deep: objective → KR → actions.
+  // Each objective entry carries its KR groups; orphan actions (whose KR or
+  // objective is missing) bucket into header-less groups at the end.
+  // Shouldn't trigger with FK constraints; defensive.
+  type KRGroup = {
     kr: RoadmapItem | null
-    obj: AnnualObjective | null
     actions: WeeklyAction[]
   }
-  const actionGroups: ActionGroup[] = (() => {
-    const byKey = new Map<string, ActionGroup>()
+  type ObjectiveGroup = {
+    obj: AnnualObjective | null
+    krGroups: KRGroup[]
+  }
+  const objectiveGroups: ObjectiveGroup[] = (() => {
+    const byObj = new Map<string, { obj: AnnualObjective | null; byKr: Map<string, KRGroup> }>()
     for (const action of weekActions) {
       const kr = roadmapItems.find(i => i.id === action.roadmap_item_id) ?? null
-      const key = kr?.id ?? '__orphan'
-      let g = byKey.get(key)
-      if (!g) {
-        const obj = kr ? (objectives.find(o => o.id === kr.annual_objective_id) ?? null) : null
-        g = { kr, obj, actions: [] }
-        byKey.set(key, g)
+      const obj = kr ? (objectives.find(o => o.id === kr.annual_objective_id) ?? null) : null
+      const objKey = obj?.id ?? '__orphan_obj'
+      const krKey = kr?.id ?? '__orphan_kr'
+      let oEntry = byObj.get(objKey)
+      if (!oEntry) {
+        oEntry = { obj, byKr: new Map() }
+        byObj.set(objKey, oEntry)
       }
-      g.actions.push(action)
+      let kEntry = oEntry.byKr.get(krKey)
+      if (!kEntry) {
+        kEntry = { kr, actions: [] }
+        oEntry.byKr.set(krKey, kEntry)
+      }
+      kEntry.actions.push(action)
     }
-    // Sort by KR sort_order ascending; orphans (kr=null) last.
-    return Array.from(byKey.values()).sort((a, b) => {
-      if (!a.kr) return 1
-      if (!b.kr) return -1
-      return a.kr.sort_order - b.kr.sort_order
-    })
+    return Array.from(byObj.values())
+      .map(({ obj, byKr }) => ({
+        obj,
+        krGroups: Array.from(byKr.values()).sort((a, b) => {
+          if (!a.kr) return 1
+          if (!b.kr) return -1
+          return a.kr.sort_order - b.kr.sort_order
+        }),
+      }))
+      .sort((a, b) => {
+        if (!a.obj) return 1
+        if (!b.obj) return -1
+        return a.obj.sort_order - b.obj.sort_order
+      })
   })()
 
   const navBtn: React.CSSProperties = {
@@ -363,38 +380,48 @@ export default function Focus({
           </div>
         )}
         
-        {actionGroups.map(group => {
-          const groupKey = group.kr?.id ?? '__orphan'
-          const groupDone = group.actions.filter(a => a.completed).length
-          const groupTotal = group.actions.length
+        {objectiveGroups.map(objGroup => {
+          const objKey = objGroup.obj?.id ?? '__orphan_obj'
           return (
-            <div key={groupKey} style={{ marginBottom: 14 }}>
-              {group.kr && group.obj && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px 8px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: group.obj.color, flexShrink: 0 }} />
-                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-200)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.kr.title}</div>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 500, flexShrink: 0, marginLeft: 8 }}>{groupDone}/{groupTotal}</div>
+            <div key={objKey} style={{ marginBottom: 18 }}>
+              {objGroup.obj && (
+                <div style={{ padding: '4px 2px 10px', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid var(--navy-600)', marginBottom: 12 }}>
+                  <div style={{ width: 4, height: 16, background: objGroup.obj.color, borderRadius: 2, flexShrink: 0 }} />
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--navy-50)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{objGroup.obj.name}</div>
                 </div>
               )}
-              {group.actions.map(action => (
-                <div key={action.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s' }}>
-                  <button onClick={() => toggleAction(action)}
-                    style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
-                    {action.completed && <svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    {action.title}
-                    {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
-                    {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
+              {objGroup.krGroups.map(krGroup => {
+                const krKey = krGroup.kr?.id ?? '__orphan_kr'
+                const groupDone = krGroup.actions.filter(a => a.completed).length
+                const groupTotal = krGroup.actions.length
+                return (
+                  <div key={krKey} style={{ marginBottom: 14 }}>
+                    {krGroup.kr && (
+                      <div style={{ padding: '0 4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--navy-200)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{krGroup.kr.title}</div>
+                        <div style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 500, flexShrink: 0 }}>{groupDone}/{groupTotal}</div>
+                      </div>
+                    )}
+                    {krGroup.actions.map(action => (
+                      <div key={action.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s' }}>
+                        <button onClick={() => toggleAction(action)}
+                          style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
+                          {action.completed && <svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </button>
+                        <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                          {action.title}
+                          {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
+                          {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
+                        </div>
+                        <button onClick={() => setEditAction(action)}
+                          style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                        </button>
+                      </div>
+                    ))}
                   </div>
-                  <button onClick={() => setEditAction(action)}
-                    style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                  </button>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )
         })}
