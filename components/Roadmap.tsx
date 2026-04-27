@@ -91,7 +91,11 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     setSelectedId(null)
   }
 
-  const COLS = 'repeat(4, 1fr)'
+  // minmax(0, 1fr) — not just '1fr' — so a long KR title cannot expand its
+  // column past its 1/4 share. Without the minmax, grid uses content's
+  // min-width as the lower bound and column 1 (which holds the chip stack)
+  // pushes the others narrower. Chips already handle overflow with ellipsis.
+  const COLS = 'repeat(4, minmax(0, 1fr))'
   const MIN_W = 480
 
   function cellAcceptsDrag(objId: string, quarter: string): boolean {
