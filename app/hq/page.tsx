@@ -322,8 +322,8 @@ export default function HQPage() {
         </div>
       </header>
 
-      {/* Main */}
-      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: 800, width: '100%', margin: '0 auto' }}>
+      {/* Main — Roadmap gets a wider cap because its 4-column grid uses the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. */}
+      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: screen === 'roadmap' ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
