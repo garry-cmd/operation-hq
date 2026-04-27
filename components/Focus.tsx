@@ -139,11 +139,35 @@ export default function Focus({
   // covers reflect → plan in one sitting). The actual carry/recur logic lives
   // inside the wizard; Focus just launches it.
 
-  const enriched = weekActions.map(action => {
-    const kr = roadmapItems.find(i => i.id === action.roadmap_item_id)
-    const obj = objectives.find(o => o.id === kr?.annual_objective_id)
-    return { action, kr, obj }
-  })
+  // Group week's actions by their KR for display. Each group carries the KR
+  // and its parent objective (for the colored dot). Orphan actions — those
+  // whose KR no longer exists — bucket into a header-less group at the end;
+  // shouldn't occur with FK constraints but stays defensive.
+  type ActionGroup = {
+    kr: RoadmapItem | null
+    obj: AnnualObjective | null
+    actions: WeeklyAction[]
+  }
+  const actionGroups: ActionGroup[] = (() => {
+    const byKey = new Map<string, ActionGroup>()
+    for (const action of weekActions) {
+      const kr = roadmapItems.find(i => i.id === action.roadmap_item_id) ?? null
+      const key = kr?.id ?? '__orphan'
+      let g = byKey.get(key)
+      if (!g) {
+        const obj = kr ? (objectives.find(o => o.id === kr.annual_objective_id) ?? null) : null
+        g = { kr, obj, actions: [] }
+        byKey.set(key, g)
+      }
+      g.actions.push(action)
+    }
+    // Sort by KR sort_order ascending; orphans (kr=null) last.
+    return Array.from(byKey.values()).sort((a, b) => {
+      if (!a.kr) return 1
+      if (!b.kr) return -1
+      return a.kr.sort_order - b.kr.sort_order
+    })
+  })()
 
   const navBtn: React.CSSProperties = {
     width: 34, height: 34, borderRadius: '50%', background: 'var(--navy-700)',
@@ -339,31 +363,41 @@ export default function Focus({
           </div>
         )}
         
-        {enriched.map(({ action, kr, obj }) => (
-          <div key={action.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s' }}>
-            <button onClick={() => toggleAction(action)}
-              style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
-              {action.completed && <svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-            </button>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, marginBottom: 3, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {action.title}
-                {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
-                {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
-              </div>
-              {obj && kr && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <div style={{ width: 7, height: 7, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
-                  <span style={{ fontSize: 11, color: 'var(--navy-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{kr.title}</span>
+        {actionGroups.map(group => {
+          const groupKey = group.kr?.id ?? '__orphan'
+          const groupDone = group.actions.filter(a => a.completed).length
+          const groupTotal = group.actions.length
+          return (
+            <div key={groupKey} style={{ marginBottom: 14 }}>
+              {group.kr && group.obj && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 4px 8px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: group.obj.color, flexShrink: 0 }} />
+                    <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-200)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{group.kr.title}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 500, flexShrink: 0, marginLeft: 8 }}>{groupDone}/{groupTotal}</div>
                 </div>
               )}
+              {group.actions.map(action => (
+                <div key={action.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13, opacity: action.completed ? .55 : 1, transition: 'opacity .15s' }}>
+                  <button onClick={() => toggleAction(action)}
+                    style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, padding: 0, border: `2px solid ${action.completed ? 'var(--teal)' : 'var(--navy-400)'}`, background: action.completed ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all .15s' }}>
+                    {action.completed && <svg width="12" height="9" viewBox="0 0 12 9" fill="none"><path d="M1 4L4.5 7.5L11 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                  </button>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: action.completed ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: action.completed ? 'line-through' : 'none', lineHeight: 1.35, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    {action.title}
+                    {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
+                    {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
+                  </div>
+                  <button onClick={() => setEditAction(action)}
+                    style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
+                  </button>
+                </div>
+              ))}
             </div>
-            <button onClick={() => setEditAction(action)}
-              style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-            </button>
-          </div>
-        ))}
+          )
+        })}
 
         {/* Edit action modal */}
         {editAction && (
