@@ -31,8 +31,7 @@ function hex2rgba(hex: string, a: number) {
 
 export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, activeSpaceId, toast }: Props) {
   const [modal, setModal] = useState<ModalState>(null)
-  const [selectedId, setSelectedId] = useState<string | null>(null)   // mobile: tap-to-select fallback
-  const [draggingId, setDraggingId] = useState<string | null>(null)   // desktop: drag-and-drop
+  const [draggingId, setDraggingId] = useState<string | null>(null)   // drag-and-drop
   const [dragOverCell, setDragOverCell] = useState<string | null>(null) // "objId:quarter"
 
   const activeObjs = objectives.filter(o => o.status !== 'abandoned')
@@ -69,7 +68,8 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     }
   }
 
-  // Shared validate-and-move (used by both drop and tap-to-place)
+  // Validate-and-move on drop. KRs are constrained to their parent objective —
+  // moving across objectives would require re-deriving lineage, which we don't.
   function attemptMove(itemId: string, objId: string, quarter: string) {
     const item = items.find(i => i.id === itemId)
     if (!item) return
@@ -78,17 +78,6 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
     }
     if (item.quarter === quarter) return
     moveKR(itemId, quarter)
-  }
-
-  // Mobile fallback: tap chip to select, tap cell to place
-  function handleChipTap(item: RoadmapItem) {
-    if (selectedId === item.id) { setSelectedId(null); return }
-    setSelectedId(item.id)
-  }
-  function placeAt(objId: string, quarter: string) {
-    if (!selectedId) return
-    attemptMove(selectedId, objId, quarter)
-    setSelectedId(null)
   }
 
   // minmax(0, 1fr) — not just '1fr' — so a long KR title cannot expand its
@@ -105,15 +94,13 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   }
 
   return (
-    <div onClick={() => setSelectedId(null)}>
+    <div>
       <div style={{ marginBottom: 16 }}>
         <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
         <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
           {draggingId
             ? '⊕ Drop in a quarter cell — same objective only'
-            : selectedId
-              ? '✓ Tap any cell or chip in a destination quarter — same objective only'
-              : 'Drag a key result between quarters · or tap to select on mobile · ✎ to edit'}
+            : 'Drag a key result between quarters · ✎ to edit'}
         </p>
       </div>
 
@@ -163,12 +150,8 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                       const cellKey = `${obj.id}:${q}`
                       const acceptsDrag = cellAcceptsDrag(obj.id, q)
                       const isDragOver = dragOverCell === cellKey && acceptsDrag
-                      const selectedItem = selectedId ? items.find(i => i.id === selectedId) : null
-                      const acceptsTap = !!selectedItem && selectedItem.annual_objective_id === obj.id && selectedItem.quarter !== q
-                      const highlighted = isDragOver || acceptsTap
                       return (
                         <div key={q}
-                          onClick={e => { e.stopPropagation(); if (selectedId) placeAt(obj.id, q) }}
                           onDragOver={e => {
                             if (acceptsDrag) {
                               e.preventDefault()
@@ -192,44 +175,31 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                           style={{ minHeight: 64, borderRadius: 9, padding: '5px 5px 3px',
                             background: isDragOver
                               ? hex2rgba(obj.color, 0.28)
-                              : acceptsTap
-                                ? hex2rgba(obj.color, 0.18)
-                                : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
-                            border: highlighted
+                              : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
+                            border: isDragOver
                               ? `2px solid ${obj.color}`
                               : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--navy-600)',
-                            cursor: highlighted ? 'pointer' : 'default',
+                            cursor: isDragOver ? 'pointer' : 'default',
                             WebkitTapHighlightColor: 'transparent',
                             transition: 'background .12s, border .12s' }}>
-                          {highlighted && (
+                          {isDragOver && (
                             <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .85 }}>
-                              {isDragOver ? 'Drop here' : 'Tap to place here'}
+                              Drop here
                             </div>
                           )}
                           {objItems.filter(i => i.quarter === q).map(item => (
                             <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
-                              selected={selectedId === item.id}
                               dragging={draggingId === item.id}
-                              hasSelectionElsewhere={!!selectedId && selectedId !== item.id}
                               onDragStart={e => {
                                 e.dataTransfer.setData('text/plain', item.id)
                                 e.dataTransfer.effectAllowed = 'move'
                                 setDraggingId(item.id)
-                                setSelectedId(null)
                               }}
                               onDragEnd={() => {
                                 setDraggingId(null)
                                 setDragOverCell(null)
                               }}
-                              onTap={e => {
-                                e.stopPropagation()
-                                if (selectedId && selectedId !== item.id) {
-                                  placeAt(obj.id, q)
-                                } else {
-                                  handleChipTap(item)
-                                }
-                              }}
-                              onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }); setSelectedId(null) }} />
+                              onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }) }} />
                           ))}
                           <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
                         </div>
@@ -305,13 +275,10 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   )
 }
 
-/* ── KR chip — drag with mouse, tap to select on mobile, ✎ to edit ── */
-function KRChip({ item, objColor, quarter, selected, dragging, hasSelectionElsewhere, onTap, onEdit, onDragStart, onDragEnd }: {
+/* ── KR chip — drag with mouse, ✎ to edit ── */
+function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd }: {
   item: RoadmapItem; objColor: string; quarter: string
-  selected: boolean
   dragging: boolean
-  hasSelectionElsewhere: boolean
-  onTap: (e: React.MouseEvent) => void
   onEdit: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
@@ -322,41 +289,35 @@ function KRChip({ item, objColor, quarter, selected, dragging, hasSelectionElsew
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
-      onClick={onTap}
       onDoubleClick={e => { e.stopPropagation(); onEdit(e) }}
       style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '6px 8px', borderRadius: 7, marginBottom: 4,
         cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none', lineHeight: 1.35, transition: 'transform .12s, opacity .12s, background .12s',
-        background: selected ? objColor : isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
-        border: selected ? `2px solid ${objColor}` : isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
-        color: selected ? '#fff' : isActive ? 'var(--navy-50)' : 'var(--navy-200)',
-        outline: selected ? `2px solid ${hex2rgba(objColor, 0.4)}` : 'none',
-        outlineOffset: selected ? 2 : 0,
-        transform: selected ? 'scale(1.03)' : 'scale(1)',
+        background: isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
+        border: isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
+        color: isActive ? 'var(--navy-50)' : 'var(--navy-200)',
         opacity: dragging ? 0.4 : 1,
         WebkitTapHighlightColor: 'transparent',
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
       {isActive && <span style={{ marginRight: 2, flexShrink: 0 }}>⚡</span>}
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
-      {!hasSelectionElsewhere && (
-        <button
-          onClick={onEdit}
-          onMouseDown={e => e.stopPropagation()}
-          draggable={false}
-          aria-label="Edit"
-          style={{
-            flexShrink: 0, width: 22, height: 22, padding: 0, borderRadius: 4,
-            background: selected ? 'rgba(255,255,255,0.2)' : 'transparent',
-            border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: selected ? '#fff' : isActive ? 'var(--navy-200)' : 'var(--navy-300)',
-            opacity: selected ? 1 : 0.55,
-            WebkitTapHighlightColor: 'transparent',
-          }}>
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-            <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
-          </svg>
-        </button>
-      )}
+      <button
+        onClick={onEdit}
+        onMouseDown={e => e.stopPropagation()}
+        draggable={false}
+        aria-label="Edit"
+        style={{
+          flexShrink: 0, width: 22, height: 22, padding: 0, borderRadius: 4,
+          background: 'transparent',
+          border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: isActive ? 'var(--navy-200)' : 'var(--navy-300)',
+          opacity: 0.55,
+          WebkitTapHighlightColor: 'transparent',
+        }}>
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+          <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
+        </svg>
+      </button>
     </div>
   )
 }
