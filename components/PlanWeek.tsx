@@ -3,7 +3,7 @@ import { useState, useRef, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 import { ACTIVE_Q, formatWeek } from '@/lib/utils'
-import { getActiveKRs } from '@/lib/krFilters'
+import { getCurrentQuarterKRs } from '@/lib/krFilters'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -14,7 +14,7 @@ type Props = {
 }
 
 export default function PlanWeek({ objectives, roadmapItems, weekStart, onClose, onAddAction }: Props) {
-  const activeKRs = getActiveKRs(roadmapItems)
+  const activeKRs = getCurrentQuarterKRs(roadmapItems, ACTIVE_Q)
   const [step, setStep] = useState(0)
   const [input, setInput] = useState('')
   const [stepActions, setStepActions] = useState<string[]>([])

@@ -23,8 +23,12 @@ import { RoadmapItem } from './types'
 
 /**
  * "Active" KR — the baseline working set. Not parked, not abandoned,
- * not done. Spans all quarters; further narrow with getCurrentQuarterKRs
- * for the OKRs-tab "right now" slice.
+ * not done. Spans ALL quarters. Exported as a primitive because Roadmap
+ * compositions that intentionally cross quarters need it.
+ *
+ * Most UI surfaces should NOT use this directly — use getCurrentQuarterKRs
+ * (or one of the flavor helpers below) so future-quarter KRs that are
+ * planned but not yet in play don't leak into "right now" views.
  */
 export function getActiveKRs(items: RoadmapItem[]): RoadmapItem[] {
   return items.filter(i =>
@@ -35,31 +39,34 @@ export function getActiveKRs(items: RoadmapItem[]): RoadmapItem[] {
 }
 
 /**
- * Active KRs narrowed to a specific quarter. Primary use: OKRs tab
- * (scoped to ACTIVE_Q). Future-quarter KRs live on the Roadmap until
- * their quarter becomes active.
+ * Active KRs narrowed to a specific quarter. THE canonical helper for
+ * "what's currently in play" surfaces (OKRs, Focus, CloseWeekWizard,
+ * PlanWeek, FastCapture). Future-quarter KRs live on the Roadmap until
+ * their quarter becomes active. Pass ACTIVE_Q from lib/utils.
  */
 export function getCurrentQuarterKRs(items: RoadmapItem[], quarter: string): RoadmapItem[] {
   return getActiveKRs(items).filter(i => i.quarter === quarter)
 }
 
-/** Habit KRs in the active set. */
-export function getHabitKRs(items: RoadmapItem[]): RoadmapItem[] {
-  return getActiveKRs(items).filter(i => i.is_habit)
+/** Habit KRs in the current-quarter active set. */
+export function getHabitKRs(items: RoadmapItem[], quarter: string): RoadmapItem[] {
+  return getCurrentQuarterKRs(items, quarter).filter(i => i.is_habit)
 }
 
 /**
- * Metric KRs in the active set. Excludes is_habit defensively — the DB
- * allows both flags simultaneously and the UI should not.
+ * Metric KRs in the current-quarter active set. Excludes is_habit
+ * defensively — the DB allows both flags simultaneously and the UI
+ * should not.
  */
-export function getMetricKRs(items: RoadmapItem[]): RoadmapItem[] {
-  return getActiveKRs(items).filter(i => i.is_metric && !i.is_habit)
+export function getMetricKRs(items: RoadmapItem[], quarter: string): RoadmapItem[] {
+  return getCurrentQuarterKRs(items, quarter).filter(i => i.is_metric && !i.is_habit)
 }
 
 /**
- * Outcome KRs — active KRs that are neither habits nor metrics. These
- * are the classic did-we-hit-it? KRs tracked via health_status + progress %.
+ * Outcome KRs — current-quarter active KRs that are neither habits
+ * nor metrics. These are the classic did-we-hit-it? KRs tracked via
+ * health_status + progress % on the row itself.
  */
-export function getOutcomeKRs(items: RoadmapItem[]): RoadmapItem[] {
-  return getActiveKRs(items).filter(i => !i.is_habit && !i.is_metric)
+export function getOutcomeKRs(items: RoadmapItem[], quarter: string): RoadmapItem[] {
+  return getCurrentQuarterKRs(items, quarter).filter(i => !i.is_habit && !i.is_metric)
 }
