@@ -58,6 +58,9 @@ export default function HQPage() {
   // Currently-open action panel on the Focus tab. Lifted to page level so
   // <main> can widen its max-width when the panel is open (push-aside layout).
   const [openActionId, setOpenActionId] = useState<string | null>(null)
+  // Currently-open objective panel on the OKRs tab. Same pattern as
+  // openActionId — lifted to page level so <main> can widen for it.
+  const [openObjectiveId, setOpenObjectiveId] = useState<string | null>(null)
 
   // Guards the once-per-space force-launch check. Reset when the user switches
   // spaces so a different space's unclosed last week can also trigger.
@@ -325,8 +328,8 @@ export default function HQPage() {
         </div>
       </header>
 
-      {/* Main — Roadmap gets a wider cap because its 4-column grid uses the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. */}
-      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: screen === 'roadmap' || (screen === 'focus' && openActionId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      {/* Main — Roadmap gets a wider cap because its 4-column grid uses the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. The okr+objectivePanel and focus+actionPanel cases also widen so the panel has room on the right. */}
+      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
@@ -334,7 +337,7 @@ export default function HQPage() {
           </div>
         ) : (
           <>
-            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} onAddLink={link => setLinks(prev => [...prev, link])} onDeleteLink={id => setLinks(prev => prev.filter(l => l.id !== id))} onAddLog={log => setLogs(prev => [log, ...prev])} onDeleteLog={id => setLogs(prev => prev.filter(l => l.id !== id))} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} />}
+            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}

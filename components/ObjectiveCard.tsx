@@ -2,17 +2,13 @@
 import React, { useState } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
-import * as extrasDb from '@/lib/db/objectiveExtras'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HealthStatus, MetricCheckin } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
-import { getToday } from '@/lib/habitUtils'
 
-// Notes UI moved out of this card. The legacy `obj.notes` text field is
-// no longer rendered anywhere in v1; `objective_logs` (titled, dated entries)
-// is the canonical notes substrate going forward, surfaced via the action
-// panel work in commit 4. The DB column stays put — drop, don't migrate.
-type Section = 'links' | 'logs' | null
-
+// Notes / links / files all live on the ObjectivePanel now (commit-5 panel
+// arc). The card's footer tabs are gone — the title is the click target.
+// The legacy `obj.notes` text column and the `objective_logs` rendering that
+// once lived here are dormant; the panel reads/writes them directly.
 const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'backlog', 'on_track', 'off_track', 'blocked', 'done']
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
   not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
@@ -33,28 +29,23 @@ interface Props {
   krs: RoadmapItem[]
   actions: WeeklyAction[]
   weekStart: string
-  links: ObjectiveLink[]
-  logs: ObjectiveLog[]
   metricCheckins: MetricCheckin[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
-  onAddLink: (link: ObjectiveLink) => void
-  onDeleteLink: (id: string) => void
-  onAddLog: (log: ObjectiveLog) => void
-  onDeleteLog: (id: string) => void
   onEditKR: (kr: RoadmapItem) => void
   onLogMetric: (krId: string) => void
+  // Click on the objective title → ObjectivePanel opens for this objective.
+  onObjectiveClick: (objectiveId: string) => void
+  // True when the panel is currently showing this objective. Surfaces as an
+  // accent border on the card so the user knows where the panel content
+  // came from (mirrors the action-row accent in Focus.tsx).
+  isActive: boolean
   toast: (m: string) => void
 }
 
-export default function ObjectiveCard({ obj, krs, actions, weekStart, links, logs, metricCheckins, setRoadmapItems, setObjectives, setActions, onAddLink, onDeleteLink, onAddLog, onDeleteLog, onEditKR, onLogMetric, toast }: Props) {
+export default function ObjectiveCard({ obj, krs, actions, weekStart, metricCheckins, setRoadmapItems, setObjectives, setActions, onEditKR, onLogMetric, onObjectiveClick, isActive, toast }: Props) {
   const [collapsed, setCollapsed] = useState(true)
-  const [section, setSection] = useState<Section>(null)
-  const [linkUrl, setLinkUrl] = useState('')
-  const [addingLink, setAddingLink] = useState(false)
-  const [logEntry, setLogEntry] = useState('')
-  const [savingLog, setSavingLog] = useState(false)
   const [addingKR, setAddingKR] = useState(false)
   const [newKRTitle, setNewKRTitle] = useState('')
   const [newKRIsHabit, setNewKRIsHabit] = useState(false)
@@ -62,6 +53,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const [addingActionKRId, setAddingActionKRId] = useState<string | null>(null)
   const [newActionTitle, setNewActionTitle] = useState('')
   const [savingAction, setSavingAction] = useState(false)
+  const [titleHover, setTitleHover] = useState(false)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack  = krs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
@@ -70,9 +62,12 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
   const notStarted = krs.filter(k => k.health_status === 'not_started' || !k.health_status).length
   const doneKRs  = krs.filter(k => k.health_status === 'done').length
   const progress = krs.length > 0 ? Math.round((doneKRs / krs.length) * 100) : 0
-  const objLinks = links.filter(l => l.objective_id === obj.id)
-  const objLogs  = logs.filter(l => l.objective_id === obj.id)
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+  // Avoid using `setObjectives` here so its prop stays unused but kept for
+  // future panel-driven mutations (e.g. renaming an objective from the panel
+  // header). Suppress lint with a void cast — cheaper than dropping the prop
+  // and re-threading later.
+  void setObjectives
 
   async function cycleStatus(kr: RoadmapItem) {
     const idx = HEALTH_CYCLE.indexOf(kr.health_status ?? 'not_started')
@@ -82,63 +77,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
       setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
     } catch (err) {
       console.error('cycleStatus failed:', err)
-    }
-  }
-
-  async function addLink() {
-    if (!linkUrl.trim() || addingLink) return
-    setAddingLink(true)
-    let url = linkUrl.trim()
-    if (!url.startsWith('http')) url = 'https://' + url
-    const domain = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0]
-    try {
-      const created = await extrasDb.links.create({
-        objective_id: obj.id,
-        url,
-        title: domain,
-        sort_order: objLinks.length,
-      })
-      onAddLink(created)
-      setLinkUrl('')
-    } catch (err) {
-      console.error('addLink failed:', err)
-    }
-    setAddingLink(false)
-  }
-
-  async function saveLog() {
-    if (!logEntry.trim() || savingLog) return
-    setSavingLog(true)
-    const today = getToday()
-    try {
-      const created = await extrasDb.logs.create({
-        objective_id: obj.id,
-        content: logEntry.trim(),
-        log_date: today,
-      })
-      onAddLog(created)
-      setLogEntry('')
-    } catch (err) {
-      console.error('saveLog failed:', err)
-    }
-    setSavingLog(false)
-  }
-
-  async function deleteLogEntry(id: string) {
-    try {
-      await extrasDb.logs.remove(id)
-      onDeleteLog(id)
-    } catch (err) {
-      console.error('deleteLogEntry failed:', err)
-    }
-  }
-
-  async function deleteLink(id: string) {
-    try {
-      await extrasDb.links.remove(id)
-      onDeleteLink(id)
-    } catch (err) {
-      console.error('deleteLink failed:', err)
     }
   }
 
@@ -188,29 +126,39 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
     setSavingAction(false)
   }
 
-  function toggleSection(s: Section) {
-    setSection(prev => prev === s ? null : s)
-  }
-
-  const borderColor = hex2rgba(obj.color, 0.25)
+  // Border treatment: accent when the panel is open for this objective,
+  // otherwise the existing color-tinted border.
+  const borderColor = isActive ? 'var(--accent)' : hex2rgba(obj.color, 0.25)
   const bgColor = hex2rgba(obj.color, 0.04)
   const hdrBg = hex2rgba(obj.color, 0.1)
   const divColor = hex2rgba(obj.color, 0.12)
 
   return (
     <>
-      <div style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 14, border: `1px solid ${borderColor}`, background: bgColor }}>
+      <div style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 14, border: `1px solid ${borderColor}`, background: bgColor, transition: 'border-color .12s' }}>
 
-        {/* Objective header */}
-        <div onClick={() => { setCollapsed(c => !c); setSection(null) }}
-          style={{ padding: '12px 14px', background: hdrBg, display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer', userSelect: 'none' }}>
+        {/* Objective header — title is its own click target (opens panel),
+            chevron-icon-only collapses/expands. Status pills + progress are
+            non-interactive read-out. */}
+        <div style={{ padding: '12px 14px', background: hdrBg, display: 'flex', alignItems: 'flex-start', gap: 10, userSelect: 'none' }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: obj.color, flexShrink: 0, marginTop: 3 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)', lineHeight: 1.3, marginBottom: collapsed ? 5 : 5 }}>
+            <button
+              onClick={() => onObjectiveClick(obj.id)}
+              onMouseEnter={() => setTitleHover(true)}
+              onMouseLeave={() => setTitleHover(false)}
+              style={{
+                fontSize: 14, fontWeight: 700,
+                color: isActive || titleHover ? 'var(--accent)' : 'var(--navy-50)',
+                lineHeight: 1.3, marginBottom: 5,
+                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                textAlign: 'left', fontFamily: 'inherit',
+                display: 'block', maxWidth: '100%',
+                transition: 'color .12s',
+              }}>
               {obj.name}
-            </div>
+            </button>
             {collapsed ? (
-              // Collapsed: show clean status counts
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 2 }}>
                 {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
                 {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
@@ -219,7 +167,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                 {krs.length === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>No key results</span>}
               </div>
             ) : (
-              // Expanded: show same status counts (unchanged)
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                 {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
                 {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
@@ -227,7 +174,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                 {notStarted > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{notStarted} not started</span>}
               </div>
             )}
-            {/* Progress bar — always visible, even collapsed */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
               <div style={{ flex: 1, height: 4, background: 'var(--navy-600)', borderRadius: 2, overflow: 'hidden' }}>
                 <div style={{ height: 4, borderRadius: 2, background: progress === 100 ? 'var(--teal)' : obj.color, width: `${progress}%`, transition: 'width .4s ease' }} />
@@ -237,18 +183,30 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
               </span>
             </div>
           </div>
-          {/* Chevron */}
-          <div style={{ flexShrink: 0, marginTop: 2, transition: 'transform .2s', transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)', color: 'var(--navy-400)' }}>
+          {/* Chevron button — own click target for collapse/expand */}
+          <button
+            onClick={() => setCollapsed(c => !c)}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            style={{
+              flexShrink: 0, marginTop: 0,
+              width: 28, height: 28, borderRadius: 8,
+              border: 'none', background: 'transparent',
+              color: 'var(--navy-400)', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              transition: 'transform .2s, background .12s',
+              transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
             <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
               <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-          </div>
+          </button>
         </div>
 
         {/* Body — hidden when collapsed */}
         {!collapsed && (<>
 
-        {/* KR rows */}
         {krs.map((kr, i) => {
           const actCount = weekActions.filter(a => a.roadmap_item_id === kr.id).length
           const h = kr.health_status ?? 'not_started'
@@ -263,6 +221,9 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
             const thisWeek = sorted.find(c => c.week_start === weekStart)
             return { latest, loggedThisWeek: !!thisWeek, unit: kr.metric_unit ?? '' }
           })()
+          // i is unused after the section divider rewrite, but keeping for
+          // potential per-row striping later. Suppress lint with a void.
+          void i
           return (
             <React.Fragment key={kr.id}>
               <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
@@ -315,7 +276,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                   </button>
                 </div>
               </div>
-              {/* Inline action form */}
               {addingActionKRId === kr.id && (
                 <div style={{ padding: '11px 14px', borderTop: `1px solid ${divColor}`, background: 'var(--navy-700)' }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -367,9 +327,9 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
               rows={2}
             />
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 10, fontSize: 12, color: 'var(--navy-300)' }}>
-              <input 
-                type="checkbox" 
-                checked={newKRIsHabit} 
+              <input
+                type="checkbox"
+                checked={newKRIsHabit}
                 onChange={e => setNewKRIsHabit(e.target.checked)}
                 style={{ width: 14, height: 14 }}
               />
@@ -385,128 +345,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, links, log
                 {savingKR ? 'Saving…' : 'Add'}
               </button>
             </div>
-          </div>
-        )}
-
-        {/* Footer tabs */}
-        <div style={{ display: 'flex', borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
-          {/* Links tab */}
-          <button onClick={() => toggleSection('links')}
-            style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'links' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', borderRight: `1px solid ${divColor}`, cursor: 'pointer', color: section === 'links' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95L7 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-              <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0L3 8a3.5 3.5 0 0 0 4.95 4.95L9 12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
-            </svg>
-            Links
-            {objLinks.length > 0 && (
-              <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: section === 'links' ? obj.color : 'var(--navy-600)', color: section === 'links' ? '#fff' : 'var(--navy-400)' }}>
-                {objLinks.length}
-              </span>
-            )}
-          </button>
-          {/* Logs tab */}
-          <button onClick={() => toggleSection('logs')}
-            style={{ flex: 1, padding: '9px 0', fontSize: 11, fontWeight: section === 'logs' ? 700 : 600, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', color: section === 'logs' ? obj.color : 'var(--navy-400)', transition: 'color .12s' }}>
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
-              <rect x="2" y="2" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.3"/>
-              <path d="M5 6h6M5 9h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
-            </svg>
-            Logs
-            {objLogs.length > 0 && (
-              <span style={{ fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: section === 'logs' ? obj.color : 'var(--navy-600)', color: section === 'logs' ? '#fff' : 'var(--navy-400)' }}>
-                {objLogs.length}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Links section */}
-        {section === 'links' && (
-          <div style={{ padding: '12px 14px', background: 'var(--navy-700)', borderTop: `1px solid ${divColor}` }}>
-            {objLinks.length === 0 && (
-              <div style={{ fontSize: 12, color: 'var(--navy-500)', textAlign: 'center', paddingBottom: 10 }}>No links yet</div>
-            )}
-            {objLinks.map((link, i) => (
-              <div key={link.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '7px 0', borderBottom: i < objLinks.length - 1 ? '1px solid var(--navy-600)' : 'none' }}>
-                <div style={{ width: 26, height: 26, borderRadius: 7, background: 'var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                    <path d="M6.5 9.5a3.5 3.5 0 0 0 4.95 0l1.5-1.5a3.5 3.5 0 0 0-4.95-4.95L7 4" stroke="var(--navy-300)" strokeWidth="1.4" strokeLinecap="round"/>
-                    <path d="M9.5 6.5a3.5 3.5 0 0 0-4.95 0L3 8a3.5 3.5 0 0 0 4.95 4.95L9 12" stroke="var(--navy-300)" strokeWidth="1.4" strokeLinecap="round"/>
-                  </svg>
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <a href={link.url} target="_blank" rel="noopener noreferrer"
-                    style={{ fontSize: 12, fontWeight: 500, color: 'var(--navy-100)', textDecoration: 'none', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {link.title || link.url}
-                  </a>
-                  <div style={{ fontSize: 10, color: 'var(--navy-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{link.url}</div>
-                </div>
-                <button onClick={() => deleteLink(link.id)}
-                  style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
-                  ×
-                </button>
-              </div>
-            ))}
-            {/* Add link input */}
-            <div style={{ display: 'flex', gap: 7, marginTop: objLinks.length > 0 ? 10 : 0 }}>
-              <input
-                value={linkUrl}
-                onChange={e => setLinkUrl(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addLink()}
-                placeholder="Paste a URL…"
-                className="input"
-                style={{ flex: 1, fontSize: 12, padding: '8px 11px' }}
-              />
-              <button onClick={addLink} disabled={!linkUrl.trim() || addingLink}
-                style={{ padding: '8px 14px', background: obj.color, color: '#fff', fontSize: 12, fontWeight: 700, border: 'none', borderRadius: 10, cursor: 'pointer', flexShrink: 0, opacity: !linkUrl.trim() ? .5 : 1, display: 'flex', alignItems: 'center', gap: 4 }}>
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="1.7" strokeLinecap="round"/></svg>
-                Add
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Logs section */}
-        {section === 'logs' && (
-          <div style={{ borderTop: `1px solid ${divColor}`, background: 'var(--navy-700)' }}>
-            {/* New entry form */}
-            <div style={{ padding: '12px 14px', borderBottom: `1px solid ${divColor}` }}>
-              <textarea
-                value={logEntry}
-                onChange={e => setLogEntry(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) saveLog() }}
-                placeholder={`What's happening with ${obj.name.split('—')[0].trim()}?`}
-                style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, padding: '10px 12px', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.6, resize: 'none', color: 'var(--navy-100)', outline: 'none', marginBottom: 8 }}
-                rows={3}
-              />
-              <button onClick={saveLog} disabled={!logEntry.trim() || savingLog}
-                style={{ padding: '8px 18px', background: obj.color, color: '#fff', fontSize: 12, fontWeight: 700, border: 'none', borderRadius: 9, cursor: 'pointer', opacity: !logEntry.trim() ? .45 : 1, display: 'flex', alignItems: 'center', gap: 5 }}>
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="white" strokeWidth="1.7" strokeLinecap="round"/></svg>
-                {savingLog ? 'Saving…' : 'Log it'}
-              </button>
-            </div>
-            {/* Entries — newest first */}
-            {objLogs.length === 0 && (
-              <div style={{ fontSize: 12, color: 'var(--navy-500)', textAlign: 'center', padding: '14px 0' }}>
-                No entries yet
-              </div>
-            )}
-            {objLogs.map((log, i) => (
-              <div key={log.id} style={{ padding: '12px 14px', borderBottom: i < objLogs.length - 1 ? `1px solid ${divColor}` : 'none', display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.4px', marginBottom: 5 }}>
-                    {new Date(log.log_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </div>
-                  <div style={{ fontSize: 13, color: 'var(--navy-200)', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                    {log.content}
-                  </div>
-                </div>
-                <button onClick={() => deleteLogEntry(log.id)}
-                  style={{ width: 24, height: 24, borderRadius: 6, border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0, marginTop: 2 }}>
-                  ×
-                </button>
-              </div>
-            ))}
           </div>
         )}
         </>)}

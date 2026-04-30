@@ -2,7 +2,7 @@
  * Data layer for `objective_links` and `objective_logs` — the two side-cars
  * to annual_objectives. Combined here because they share the same shape
  * (per-objective list of small entries with create + remove) and only ever
- * appear together in the same UI surface (ObjectiveCard).
+ * appear together in the same UI surface (ObjectivePanel).
  *
  * Imported as: `import * as extrasDb from '@/lib/db/objectiveExtras'`
  * Used like:   `extrasDb.links.create(...)`, `extrasDb.logs.remove(id)`
@@ -10,14 +10,15 @@
  * See lib/db/objectives.ts for module-level conventions.
  */
 import { supabase } from '@/lib/supabase'
-import type { ObjectiveLink, ObjectiveLog } from '@/lib/types'
+import type { ObjectiveLink, ObjectiveLog, LinkKind } from '@/lib/types'
 
-// ─── Objective links ───────────────────────────────────────────────────
+// ─── Objective links (now also files via `kind`) ───────────────────────
 
 export type NewLinkInput = {
   objective_id: string
   url: string
   title: string
+  kind: LinkKind
   sort_order: number
 }
 

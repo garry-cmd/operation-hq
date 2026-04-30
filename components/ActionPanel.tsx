@@ -4,26 +4,24 @@
  *
  * Opens when the user clicks an action title on the Focus tab. Shows:
  *   1. Parent objective (dot + name) and KR title as breadcrumb context
- *   2. The action title itself
+ *   2. The action title itself (click pencil to edit)
  *   3. Tag picker (canonical home for setting backlog/waiting/doing)
- *   4. Notes pool — ALL logs for the parent objective, regardless of which
+ *   4. Recurring toggle
+ *   5. Notes pool — ALL logs for the parent objective, regardless of which
  *      action they were attached to. The portal model: notes live at the
  *      objective level, so opening any action under that objective surfaces
  *      the same shared note pool. (Decision in commit-4 plan: no per-action
  *      provenance, no created_from_action_id field.)
  *
- * In commit 4a (this file), title editing / recurring toggle / delete-action
- * still live in EditActionModal (triggered from the pencil button). Commit 4b
- * will migrate those into this panel and kill the modal.
- *
- * Note rendering: bodies are stored as markdown but rendered as plain text
- * with whitespace:pre-wrap for now. Adding `marked` for HTML rendering is a
- * follow-up; raw markdown is readable enough for solo authoring.
+ * Note rendering: bodies are stored as markdown source. NoteEntry has a
+ * view-mode (rendered via <MarkdownBody>) and edit-mode (textarea). New
+ * empty notes default to edit; existing notes default to view on expand.
  */
 import { useState } from 'react'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog } from '@/lib/types'
 import * as actionsDb from '@/lib/db/actions'
 import * as extrasDb from '@/lib/db/objectiveExtras'
+import MarkdownBody from './MarkdownBody'
 
 // Mirrors Focus.tsx's TAG_STYLE — kept in sync manually for now since
 // extracting to a shared module is a separate refactor. If they ever drift,
@@ -330,13 +328,17 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
 }
 
 // ─── NoteEntry ──────────────────────────────────────────────────────────
-// One note in the list. Two visual states:
+// Three states:
 //   - collapsed: date + title + 1-line preview, click to expand
-//   - expanded: editable title input + textarea + Save / Delete / Cancel
+//   - expanded-view: rendered markdown body, ✎ to edit, × to collapse
+//   - expanded-edit: editable title input + textarea + Save / Delete / Cancel
 //
-// Save is explicit (button), not autosave — avoids race conditions with the
-// expand/collapse state and keeps the model simple. Cancel discards local
-// edits; Delete removes the entry (with confirm prompt).
+// New empty notes default to edit. Existing notes default to view on expand.
+// Save is explicit — avoids race conditions with state transitions.
+//
+// NOTE: a near-identical NoteEntry exists in ObjectivePanel.tsx. Same content,
+// same logic. Extract to a shared component the next time both are touched
+// (same convention used for TAG_STYLE during the panel arc).
 function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
   log: ObjectiveLog
   expanded: boolean
@@ -345,10 +347,8 @@ function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
   setLogs: (fn: (p: ObjectiveLog[]) => ObjectiveLog[]) => void
   toast: (m: string) => void
 }) {
-  // Local edit state — initialised from props on mount. Save/cancel reset
-  // it explicitly. We deliberately don't useEffect-sync from log props on
-  // every change: that would clobber unsaved edits if the user clicked
-  // another note before saving, which is the wrong UX trade-off.
+  const isEmpty = !log.title && !log.content
+  const [mode, setMode] = useState<'view' | 'edit'>(isEmpty ? 'edit' : 'view')
   const [title, setTitle] = useState(log.title ?? '')
   const [content, setContent] = useState(log.content)
   const [saving, setSaving] = useState(false)
@@ -367,7 +367,7 @@ function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
       setLogs(prev => prev.map(l => l.id === log.id ? updated : l))
       setTitle(updated.title ?? '')
       setContent(updated.content)
-      onCollapse()
+      setMode('view')
     } catch (err) {
       console.error('note save failed:', err)
       toast('Failed to save note.')
@@ -376,10 +376,11 @@ function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
     }
   }
 
-  function cancel() {
+  function cancelEdit() {
     setTitle(log.title ?? '')
     setContent(log.content)
-    onCollapse()
+    if (isEmpty) onCollapse()
+    else setMode('view')
   }
 
   async function deleteNote() {
@@ -432,6 +433,40 @@ function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
     )
   }
 
+  // Expanded — view mode (rendered markdown)
+  if (mode === 'view') {
+    return (
+      <div style={{
+        background: 'var(--navy-700)',
+        border: '1px solid var(--accent)',
+        borderRadius: 8,
+        padding: 12,
+        marginBottom: 8,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ fontSize: 10, color: 'var(--navy-400)', fontWeight: 600 }}>{dateStr}</span>
+          {log.title && (
+            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--navy-50)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {log.title}
+            </span>
+          )}
+          <button onClick={() => setMode('edit')} title="Edit"
+            style={{ width: 24, height: 24, padding: 0, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--navy-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', marginLeft: log.title ? 0 : 'auto' }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+              <path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+            </svg>
+          </button>
+          <button onClick={onCollapse} title="Collapse"
+            style={{ width: 24, height: 24, padding: 0, borderRadius: 6, border: 'none', background: 'transparent', color: 'var(--navy-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+            ×
+          </button>
+        </div>
+        <MarkdownBody content={log.content} />
+      </div>
+    )
+  }
+
+  // Expanded — edit mode (textarea + Save/Cancel/Delete)
   return (
     <div style={{
       background: 'var(--navy-700)',
@@ -462,7 +497,7 @@ function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
         style={{ width: '100%', background: 'transparent', border: 'none', outline: 'none', fontSize: 13, fontFamily: 'inherit', lineHeight: 1.6, resize: 'vertical', minHeight: 100, color: 'var(--navy-100)', padding: 0, whiteSpace: 'pre-wrap' }}
       />
       <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-        <button onClick={cancel}
+        <button onClick={cancelEdit}
           style={{ fontSize: 11, fontWeight: 600, padding: '4px 12px', background: 'transparent', color: 'var(--navy-400)', border: 'none', borderRadius: 6, cursor: 'pointer' }}>
           Cancel
         </button>

@@ -27,18 +27,28 @@ export interface ObjectiveLog {
   id: string
   objective_id: string
   // Optional human-set title; null means the entry is shown labeled by date alone.
-  // Body content (`content`) is markdown; rendered with `marked` at display time.
+  // Body content (`content`) is markdown; rendered with `marked` at display time
+  // via <MarkdownBody>. New notes default to edit mode in the panel; existing
+  // notes default to read mode (rendered) and gain a pencil to switch.
   title: string | null
   content: string
   log_date: string
   created_at: string
 }
 
+// 'link' is a pasted URL (existing behavior). 'file' is a pasted URL that the
+// user wants surfaced as a file — usually a Google Drive URL with a friendly
+// filename in `title`. Same table, different chrome in the panel. Adding new
+// kinds (e.g. 'image' for inline-paste later) won't need a DB migration since
+// the column has no CHECK constraint.
+export type LinkKind = 'link' | 'file'
+
 export interface ObjectiveLink {
   id: string
   objective_id: string
   url: string
   title: string
+  kind: LinkKind
   sort_order: number
   created_at: string
 }

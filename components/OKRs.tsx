@@ -8,6 +8,7 @@ import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habit
 import { recentCheckins, sparklineBounds, sparklineTrend } from '@/lib/metricUtils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
 import ObjectiveCard from './ObjectiveCard'
+import ObjectivePanel from './ObjectivePanel'
 import Modal from './Modal'
 
 // Naval-themed SVG Icons
@@ -64,12 +65,19 @@ type Props = {
   actions: WeeklyAction[]
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   weekStart: string
+  // Links + logs are full lists for the active space; ObjectivePanel filters
+  // to the active objective internally. Setters are page-level (matches the
+  // ActionPanel pattern in Focus.tsx) so the panel can update parent state
+  // optimistically without per-callback prop wiring.
   links: ObjectiveLink[]
   logs: ObjectiveLog[]
-  onAddLink: (link: ObjectiveLink) => void
-  onDeleteLink: (id: string) => void
-  onAddLog: (log: ObjectiveLog) => void
-  onDeleteLog: (id: string) => void
+  setLinks: (fn: (p: ObjectiveLink[]) => ObjectiveLink[]) => void
+  setLogs: (fn: (p: ObjectiveLog[]) => ObjectiveLog[]) => void
+  // Currently-open objective panel. Lifted to page level so <main> can widen
+  // its max-width when the panel is open (push-aside layout, mirrors
+  // openActionId for ActionPanel on Focus).
+  openObjectiveId: string | null
+  setOpenObjectiveId: (id: string | null) => void
   activeSpaceId: string
   habitCheckins: HabitCheckin[]
   metricCheckins: MetricCheckin[]
@@ -77,7 +85,7 @@ type Props = {
   onLogMetric: (krId: string) => void
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, onAddLink, onDeleteLink, onAddLog, onDeleteLog, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, setLinks, setLogs, openObjectiveId, setOpenObjectiveId, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric }: Props) {
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
   
@@ -193,55 +201,92 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         </div>
       )}
 
-      {objectives
-        .filter(o => o.status !== 'abandoned')
-        .map(obj => {
-          const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
+      {/* Two-column layout: card list on the left, ObjectivePanel sticky
+          on the right when an objective is selected. Mirrors Focus.tsx's
+          push-aside pattern for ActionPanel. <main> in page.tsx widens to
+          1280 when openObjectiveId is set so this grid has the room. */}
+      <div style={{
+        display: openObjectiveId ? 'grid' : 'block',
+        gridTemplateColumns: openObjectiveId ? 'minmax(0, 1fr) 480px' : undefined,
+        gap: openObjectiveId ? 24 : undefined,
+        alignItems: 'start',
+      }}>
+        <div>
+          {objectives
+            .filter(o => o.status !== 'abandoned')
+            .map(obj => {
+              const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
+              return (
+                <div key={obj.id} style={{ marginBottom: 20, position: 'relative' }}>
+                  {/* Edit button positioned over ObjectiveCard */}
+                  <button
+                    onClick={() => setEditingObjective(obj)}
+                    style={{
+                      position: 'absolute',
+                      top: 12,
+                      right: 48, // shifted left to clear the chevron at top:12, right:14
+                      zIndex: 10,
+                      background: 'var(--navy-700)',
+                      border: '1px solid var(--navy-600)',
+                      color: 'var(--navy-400)',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      padding: '6px 8px',
+                      borderRadius: 6
+                    }}
+                    title="Edit objective"
+                  >
+                    <EditIcon size={16} />
+                  </button>
+
+                  <ObjectiveCard
+                    obj={obj}
+                    krs={objKRs}
+                    actions={actions}
+                    weekStart={weekStart}
+                    metricCheckins={metricCheckins}
+                    setRoadmapItems={setRoadmapItems}
+                    setObjectives={setObjectives}
+                    setActions={setActions}
+                    onEditKR={setEditingKR}
+                    onLogMetric={onLogMetric}
+                    onObjectiveClick={setOpenObjectiveId}
+                    isActive={openObjectiveId === obj.id}
+                    toast={toast}
+                  />
+                </div>
+              )
+            })}
+        </div>
+
+        {/* ObjectivePanel — appears in the right column when an objective is
+            selected. Uses the activeSpace-scoped links/logs already in OKRs's
+            props; filters them to the open objective. setLinks/setLogs are
+            page-level setters threaded through. activeSpaceId comes along
+            for completeness even though the panel doesn't need it directly. */}
+        {openObjectiveId && (() => {
+          const openObj = objectives.find(o => o.id === openObjectiveId)
+          if (!openObj) return null
+          const openObjKRs = activeKRs.filter(i => i.annual_objective_id === openObjectiveId)
+          const openObjLinks = links.filter(l => l.objective_id === openObjectiveId)
+          const openObjLogs = logs.filter(l => l.objective_id === openObjectiveId)
+          // activeSpaceId still typed in props but unused below — silence the
+          // lint for the destructure without dropping the prop.
+          void activeSpaceId
           return (
-            <div key={obj.id} style={{ marginBottom: 20, position: 'relative' }}>
-              {/* Edit button positioned over ObjectiveCard */}
-              <button 
-                onClick={() => setEditingObjective(obj)}
-                style={{ 
-                  position: 'absolute',
-                  top: 12,
-                  right: 12,
-                  zIndex: 10,
-                  background: 'var(--navy-700)', 
-                  border: '1px solid var(--navy-600)', 
-                  color: 'var(--navy-400)', 
-                  cursor: 'pointer', 
-                  fontSize: 14, 
-                  padding: '6px 8px',
-                  borderRadius: 6
-                }}
-                title="Edit objective"
-              >
-                <EditIcon size={16} />
-              </button>
-              
-              <ObjectiveCard
-                obj={obj}
-                krs={objKRs}
-                actions={actions}
-                weekStart={weekStart}
-                links={links}
-                logs={logs}
-                metricCheckins={metricCheckins}
-                setRoadmapItems={setRoadmapItems}
-                setObjectives={setObjectives}
-                setActions={setActions}
-                onAddLink={onAddLink}
-                onDeleteLink={onDeleteLink}
-                onAddLog={onAddLog}
-                onDeleteLog={onDeleteLog}
-                onEditKR={setEditingKR}
-                onLogMetric={onLogMetric}
-                toast={toast}
-              />
-            </div>
+            <ObjectivePanel
+              objective={openObj}
+              krs={openObjKRs}
+              links={openObjLinks}
+              logs={openObjLogs}
+              setLinks={setLinks}
+              setLogs={setLogs}
+              onClose={() => setOpenObjectiveId(null)}
+              toast={toast}
+            />
           )
-        })}
+        })()}
+      </div>
 
       {/* Modals */}
       {editingKR && (
