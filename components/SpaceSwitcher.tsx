@@ -4,6 +4,10 @@ import * as spacesDb from '@/lib/db/spaces'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 import { COLORS } from '@/lib/utils'
 
+// MUST match the value used in app/hq/page.tsx. The "All Spaces" pseudo-space
+// flips the app into the cross-space Summary view; see components/Summary.tsx.
+const ALL_SPACES_ID = '__all__'
+
 interface Props {
   spaces: Space[]
   activeSpaceId: string
@@ -22,7 +26,13 @@ export default function SpaceSwitcher({ spaces, activeSpaceId, objectives, roadm
   const [color, setColor] = useState(COLORS[0])
   const [saving, setSaving] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const isAllSpaces = activeSpaceId === ALL_SPACES_ID
   const activeSpace = spaces.find(s => s.id === activeSpaceId)
+  // Up to 4 dots so the "All Spaces" pill stays tight on narrow screens.
+  const allSpacesDots = [...spaces]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .slice(0, 4)
+    .map(s => s.color)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -86,9 +96,17 @@ export default function SpaceSwitcher({ spaces, activeSpaceId, objectives, roadm
       {/* Pill trigger */}
       <button onClick={() => { setOpen(o => !o); setAdding(false); setEditingId(null) }}
         style={{ display: 'flex', alignItems: 'center', gap: 5, background: open ? 'var(--navy-600)' : 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 99, padding: '4px 9px 4px 7px', cursor: 'pointer', transition: 'all .15s' }}>
-        <div style={{ width: 7, height: 7, borderRadius: '50%', background: activeSpace?.color ?? 'var(--accent)', flexShrink: 0 }} />
-        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-200)', maxWidth: 88, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {activeSpace?.name ?? 'Select space'}
+        {isAllSpaces ? (
+          <div style={{ display: 'flex', gap: 1.5, flexShrink: 0 }}>
+            {allSpacesDots.map((c, i) => (
+              <div key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: c }} />
+            ))}
+          </div>
+        ) : (
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: activeSpace?.color ?? 'var(--accent)', flexShrink: 0 }} />
+        )}
+        <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-200)', maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {isAllSpaces ? 'All Spaces' : (activeSpace?.name ?? 'Select space')}
         </span>
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ flexShrink: 0, transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none' }}>
           <path d="M2 4l3 3 3-3" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
@@ -98,6 +116,26 @@ export default function SpaceSwitcher({ spaces, activeSpaceId, objectives, roadm
       {/* Dropdown */}
       {open && (
         <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 220, background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 14, overflow: 'hidden', zIndex: 60, boxShadow: '0 8px 32px rgba(0,0,0,.4)' }}>
+
+          {/* All Spaces — cross-space summary view. Selecting it puts the
+              app into Summary mode (see Summary.tsx + page.tsx). */}
+          <button onClick={() => { onSelect(ALL_SPACES_ID); setOpen(false) }}
+            style={{ width: '100%', padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10, background: isAllSpaces ? 'var(--navy-600)' : 'none', border: 'none', borderBottom: '1px solid var(--navy-600)', cursor: 'pointer', textAlign: 'left' }}>
+            <div style={{ display: 'flex', gap: 1.5, flexShrink: 0, width: 14, justifyContent: 'flex-start' }}>
+              {allSpacesDots.length > 0 ? allSpacesDots.slice(0, 3).map((c, i) => (
+                <div key={i} style={{ width: 4, height: 4, borderRadius: '50%', background: c }} />
+              )) : <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--navy-500)' }} />}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: isAllSpaces ? 700 : 500, color: isAllSpaces ? 'var(--navy-50)' : 'var(--navy-200)' }}>All Spaces</div>
+              <div style={{ fontSize: 10, color: 'var(--navy-400)', marginTop: 1 }}>Cross-space summary</div>
+            </div>
+            {isAllSpaces && (
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path d="M2 7l3 3 6-6" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
+          </button>
 
           {spaces.map(space => {
             const isActive = space.id === activeSpaceId

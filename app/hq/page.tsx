@@ -16,6 +16,7 @@ import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
+import Summary from '@/components/Summary'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import SpaceSwitcher from '@/components/SpaceSwitcher'
@@ -24,6 +25,12 @@ import MetricLogModal from '@/components/MetricLogModal'
 import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
+
+// MUST match the value in components/SpaceSwitcher.tsx. When the activeSpaceId
+// equals this sentinel, page.tsx routes to Summary (cross-space view) instead
+// of any of the regular tabs, and the bottom nav + FastCapture are hidden
+// since per-space tools don't apply.
+const ALL_SPACES_ID = '__all__'
 
 interface SearchResult { label: string; sub: string; screen: Screen }
 
@@ -155,9 +162,16 @@ export default function HQPage() {
     setLogs(lg)
     setSpaces(sp)
     if (st) setShareToken(st.token)
-    // Set active space from localStorage or default to first
+    // Set active space from localStorage or default to first.
+    // The '__all__' sentinel isn't in `sp`, so handle it explicitly so
+    // that "All Spaces" survives a reload like any real space.
     const savedSpaceId = localStorage.getItem('hq-active-space')
-    const validId = sp.find(s => s.id === savedSpaceId)?.id ?? sp[0]?.id ?? ''
+    let validId: string
+    if (savedSpaceId === ALL_SPACES_ID) {
+      validId = ALL_SPACES_ID
+    } else {
+      validId = sp.find(s => s.id === savedSpaceId)?.id ?? sp[0]?.id ?? ''
+    }
     setActiveSpaceId(validId)
     setLoading(false)
   }, [])
@@ -173,6 +187,7 @@ export default function HQPage() {
   // immediately prior week; deeper gaps can be closed manually from Focus.
   useEffect(() => {
     if (loading || !activeSpaceId || forceCheckDoneRef.current) return
+    if (activeSpaceId === ALL_SPACES_ID) return // no single space to scope to
     if (closingWizard) return // already open (rare, but don't clobber)
     forceCheckDoneRef.current = true
 
@@ -229,8 +244,33 @@ export default function HQPage() {
 
   const initials = user.email?.slice(0, 2).toUpperCase() ?? 'HQ'
   const parkedCount = roadmapItems.filter(i => i.is_parked).length
+  const isAllSpaces = activeSpaceId === ALL_SPACES_ID
 
-  // Space-scoped data — everything filters from the active space's objectives
+  // Click handlers fired from Summary. Both flip out of all-spaces mode by
+  // committing the target real space, then route into the right tab and
+  // pop the corresponding panel — reusing the openObjectiveId / openActionId
+  // plumbing that OKRs and Focus already wire up for in-space clicks.
+  function openObjectiveFromSummary(spaceId: string, objectiveId: string) {
+    switchSpace(spaceId)
+    setScreen('okr')
+    setOpenObjectiveId(objectiveId)
+    setOpenActionId(null)
+  }
+  function openActionFromSummary(spaceId: string, action: WeeklyAction) {
+    switchSpace(spaceId)
+    setScreen('focus')
+    // Older open actions live on past weeks; jump to that week so Focus
+    // actually surfaces the action. setWeekStart's wrapper persists it,
+    // and the on-mount stale-week guard only runs once at boot.
+    setWeekStart(() => action.week_start)
+    setOpenActionId(action.id)
+    setOpenObjectiveId(null)
+  }
+
+  // Space-scoped data — everything filters from the active space's objectives.
+  // When in All Spaces mode these are all empty (no real space matches the
+  // sentinel id), but Summary takes the un-scoped lists directly so it
+  // doesn't matter. The space-scoped slices below stay safe to compute.
   const activeSpace = spaces.find(s => s.id === activeSpaceId)
   const spaceObjectives = objectives.filter(o => o.space_id === activeSpaceId)
   const spaceObjectiveIds = new Set(spaceObjectives.map(o => o.id))
@@ -328,13 +368,25 @@ export default function HQPage() {
         </div>
       </header>
 
-      {/* Main — Roadmap gets a wider cap because its 4-column grid uses the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. The okr+objectivePanel and focus+actionPanel cases also widen so the panel has room on the right. */}
-      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      {/* Main — Roadmap gets a wider cap because its 4-column grid uses the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. The okr+objectivePanel and focus+actionPanel cases also widen so the panel has room on the right. Summary widens to 1080 so the auto-fit grid can run 2-up on desktop. */}
+      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: isAllSpaces ? 1080 : (screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800), width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
             Loading…
           </div>
+        ) : isAllSpaces ? (
+          <Summary
+            spaces={spaces}
+            objectives={objectives}
+            roadmapItems={roadmapItems}
+            actions={actions}
+            habitCheckins={habitCheckins}
+            metricCheckins={metricCheckins}
+            weekStart={weekStart}
+            onOpenObjective={openObjectiveFromSummary}
+            onOpenAction={openActionFromSummary}
+          />
         ) : (
           <>
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} />}
@@ -346,7 +398,11 @@ export default function HQPage() {
         )}
       </main>
 
-      {/* Footer nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking */}
+      {/* Footer nav — hidden in All Spaces mode since the per-screen tabs
+          (Focus / OKRs / Roadmap / Reflect / Park) all assume a single space.
+          Way back is via the SpaceSwitcher pill or by clicking into a space
+          from Summary itself. */}
+      {!isAllSpaces && (
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 72, background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '0 8px', zIndex: 40 }}>
         {NAV.map(item => item.fab ? (
           <button key={item.id} onClick={() => setScreen(item.id)}
@@ -367,7 +423,11 @@ export default function HQPage() {
           </button>
         ))}
       </nav>
+      )}
 
+      {/* FastCapture is hidden in All Spaces mode — it requires a single
+          target space to attach captured items to. */}
+      {!isAllSpaces && (
       <FastCapture
         objectives={spaceObjectives}
         roadmapItems={spaceRoadmapItems}
@@ -378,6 +438,7 @@ export default function HQPage() {
         setActions={setActions}
         toast={setToast}
       />
+      )}
 
       {/* Close-week wizard — lifted to page level so forced launch can overlay
           any screen, not just Focus. Launched either by Focus's "Close week →"
