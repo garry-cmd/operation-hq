@@ -50,16 +50,17 @@ function Checkbox({ checked }: { checked: boolean }) {
   )
 }
 
-// 32% gives the objective column ~120px at the smallest 380px-wide layout —
-// just enough for two short words to fit on one line. KRs/actions get the
-// remaining ~260px which holds long titles before wrapping.
-const GRID_COLS = 'minmax(120px, 32%) 1fr'
+// 25% gives the objective column ~95px at the smallest 380px-wide layout —
+// enough for one or two short words. KRs and Actions split the remaining
+// space evenly with `1fr` each, clamped at 130px so neither collapses to
+// unreadable widths.
+const GRID_COLS = 'minmax(120px, 25%) minmax(130px, 1fr) minmax(130px, 1fr)'
 
 const rowButtonStyle: React.CSSProperties = {
   display: 'flex',
   alignItems: 'flex-start',
-  gap: 10,
-  padding: '7px 14px',
+  gap: 8,
+  padding: '5px 12px',
   width: '100%',
   background: 'none',
   border: 'none',
@@ -112,9 +113,12 @@ export default function Summary({
           letterSpacing: '1px',
         }}
       >
-        <div style={{ padding: '10px 14px' }}>Objective</div>
-        <div style={{ padding: '10px 14px', borderLeft: '1px solid var(--navy-500)' }}>
+        <div style={{ padding: '8px 12px' }}>Objective</div>
+        <div style={{ padding: '8px 12px', borderLeft: '1px solid var(--navy-500)' }}>
           Key Results
+        </div>
+        <div style={{ padding: '8px 12px', borderLeft: '1px solid var(--navy-500)' }}>
+          Open Actions
         </div>
       </div>
 
@@ -144,7 +148,7 @@ export default function Summary({
                 and battleship light, so a hardcoded #fff label is safe. */}
             <div
               style={{
-                padding: '10px 14px',
+                padding: '8px 12px',
                 background: space.color,
                 fontSize: 13,
                 fontWeight: 700,
@@ -173,7 +177,6 @@ export default function Summary({
                 const objKRs = spaceKRs.filter(k => k.annual_objective_id === obj.id)
                 const objKRIds = new Set(objKRs.map(k => k.id))
                 const objActions = spaceActions.filter(a => objKRIds.has(a.roadmap_item_id))
-                const isEmpty = objKRs.length === 0 && objActions.length === 0
 
                 return (
                   <div
@@ -184,14 +187,14 @@ export default function Summary({
                       borderTop: '1px solid var(--navy-600)',
                     }}
                   >
-                    {/* Left: objective name with a small color stripe in
+                    {/* Cell 1 — objective name with a small color stripe in
                         the objective's own color (keeps a cross-reference
                         to OKRs/Roadmap where the same colors anchor the
                         objective cards). */}
                     <button
                       onClick={() => onOpenObjective(space.id, obj.id)}
                       style={{
-                        padding: '12px 14px',
+                        padding: '10px 12px',
                         background: 'none',
                         border: 'none',
                         borderRight: '1px solid var(--navy-600)',
@@ -200,7 +203,7 @@ export default function Summary({
                         fontSize: 13,
                         fontWeight: 600,
                         color: 'var(--navy-50)',
-                        lineHeight: 1.4,
+                        lineHeight: 1.35,
                         display: 'flex',
                         alignItems: 'flex-start',
                         gap: 8,
@@ -221,91 +224,80 @@ export default function Summary({
                       <span style={{ minWidth: 0, wordBreak: 'break-word' }}>{obj.name}</span>
                     </button>
 
-                    {/* Right: KRs first, then open actions. Both render as
-                        the same checkbox-row primitive — visual parity is
-                        intentional per the screenshot. The user can tell
-                        them apart by content, and click target tells them
-                        apart by destination (objective panel vs action
-                        panel). */}
-                    <div style={{ padding: '4px 0', minWidth: 0 }}>
-                      {isEmpty ? (
-                        <div
-                          style={{
-                            padding: '8px 14px',
-                            fontSize: 12,
-                            color: 'var(--navy-400)',
-                          }}
-                        >
-                          —
-                        </div>
-                      ) : (
-                        <>
-                          {objKRs.map(kr => {
-                            // Treat status='done' OR health_status='done' as
-                            // done. The two fields drift in the existing data
-                            // and either signal is enough for this view.
-                            const done = kr.status === 'done' || kr.health_status === 'done'
-                            return (
-                              <button
-                                key={kr.id}
-                                onClick={() => onOpenObjective(space.id, obj.id)}
-                                style={rowButtonStyle}
-                                onMouseEnter={e =>
-                                  (e.currentTarget.style.background = 'var(--navy-600)')
-                                }
-                                onMouseLeave={e =>
-                                  (e.currentTarget.style.background = 'none')
-                                }
-                              >
-                                <Checkbox checked={done} />
-                                <span
-                                  style={{
-                                    fontSize: 13,
-                                    color: done ? 'var(--navy-400)' : 'var(--navy-100)',
-                                    textDecoration: done ? 'line-through' : 'none',
-                                    lineHeight: 1.45,
-                                    // Preserve newlines if the title contains
-                                    // them (some users paste multi-line KR
-                                    // titles; the screenshot shows this style).
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-word',
-                                    minWidth: 0,
-                                  }}
-                                >
-                                  {kr.title}
-                                </span>
-                              </button>
-                            )
-                          })}
-                          {objActions.map(a => (
-                            <button
-                              key={a.id}
-                              onClick={() => onOpenAction(space.id, a)}
-                              style={rowButtonStyle}
-                              onMouseEnter={e =>
-                                (e.currentTarget.style.background = 'var(--navy-600)')
-                              }
-                              onMouseLeave={e =>
-                                (e.currentTarget.style.background = 'none')
-                              }
+                    {/* Cell 2 — KRs only. Empty cells render blank rather
+                        than a dash; the row's natural height is set by
+                        whichever of the three cells has the most content. */}
+                    <div
+                      style={{
+                        padding: '4px 0',
+                        minWidth: 0,
+                        borderRight: '1px solid var(--navy-600)',
+                      }}
+                    >
+                      {objKRs.map(kr => {
+                        // Treat status='done' OR health_status='done' as
+                        // done. The two fields drift in the existing data
+                        // and either signal is enough for this view.
+                        const done = kr.status === 'done' || kr.health_status === 'done'
+                        return (
+                          <button
+                            key={kr.id}
+                            onClick={() => onOpenObjective(space.id, obj.id)}
+                            style={rowButtonStyle}
+                            onMouseEnter={e =>
+                              (e.currentTarget.style.background = 'var(--navy-600)')
+                            }
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                          >
+                            <Checkbox checked={done} />
+                            <span
+                              style={{
+                                fontSize: 13,
+                                color: done ? 'var(--navy-400)' : 'var(--navy-100)',
+                                textDecoration: done ? 'line-through' : 'none',
+                                lineHeight: 1.35,
+                                // Preserve newlines if the title contains
+                                // them (some users paste multi-line KR
+                                // titles; the screenshot shows this style).
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                minWidth: 0,
+                              }}
                             >
-                              <Checkbox checked={false} />
-                              <span
-                                style={{
-                                  fontSize: 13,
-                                  color: 'var(--navy-200)',
-                                  lineHeight: 1.45,
-                                  whiteSpace: 'pre-wrap',
-                                  wordBreak: 'break-word',
-                                  minWidth: 0,
-                                }}
-                              >
-                                {a.title}
-                              </span>
-                            </button>
-                          ))}
-                        </>
-                      )}
+                              {kr.title}
+                            </span>
+                          </button>
+                        )
+                      })}
+                    </div>
+
+                    {/* Cell 3 — open actions only. */}
+                    <div style={{ padding: '4px 0', minWidth: 0 }}>
+                      {objActions.map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => onOpenAction(space.id, a)}
+                          style={rowButtonStyle}
+                          onMouseEnter={e =>
+                            (e.currentTarget.style.background = 'var(--navy-600)')
+                          }
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                        >
+                          <Checkbox checked={false} />
+                          <span
+                            style={{
+                              fontSize: 13,
+                              color: 'var(--navy-200)',
+                              lineHeight: 1.35,
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              minWidth: 0,
+                            }}
+                          >
+                            {a.title}
+                          </span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )
