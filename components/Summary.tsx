@@ -1,4 +1,5 @@
 'use client'
+import { useState, useEffect } from 'react'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 
 interface Props {
@@ -50,6 +51,32 @@ function Checkbox({ checked }: { checked: boolean }) {
   )
 }
 
+// Disclosure caret for collapse/expand on space bands. Rotates 90° rather
+// than swapping shapes — keeps the eye anchored on a single moving element.
+function Chevron({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 10 10"
+      style={{
+        flexShrink: 0,
+        transition: 'transform .15s',
+        transform: expanded ? 'none' : 'rotate(-90deg)',
+      }}
+    >
+      <path
+        d="M2 4l3 3 3-3"
+        stroke="#fff"
+        strokeWidth="1.7"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 // 25% gives the objective column ~95px at the smallest 380px-wide layout —
 // enough for one or two short words. KRs and Actions split the remaining
 // space evenly with `1fr` each, clamped at 130px so neither collapses to
@@ -78,6 +105,35 @@ export default function Summary({
   onOpenObjective,
   onOpenAction,
 }: Props) {
+  // Per-space collapse state. Persisted to localStorage so the user's last
+  // arrangement survives a reload — same pattern as theme + weekStart in
+  // page.tsx. Starts empty (everything expanded) on first paint to keep
+  // SSR-safe; the saved set hydrates on mount.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('hq-summary-collapsed')
+      if (saved) setCollapsed(new Set(JSON.parse(saved)))
+    } catch {
+      /* noop — corrupt storage shouldn't break the page */
+    }
+  }, [])
+
+  function toggleCollapsed(spaceId: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev)
+      if (next.has(spaceId)) next.delete(spaceId)
+      else next.add(spaceId)
+      try {
+        localStorage.setItem('hq-summary-collapsed', JSON.stringify([...next]))
+      } catch {
+        /* noop */
+      }
+      return next
+    })
+  }
+
   if (spaces.length === 0) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-400)', fontSize: 13 }}>
@@ -143,6 +199,10 @@ export default function Summary({
           .filter(a => krIds.has(a.roadmap_item_id) && !a.completed)
           .sort((a, b) => b.week_start.localeCompare(a.week_start))
 
+        const isCollapsed = collapsed.has(space.id)
+        const krCount = spaceKRs.length
+        const actionCount = spaceActions.length
+
         return (
           <div
             key={space.id}
@@ -156,37 +216,65 @@ export default function Summary({
               background: `${space.color}1f`,
             }}
           >
-            {/* Space band — saturated color from the COLORS palette, white
-                text. The palette is designed to work in both submarine dark
-                and battleship light, so a hardcoded #fff label is safe. */}
-            <div
+            {/* Space band — clickable to collapse/expand. Saturated color
+                from the COLORS palette, white text. Counts on the right
+                stay visible whether collapsed or expanded so the band
+                always tells you what's in the section. */}
+            <button
+              onClick={() => toggleCollapsed(space.id)}
               style={{
+                width: '100%',
                 padding: '8px 12px',
                 background: space.color,
+                border: 'none',
+                color: '#fff',
                 fontSize: 13,
                 fontWeight: 700,
-                color: '#fff',
+                textAlign: 'left',
                 textTransform: 'uppercase',
                 letterSpacing: '1px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 10,
+                fontFamily: 'inherit',
               }}
             >
-              {space.name}
-            </div>
-
-            {spaceObjs.length === 0 ? (
-              <div
+              <Chevron expanded={!isCollapsed} />
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {space.name}
+              </span>
+              <span
                 style={{
-                  padding: '14px',
-                  fontSize: 12,
-                  color: 'var(--navy-400)',
-                  fontStyle: 'italic',
-                  borderTop: '1px solid var(--navy-600)',
+                  fontSize: 11,
+                  fontWeight: 500,
+                  // Slightly muted against #fff title — keeps counts a hair
+                  // quieter than the name without going to a separate color.
+                  opacity: 0.8,
+                  letterSpacing: '0.4px',
+                  textTransform: 'none',
+                  flexShrink: 0,
                 }}
               >
-                No objectives in this space.
-              </div>
-            ) : (
-              spaceObjs.map(obj => {
+                {krCount} {krCount === 1 ? 'KR' : 'KRs'} · {actionCount} {actionCount === 1 ? 'action' : 'actions'}
+              </span>
+            </button>
+
+            {!isCollapsed && (
+              spaceObjs.length === 0 ? (
+                <div
+                  style={{
+                    padding: '14px',
+                    fontSize: 12,
+                    color: 'var(--navy-400)',
+                    fontStyle: 'italic',
+                    borderTop: '1px solid var(--navy-600)',
+                  }}
+                >
+                  No objectives in this space.
+                </div>
+              ) : (
+                spaceObjs.map(obj => {
                 const objKRs = spaceKRs.filter(k => k.annual_objective_id === obj.id)
                 const objKRIds = new Set(objKRs.map(k => k.id))
                 const objActions = spaceActions.filter(a => objKRIds.has(a.roadmap_item_id))
@@ -315,6 +403,7 @@ export default function Summary({
                   </div>
                 )
               })
+              )
             )}
           </div>
         )
