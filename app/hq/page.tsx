@@ -368,8 +368,8 @@ export default function HQPage() {
         </div>
       </header>
 
-      {/* Main — Roadmap gets a wider cap because its 4-column grid uses the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. The okr+objectivePanel and focus+actionPanel cases also widen so the panel has room on the right. Summary widens to 1080 so the auto-fit grid can run 2-up on desktop. */}
-      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: isAllSpaces ? 1080 : (screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800), width: '100%', margin: '0 auto' }}>
+      {/* Main — Roadmap and Summary both get a wider cap because their dense layouts use the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. The okr+objectivePanel and focus+actionPanel cases also widen so the panel has room on the right. */}
+      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: isAllSpaces || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
@@ -381,9 +381,6 @@ export default function HQPage() {
             objectives={objectives}
             roadmapItems={roadmapItems}
             actions={actions}
-            habitCheckins={habitCheckins}
-            metricCheckins={metricCheckins}
-            weekStart={weekStart}
             onOpenObjective={openObjectiveFromSummary}
             onOpenAction={openActionFromSummary}
           />
