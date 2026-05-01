@@ -94,7 +94,9 @@ export default function Summary({
         border: '1px solid var(--navy-600)',
         borderRadius: 12,
         overflow: 'hidden',
-        background: 'var(--navy-700)',
+        // No solid fill here — each space's wrapper paints its own tinted
+        // background, and the header row + space bands paint their own.
+        // Empty objective rows pick up the tint of their space.
       }}
     >
       {/* Header row — the only place we name the columns. Sticky would be
@@ -142,7 +144,18 @@ export default function Summary({
           .sort((a, b) => b.week_start.localeCompare(a.week_start))
 
         return (
-          <div key={space.id}>
+          <div
+            key={space.id}
+            style={{
+              // Faint wash of the space's own color through the body rows
+              // so each space reads as its own zone — saturated band on top,
+              // ~12% tint underneath. Hex `1f` ≈ 12.2% alpha. Visible enough
+              // to color-zone in light mode, still readable in dark mode.
+              // Header row, hover, and the band itself paint over this so
+              // none of them are affected.
+              background: `${space.color}1f`,
+            }}
+          >
             {/* Space band — saturated color from the COLORS palette, white
                 text. The palette is designed to work in both submarine dark
                 and battleship light, so a hardcoded #fff label is safe. */}
