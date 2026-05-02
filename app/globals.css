@@ -34,12 +34,12 @@
   /* Off track — warm rose/copper, deliberately not cool */
   --red:      #5a2a1a;
   --red-bg:   #160a06;
-  --red-text: #cb9070;
+  --red-text: #b88872;
 
   /* Blocked — warm amber, muted */
   --amber:      #5a4810;
   --amber-bg:   #14100a;
-  --amber-text: #cba078;
+  --amber-text: #c0a078;
 
   /* Waiting/tag — soft purple, distinct from accent */
   --indigo-bg:   #14101e;
@@ -70,15 +70,15 @@
   --teal-bg:   #d8eee2;
   --teal-text: #1f6e48;
 
-  /* Off track — warm */
+  /* Off track — warm, muted (de-saturated to match Done green's restraint) */
   --red:      #5a2a18;
-  --red-bg:   #f0dccc;
-  --red-text: #8a4a30;
+  --red-bg:   #ebe0d6;
+  --red-text: #75452e;
 
-  /* Blocked */
+  /* Blocked — warm muted */
   --amber:      #5a4010;
-  --amber-bg:   #f0e3c8;
-  --amber-text: #6a4810;
+  --amber-bg:   #ebe5d2;
+  --amber-text: #6a5418;
 
   /* Waiting/tag */
   --indigo-bg:   #e8e0f0;

@@ -419,13 +419,13 @@ function NoteEntry({ log, expanded, onExpand, onCollapse, setLogs, toast }: {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 2 }}>
           <span style={{ fontSize: 10, color: 'var(--navy-400)', flexShrink: 0, fontWeight: 600 }}>{dateStr}</span>
           {log.title && (
-            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {log.title}
             </span>
           )}
         </div>
         {preview && (
-          <div style={{ fontSize: 12, color: 'var(--navy-300)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4 }}>
+          <div style={{ fontSize: 12, color: 'var(--navy-300)', display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 2, overflow: 'hidden', lineHeight: 1.4, wordBreak: 'break-word' }}>
             {preview}
           </div>
         )}
