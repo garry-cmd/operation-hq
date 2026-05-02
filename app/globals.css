@@ -1,86 +1,88 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   OPERATION HQ — NAVAL COMMAND THEMES
-   Dark  : Nuclear submarine, wartime. Instruments glowing amber.
-   Light : Battleship, North Atlantic, fine sunny day.
+   OPERATION HQ — COBALT THEME
+   Dark  : Off-black + cool slate. Cobalt accent lights up the panel.
+   Light : Paper white + cool slate. Deeper cobalt for contrast.
+   Semantic warnings (red/amber) stay warm — deliberate friction
+   against the cool neutral base so they read as alerts, not chrome.
 ═══════════════════════════════════════════════════════════════ */
 
-/* ── DARK — SUBMARINE (default) ── */
+/* ── DARK (default) ── */
 :root,
 [data-theme="dark"] {
-  --navy-900: #05080a;   /* hull black */
-  --navy-800: #090e12;   /* instrument panel */
-  --navy-700: #0d1518;   /* elevated surface */
-  --navy-600: #1e3040;   /* visible seam/border */
-  --navy-500: #2a4858;   /* strong border */
-  --navy-400: #5a7a90;   /* dim text / muted elements */
-  --navy-300: #8ab0c8;   /* secondary text */
-  --navy-200: #b8d0e4;   /* body text */
-  --navy-100: #d8eaf8;   /* readable text */
-  --navy-50:  #eef6fc;   /* primary text */
+  --navy-900: #08090c;   /* page bg */
+  --navy-800: #131519;   /* card */
+  --navy-700: #1b1e24;   /* elevated surface / hover */
+  --navy-600: #262a32;   /* visible border */
+  --navy-500: #383d47;   /* strong border */
+  --navy-400: #6c7280;   /* dim text */
+  --navy-300: #9aa0ad;   /* secondary text */
+  --navy-200: #c4c8d2;   /* body text */
+  --navy-100: #dde0e8;   /* readable text */
+  --navy-50:  #eef0f4;   /* primary text */
 
-  /* Phosphor amber — the one that glows */
-  --accent:     #c89828;
-  --accent-dim: #1a1200;
+  /* Cobalt — the one that lights up */
+  --accent:     #4a8fff;
+  --accent-dim: #0e1a2e;
 
-  /* Sonar green — on track */
-  --teal:      #1a5030;
-  --teal-bg:   #060e08;
-  --teal-text: #48986a;
+  /* On track — muted green */
+  --teal:      #1a3e2a;
+  --teal-bg:   #0a1410;
+  --teal-text: #6ec896;
 
-  /* Battle stations red — off track */
-  --red:      #6a1818;
-  --red-bg:   #120404;
-  --red-text: #c07060;
+  /* Off track — warm rose/copper, deliberately not cool */
+  --red:      #5a2a1a;
+  --red-bg:   #160a06;
+  --red-text: #cb9070;
 
-  /* Caution amber — blocked */
-  --amber:      #7a6018;
-  --amber-bg:   #181008;
-  --amber-text: #c09838;
+  /* Blocked — warm amber, muted */
+  --amber:      #5a4810;
+  --amber-bg:   #14100a;
+  --amber-text: #cba078;
 
-  /* Indigo — waiting/paused (used for action tags; distinct from amber) */
-  --indigo-bg:   #160a1e;
-  --indigo-text: #a890c8;
+  /* Waiting/tag — soft purple, distinct from accent */
+  --indigo-bg:   #14101e;
+  --indigo-text: #b498d4;
 
   color-scheme: dark;
 }
 
-/* ── LIGHT — BATTLESHIP, NORTH ATLANTIC ── */
+/* ── LIGHT ── */
 [data-theme="light"] {
-  --navy-900: #d4dce8;   /* steel-grey sea haze */
-  --navy-800: #e8f0f8;   /* chart paper */
-  --navy-700: #f4f8fc;   /* bright chart */
-  --navy-600: #b0c4d8;   /* steel grey border */
-  --navy-500: #7a9ab8;   /* stronger border */
-  --navy-400: #5a7898;   /* muted text */
-  --navy-300: #3a5878;   /* secondary text */
-  --navy-200: #1e3a58;   /* body text */
-  --navy-100: #0e2038;   /* readable text */
-  --navy-50:  #060e18;   /* primary text */
+  --navy-900: #f7f8fb;   /* page bg */
+  --navy-800: #ffffff;   /* card */
+  --navy-700: #f0f2f6;   /* elevated / hover */
+  --navy-600: #d8dde6;   /* border */
+  --navy-500: #b4bbc8;   /* strong border */
+  --navy-400: #71778a;   /* muted text */
+  --navy-300: #4a5063;   /* secondary text */
+  --navy-200: #2a2f3e;   /* body text */
+  --navy-100: #181c28;   /* readable text */
+  --navy-50:  #08090c;   /* primary text */
 
-  /* Fleet navy blue — uniform, flag, bridge railing */
-  --accent:     #1a3a6a;
-  --accent-dim: #d4dce8;
+  /* Cobalt — deeper for light-bg contrast */
+  --accent:     #2563eb;
+  --accent-dim: #e0eaff;
 
-  /* Sea green — on track */
-  --teal:      #1a5040;
-  --teal-bg:   #cce8e0;
-  --teal-text: #0a3028;
+  /* On track */
+  --teal:      #1a4a36;
+  --teal-bg:   #d8eee2;
+  --teal-text: #1f6e48;
 
-  /* Crimson — off track */
-  --red:      #681818;
-  --red-bg:   #ecd8d8;
-  --red-text: #480e0e;
+  /* Off track — warm */
+  --red:      #5a2a18;
+  --red-bg:   #f0dccc;
+  --red-text: #8a4a30;
 
-  /* Brass — blocked */
-  --amber:      #6a4810;
-  --amber-bg:   #ecdcc8;
-  --amber-text: #402808;
+  /* Blocked */
+  --amber:      #5a4010;
+  --amber-bg:   #f0e3c8;
+  --amber-text: #6a4810;
 
-  /* Indigo — waiting/paused (used for action tags; distinct from amber) */
-  --indigo-bg:   #e0d8ec;
-  --indigo-text: #3a1a4a;
+  /* Waiting/tag */
+  --indigo-bg:   #e8e0f0;
+  --indigo-text: #4a3070;
 
   color-scheme: light;
 }

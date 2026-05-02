@@ -1,13 +1,16 @@
-// Naval objective colors — work in both submarine dark and battleship light
+// Object color palette — used for spaces and objectives.
+// Tuned to coexist with the cobalt accent: the in-family blue (azure)
+// is held to last so it doesn't compete with UI chrome up front.
+// All eight read against both dark off-black and light paper bg.
 export const COLORS = [
-  '#3a6a9a',  // steel blue
-  '#3a7a58',  // sea green
-  '#c89828',  // brass gold
-  '#5a6a9a',  // slate blue
-  '#3a7a7a',  // teal
-  '#6a5a3a',  // brass/tan
-  '#5a3a6a',  // deep purple (no pink)
-  '#6a7a4a',  // olive
+  '#0ea5b8',  // cyan
+  '#14b87f',  // emerald
+  '#c8a040',  // mustard gold
+  '#d4885a',  // warm copper
+  '#c44a7c',  // raspberry
+  '#8b5cf6',  // violet
+  '#6b8caa',  // slate
+  '#5b8def',  // azure (sister to accent — picked last)
 ]
 
 export const ACTIVE_Q = '2Q2026'

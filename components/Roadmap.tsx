@@ -284,6 +284,7 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
   onDragEnd: (e: React.DragEvent) => void
 }) {
   const isActive = quarter === ACTIVE_Q
+  const isDone = item.health_status === 'done'
   return (
     <div
       draggable
@@ -295,12 +296,12 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
         background: isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
         border: isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
         color: isActive ? 'var(--navy-50)' : 'var(--navy-200)',
-        opacity: dragging ? 0.4 : 1,
+        opacity: dragging ? 0.4 : isDone ? 0.45 : 1,
         WebkitTapHighlightColor: 'transparent',
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
       {isActive && <span style={{ marginRight: 2, flexShrink: 0 }}>⚡</span>}
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title}</span>
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isDone ? 'line-through' : 'none' }}>{item.title}</span>
       <button
         onClick={onEdit}
         onMouseDown={e => e.stopPropagation()}
