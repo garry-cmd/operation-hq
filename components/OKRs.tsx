@@ -5,7 +5,7 @@ import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
-import { recentCheckins, sparklineBounds, sparklineTrend } from '@/lib/metricUtils'
+import { recentCheckins } from '@/lib/metricUtils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
 import ObjectiveCard from './ObjectiveCard'
 import ObjectivePanel from './ObjectivePanel'
@@ -624,6 +624,33 @@ function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
 // MetricKPICard — tinted card summarizing a metric KR, with 12-week sparkline.
 // Tap anywhere on the card to open the log modal.
 // =========================================================================
+
+// Symbol-form currencies render before the number; everything else (kg, lb,
+// sessions, %, USD, etc.) renders after. Numbers always get thousand separators.
+// '#' is treated as "no unit" — it's a placeholder users sometimes type that
+// reads as garbage in the UI.
+const PREFIX_CURRENCY_SYMBOLS = new Set(['$', '€', '£', '¥', '₹', '₩', '₽', '¢'])
+
+function isMeaningfulUnit(unit: string): boolean {
+  const trimmed = unit.trim()
+  return trimmed.length > 0 && trimmed !== '#'
+}
+
+function isPrefixCurrency(unit: string): boolean {
+  return PREFIX_CURRENCY_SYMBOLS.has(unit.trim())
+}
+
+function formatMetricNumber(n: number): string {
+  return n.toLocaleString('en-US')
+}
+
+function formatMetricValue(n: number, unit: string): string {
+  const num = formatMetricNumber(n)
+  if (!isMeaningfulUnit(unit)) return num
+  if (isPrefixCurrency(unit)) return `${unit.trim()}${num}`
+  return `${num} ${unit.trim()}`
+}
+
 function MetricKPICard({
   kr, checkins, onTap,
 }: {
@@ -641,9 +668,8 @@ function MetricKPICard({
   const targetNum = kr.target_value == null ? null : Number(kr.target_value)
   const progressNum = kr.progress == null ? null : Number(kr.progress)
 
-  // Last 12 weeks for the sparkline. Reverse for chronological plotting.
+  // Last 12 checkins, descending. Used for current + delta only.
   const latest12Desc = recentCheckins(checkins, kr.id, 12)
-  const chronological = [...latest12Desc].reverse()
 
   const current = latest12Desc[0]?.value != null ? Number(latest12Desc[0].value) : null
   const previous = latest12Desc[1]?.value != null ? Number(latest12Desc[1].value) : null
@@ -683,9 +709,9 @@ function MetricKPICard({
         {current != null ? (
           <>
             <span style={{ fontSize: 24, fontWeight: 600, color: tintText, lineHeight: 1 }}>
-              {current}
+              {isPrefixCurrency(unit) && unit.trim()}{formatMetricNumber(current)}
             </span>
-            {unit && <span style={{ fontSize: 13, color: tintText, opacity: 0.7 }}>{unit}</span>}
+            {isMeaningfulUnit(unit) && !isPrefixCurrency(unit) && <span style={{ fontSize: 13, color: tintText, opacity: 0.7 }}>{unit.trim()}</span>}
             {delta != null && (
               <span style={{
                 fontSize: 11, fontWeight: 700, marginLeft: 4,
@@ -693,7 +719,7 @@ function MetricKPICard({
                 opacity: deltaIsGood == null ? 0.6 : 1,
               }}>
                 {delta > 0 ? '↑ +' : delta < 0 ? '↓ ' : ''}
-                {Number(delta.toFixed(2))}
+                {formatMetricNumber(Number(delta.toFixed(2)))}
               </span>
             )}
           </>
@@ -704,88 +730,15 @@ function MetricKPICard({
         )}
       </div>
 
-      <MetricSparkline
-        values={chronological.map(c => Number(c.value))}
-        start={startNum}
-        target={targetNum}
-        direction={kr.metric_direction}
-      />
-
-      <div style={{ fontSize: 10, color: tintText, opacity: 0.65, display: 'flex', justifyContent: 'space-between', marginTop: -2 }}>
-        <span>
-          {startNum != null && <>Start {startNum}{unit && ` ${unit}`}</>}
-        </span>
-        <span>
-          {targetNum != null && <>Target {targetNum}{unit && ` ${unit}`}</>}
-        </span>
-      </div>
-
-      {progressNum != null && (
-        <div style={{ fontSize: 10, color: tintText, opacity: 0.75, fontWeight: 600 }}>
-          {progressNum}% of the way there
+      {(startNum != null || targetNum != null) && (
+        <div style={{ fontSize: 10, color: tintText, opacity: 0.65 }}>
+          {startNum != null && <>Start {formatMetricValue(startNum, unit)}</>}
+          {startNum != null && targetNum != null && <> → </>}
+          {targetNum != null && <>Target {formatMetricValue(targetNum, unit)}</>}
         </div>
       )}
     </button>
   )
 }
 
-// =========================================================================
-// MetricSparkline — inline SVG polyline; ~30 lines of geometry.
-// Y-axis is anchored by start + target so "where you're going" is always
-// visible in the frame. Line color reflects trend-toward-target.
-// =========================================================================
-function MetricSparkline({
-  values, start, target, direction,
-}: {
-  values: number[]
-  start: number | null
-  target: number | null
-  direction: 'up' | 'down' | null
-}) {
-  const W = 200, H = 40, pad = 2
 
-  // Special cases: no data or bad axis config — render a flat placeholder
-  // so the card keeps its visual rhythm with the others in the row.
-  if (values.length === 0) {
-    return (
-      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-        <line x1={0} y1={H / 2} x2={W} y2={H / 2} stroke="var(--navy-500)" strokeDasharray="3 3" strokeWidth="1" />
-      </svg>
-    )
-  }
-
-  const [yMin, yMax] = sparklineBounds(values, start, target)
-  const yToPx = (v: number) => pad + (1 - (v - yMin) / (yMax - yMin)) * (H - pad * 2)
-
-  // X positions: evenly spaced across the width. With one point, pin to the
-  // right edge — "this is where you are now."
-  const xToPx = (i: number) => {
-    if (values.length === 1) return W - pad
-    return pad + (i / (values.length - 1)) * (W - pad * 2)
-  }
-
-  const points = values.map((v, i) => `${xToPx(i)},${yToPx(v)}`).join(' ')
-  const trend = sparklineTrend(values, direction)
-  const strokeColor =
-    trend === 'improving' ? 'var(--teal)' :
-    trend === 'declining' ? 'var(--red)'  :
-                            'var(--navy-400)'
-
-  const targetY = target != null ? yToPx(target) : null
-  const lastX = xToPx(values.length - 1)
-  const lastY = yToPx(values[values.length - 1])
-
-  return (
-    <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ display: 'block' }}>
-      {/* Target line — faint dashed reference */}
-      {targetY != null && (
-        <line x1={0} y1={targetY} x2={W} y2={targetY} stroke="currentColor" strokeOpacity="0.25" strokeDasharray="2 3" strokeWidth="1" />
-      )}
-      {values.length >= 2 && (
-        <polyline fill="none" stroke={strokeColor} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" points={points} />
-      )}
-      {/* Current-value dot */}
-      <circle cx={lastX} cy={lastY} r={2.5} fill={strokeColor} />
-    </svg>
-  )
-}
