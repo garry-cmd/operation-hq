@@ -265,7 +265,35 @@ export default function CloseWeekWizard({
   }
 
   // ---------- Step 2 mutations ----------
+  // `nextWeekActions` powers the top-of-Step-2 summary card ("Already on
+  // next week's list") — it stays scoped to nextWeek by design.
   const nextWeekActions = actions.filter(a => a.week_start === nextWeek)
+
+  // `walkthroughActions` powers the per-KR walkthrough rows. Broader than
+  // nextWeekActions so the user can complete/tag any open work tied to the
+  // current KR — including originals from past weeks that never carried
+  // forward (carry-seed only fires for the immediately-prior week, so deeper
+  // orphans were invisible). Dedupe by (roadmap_item_id, title) keeping the
+  // most recent week, mirroring Summary.tsx's policy. Then layer in any
+  // next-week rows that were already represented but in a completed state
+  // mid-session, so toggling complete doesn't make a row vanish under the
+  // user's cursor.
+  const walkthroughActions = (() => {
+    const seen = new Map<string, WeeklyAction>()
+    for (const a of actions) {
+      if (a.completed) continue
+      const key = `${a.roadmap_item_id}::${a.title}`
+      const existing = seen.get(key)
+      if (!existing || a.week_start > existing.week_start) seen.set(key, a)
+    }
+    // Keep just-completed next-week rows visible.
+    for (const a of actions) {
+      if (a.week_start !== nextWeek || !a.completed) continue
+      const key = `${a.roadmap_item_id}::${a.title}`
+      if (!seen.has(key)) seen.set(key, a)
+    }
+    return [...seen.values()]
+  })()
 
   async function removeAction(id: string) {
     try {
@@ -437,6 +465,8 @@ export default function CloseWeekWizard({
             outcomeKRs={outcomeKRs.filter(kr => kr.health_status !== 'done')}
             objectives={objectives}
             nextWeekActions={nextWeekActions}
+            walkthroughActions={walkthroughActions}
+            closingWeek={closingWeek}
             walkthroughIndex={s.walkthroughIndex}
             onIndex={i => patch({ walkthroughIndex: i })}
             onRemoveAction={removeAction}
@@ -667,13 +697,16 @@ function Step1({
 // Step 2 — Plan
 // ============================================================================
 function Step2({
-  outcomeKRs, objectives, nextWeekActions, walkthroughIndex, onIndex,
+  outcomeKRs, objectives, nextWeekActions, walkthroughActions, closingWeek,
+  walkthroughIndex, onIndex,
   onRemoveAction, onAddActionForKR, onToggleActionCompleted, onSetActionTag,
   onFinish, nextWeek,
 }: {
   outcomeKRs: RoadmapItem[]
   objectives: AnnualObjective[]
   nextWeekActions: WeeklyAction[]
+  walkthroughActions: WeeklyAction[]
+  closingWeek: string
   walkthroughIndex: number
   onIndex: (i: number) => void
   onRemoveAction: (id: string) => Promise<void>
@@ -688,7 +721,15 @@ function Step2({
   const safeIndex = Math.min(walkthroughIndex, Math.max(0, total - 1))
   const currentKR = krList[safeIndex]
   const currentObj = currentKR ? objectives.find(o => o.id === currentKR.annual_objective_id) : null
-  const currentActions = currentKR ? nextWeekActions.filter(a => a.roadmap_item_id === currentKR.id) : []
+  // Per-KR rows: open work from any week, plus next-week (deduped upstream).
+  // Sort older-first so leftover originals from past weeks appear above the
+  // forward-looking next-week entries — natural reading order for "close out
+  // what's old, then look at what's planned."
+  const currentActions = currentKR
+    ? walkthroughActions
+        .filter(a => a.roadmap_item_id === currentKR.id)
+        .sort((a, b) => a.week_start.localeCompare(b.week_start))
+    : []
   const done = safeIndex >= total - 1
 
   const [input, setInput] = useState('')
@@ -771,6 +812,22 @@ function Step2({
                           textDecoration: a.completed ? 'line-through' : 'none',
                           opacity: a.completed ? 0.55 : 1,
                         }}>{a.title}</span>
+                        {/* Week badge: tells the user whether this row is a
+                            leftover from a past week (you may have forgotten
+                            to close it) vs an item that's been queued onto
+                            next week's plan. We hide the badge for
+                            next-week rows where it's the default — only
+                            past-week leftovers get a visible "open from"
+                            stamp, so the chrome stays minimal. */}
+                        {a.week_start !== nextWeek && (
+                          <span style={{
+                            fontSize: 9, padding: '1px 6px', borderRadius: 99,
+                            background: 'var(--amber-bg)', color: 'var(--amber-text)',
+                            fontWeight: 700, flexShrink: 0,
+                          }}>
+                            {a.week_start === closingWeek ? 'this wk' : `from ${formatWeek(a.week_start)}`}
+                          </span>
+                        )}
                         <button onClick={() => onRemoveAction(a.id)} aria-label="Remove action"
                           style={{ background: 'none', border: 'none', color: 'var(--navy-400)', fontSize: 14, cursor: 'pointer', padding: '0 2px' }}>×</button>
                       </div>
