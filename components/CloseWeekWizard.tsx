@@ -211,13 +211,25 @@ export default function CloseWeekWizard({
           setReviews(prev => prev.map(r => r.id === existingReview.id ? updated : r))
         } catch (err) {
           console.error('review update failed:', err)
+          toast('Could not save review. Please try again.')
+          setAdvancing(false)
+          return
         }
       } else {
         try {
           const created = await reviewsDb.create({ ...payload, space_id: activeSpaceId })
           setReviews(prev => [created, ...prev])
         } catch (err) {
+          // Pre-May-4-2026 the weekly_reviews table had a single-column
+          // UNIQUE(week_start) constraint that silently blocked all but the
+          // first space from saving any review for a given week. The schema
+          // is now UNIQUE(space_id, week_start). If a 23505 ever shows up
+          // here again, it's a real conflict — surface it loudly rather
+          // than letting the user think nothing happened.
           console.error('review create failed:', err)
+          toast('Could not save review. Please try again.')
+          setAdvancing(false)
+          return
         }
       }
 
@@ -270,6 +282,33 @@ export default function CloseWeekWizard({
       setActions(prev => [...prev, created])
     } catch (err) {
       console.error('addActionForKR failed:', err)
+    }
+  }
+
+  // Bug 2 — let the user check off an action mid-walkthrough. Mostly used to
+  // close out carries that were really already done in the closing week,
+  // before they clutter the new week. Toggle, so a misclick can be undone.
+  async function toggleActionCompleted(action: WeeklyAction) {
+    const next = !action.completed
+    try {
+      const updated = await actionsDb.update(action.id, { completed: next })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+    } catch (err) {
+      console.error('toggleActionCompleted failed:', err)
+      toast('Could not update action.')
+    }
+  }
+
+  // Bug 3 — set or clear an action's tag (backlog/waiting/doing). Pass null
+  // to clear (the picker calls this with null when the user taps the
+  // already-selected tag).
+  async function setActionTag(action: WeeklyAction, tag: WeeklyAction['tag']) {
+    try {
+      const updated = await actionsDb.update(action.id, { tag })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+    } catch (err) {
+      console.error('setActionTag failed:', err)
+      toast('Could not update tag.')
     }
   }
 
@@ -395,13 +434,15 @@ export default function CloseWeekWizard({
           />
         ) : (
           <Step2
-            outcomeKRs={outcomeKRs}
+            outcomeKRs={outcomeKRs.filter(kr => kr.health_status !== 'done')}
             objectives={objectives}
             nextWeekActions={nextWeekActions}
             walkthroughIndex={s.walkthroughIndex}
             onIndex={i => patch({ walkthroughIndex: i })}
             onRemoveAction={removeAction}
             onAddActionForKR={addActionForKR}
+            onToggleActionCompleted={toggleActionCompleted}
+            onSetActionTag={setActionTag}
             onFinish={finish}
             nextWeek={nextWeek}
           />
@@ -627,7 +668,8 @@ function Step1({
 // ============================================================================
 function Step2({
   outcomeKRs, objectives, nextWeekActions, walkthroughIndex, onIndex,
-  onRemoveAction, onAddActionForKR, onFinish, nextWeek,
+  onRemoveAction, onAddActionForKR, onToggleActionCompleted, onSetActionTag,
+  onFinish, nextWeek,
 }: {
   outcomeKRs: RoadmapItem[]
   objectives: AnnualObjective[]
@@ -636,6 +678,8 @@ function Step2({
   onIndex: (i: number) => void
   onRemoveAction: (id: string) => Promise<void>
   onAddActionForKR: (krId: string, title: string) => Promise<void>
+  onToggleActionCompleted: (action: WeeklyAction) => Promise<void>
+  onSetActionTag: (action: WeeklyAction, tag: WeeklyAction['tag']) => Promise<void>
   onFinish: () => void
   nextWeek: string
 }) {
@@ -706,10 +750,53 @@ function Step2({
               {currentActions.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
                   {currentActions.map(a => (
-                    <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 8 }}>
-                      <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid var(--navy-400)', flexShrink: 0 }} />
-                      <span style={{ fontSize: 12, color: 'var(--navy-50)', flex: 1 }}>{a.title}</span>
-                      <button onClick={() => onRemoveAction(a.id)} style={{ background: 'none', border: 'none', color: 'var(--navy-400)', fontSize: 14, cursor: 'pointer' }}>×</button>
+                    <div key={a.id} style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '6px 10px', background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <button
+                          onClick={() => onToggleActionCompleted(a)}
+                          aria-label={a.completed ? 'Mark as not done' : 'Mark as done'}
+                          style={{
+                            width: 16, height: 16, borderRadius: '50%',
+                            border: '1.5px solid', borderColor: a.completed ? 'var(--accent)' : 'var(--navy-400)',
+                            background: a.completed ? 'var(--accent)' : 'transparent',
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0, cursor: 'pointer', padding: 0,
+                          }}>
+                          {a.completed && (
+                            <svg width="9" height="7" viewBox="0 0 9 7"><path d="M1 3.5L3.5 6L8 1" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                          )}
+                        </button>
+                        <span style={{
+                          fontSize: 12, color: 'var(--navy-50)', flex: 1,
+                          textDecoration: a.completed ? 'line-through' : 'none',
+                          opacity: a.completed ? 0.55 : 1,
+                        }}>{a.title}</span>
+                        <button onClick={() => onRemoveAction(a.id)} aria-label="Remove action"
+                          style={{ background: 'none', border: 'none', color: 'var(--navy-400)', fontSize: 14, cursor: 'pointer', padding: '0 2px' }}>×</button>
+                      </div>
+                      {/* Tag picker — aligned with title text (24px = 16px checkbox + 8px gap).
+                          Tap a set tag to clear it. Picker dims when the action is completed
+                          since tags lose meaning on closed work, but stays interactable so
+                          undoing the complete restores the prior tag visibly. */}
+                      <div style={{ display: 'flex', gap: 4, paddingLeft: 24, opacity: a.completed ? 0.45 : 1 }}>
+                        {(['backlog', 'waiting', 'doing'] as const).map(t => {
+                          const selected = a.tag === t
+                          return (
+                            <button key={t}
+                              onClick={() => onSetActionTag(a, selected ? null : t)}
+                              style={{
+                                fontSize: 10, padding: '2px 8px', borderRadius: 99, cursor: 'pointer',
+                                border: '1px solid',
+                                borderColor: selected ? 'var(--accent)' : 'var(--navy-600)',
+                                background: selected ? 'var(--accent-dim)' : 'transparent',
+                                color: selected ? 'var(--accent)' : 'var(--navy-400)',
+                                fontWeight: selected ? 600 : 500,
+                              }}>
+                              {t}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
                   ))}
                 </div>

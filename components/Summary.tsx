@@ -195,8 +195,25 @@ export default function Summary({
         // All open actions across all weeks (per design call). Sorted
         // newest-first so this-week's work tends to surface above older
         // carries within each KR's row group.
-        const spaceActions = actions
-          .filter(a => krIds.has(a.roadmap_item_id) && !a.completed)
+        // Dedupe: an action carried forward creates a NEW row each week
+        // (with carried_over=true) without removing the original — so the
+        // same logical action can appear once per week it's been carried.
+        // Collapse to one entry per (kr, title) keeping the most recent.
+        // The historical originals stay in the DB for Reflect/History;
+        // Summary just shows the live working item.
+        const dedupedActions = (() => {
+          const seen = new Map<string, WeeklyAction>()
+          for (const a of actions) {
+            if (!krIds.has(a.roadmap_item_id) || a.completed) continue
+            const key = `${a.roadmap_item_id}::${a.title}`
+            const existing = seen.get(key)
+            if (!existing || a.week_start > existing.week_start) {
+              seen.set(key, a)
+            }
+          }
+          return [...seen.values()]
+        })()
+        const spaceActions = dedupedActions
           .sort((a, b) => b.week_start.localeCompare(a.week_start))
 
         const isCollapsed = collapsed.has(space.id)
