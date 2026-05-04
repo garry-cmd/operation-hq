@@ -54,6 +54,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const [newActionTitle, setNewActionTitle] = useState('')
   const [savingAction, setSavingAction] = useState(false)
   const [titleHover, setTitleHover] = useState(false)
+  const [hoveredKRId, setHoveredKRId] = useState<string | null>(null)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
   const onTrack  = krs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
@@ -228,8 +229,20 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
             <React.Fragment key={kr.id}>
               <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-100)', lineHeight: 1.4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    {kr.title}
+                  <div style={{ lineHeight: 1.4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={() => onObjectiveClick(obj.id)}
+                      onMouseEnter={() => setHoveredKRId(kr.id)}
+                      onMouseLeave={() => setHoveredKRId(null)}
+                      style={{
+                        fontSize: 13, fontWeight: 500,
+                        color: hoveredKRId === kr.id ? 'var(--accent)' : 'var(--navy-100)',
+                        background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                        textAlign: 'left', fontFamily: 'inherit', lineHeight: 1.4,
+                        transition: 'color .12s',
+                      }}>
+                      {kr.title}
+                    </button>
                     {kr.is_metric && (
                       <span title="Metric KR" style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.5px' }}>metric</span>
                     )}
