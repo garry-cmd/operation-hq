@@ -4,15 +4,22 @@ import { Space, AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
 
 interface Props {
   // ALL spaces — Summary is the one screen that intentionally ignores the
-  // active-space filter on the page. Click a row to leave summary mode.
+  // active-space filter on the page. Click a title to leave summary mode;
+  // click a checkbox to toggle done/complete in place.
   spaces: Space[]
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
   actions: WeeklyAction[]
-  // Click handlers — both jump out of summary mode by switching the active
-  // space on the page. See app/hq/page.tsx for the wired implementations.
+  // Title click handlers — both jump out of summary mode by switching the
+  // active space on the page. See app/hq/page.tsx for the wired implementations.
   onOpenObjective: (spaceId: string, objectiveId: string) => void
   onOpenAction: (spaceId: string, action: WeeklyAction) => void
+  // Checkbox-only handlers — toggle complete/done without leaving Summary.
+  // Mirrors the Focus pattern: cb toggles, rest of row navigates. KR un-done
+  // sets health_status back to 'on_track' (asymmetric — there's no prior
+  // state to recover; Roadmap's edit modal can refine if needed).
+  onToggleAction: (action: WeeklyAction) => void
+  onToggleKR: (kr: RoadmapItem) => void
 }
 
 // Square checkbox-style bullet shared by both KR rows and action rows.
@@ -83,18 +90,45 @@ function Chevron({ expanded }: { expanded: boolean }) {
 // unreadable widths.
 const GRID_COLS = 'minmax(120px, 25%) minmax(130px, 1fr) minmax(130px, 1fr)'
 
-const rowButtonStyle: React.CSSProperties = {
+// The row used to be a single <button> covering the whole hit area. After
+// splitting the click target (checkbox = toggle, title = open editor),
+// the row is a <div> with two <button>s inside. Hover stays unified — the
+// outer div paints the hover bg so the row still reads as one zone visually.
+//
+// Total horizontal padding (12 left + 4 right + 4 left + 12 right = 32) and
+// the resulting 8px visual gap between checkbox and title both match the
+// previous single-button row, so no shift in layout vs the prior version.
+const rowDivStyle: React.CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-start',
-  gap: 8,
-  padding: '5px 12px',
+  alignItems: 'stretch',
   width: '100%',
+  transition: 'background .12s',
+}
+
+const cbButtonStyle: React.CSSProperties = {
+  flexShrink: 0,
+  padding: '5px 4px 5px 12px',
   background: 'none',
   border: 'none',
+  outline: 'none',
+  cursor: 'pointer',
+  display: 'flex',
+  alignItems: 'flex-start',
+  fontFamily: 'inherit',
+  WebkitTapHighlightColor: 'transparent',
+}
+
+const titleButtonStyle: React.CSSProperties = {
+  flex: 1,
+  minWidth: 0,
+  padding: '5px 12px 5px 4px',
+  background: 'none',
+  border: 'none',
+  outline: 'none',
   cursor: 'pointer',
   textAlign: 'left',
-  transition: 'background .12s',
   fontFamily: 'inherit',
+  WebkitTapHighlightColor: 'transparent',
 }
 
 export default function Summary({
@@ -104,6 +138,8 @@ export default function Summary({
   actions,
   onOpenObjective,
   onOpenAction,
+  onToggleAction,
+  onToggleKR,
 }: Props) {
   // Per-space collapse state. Persisted to localStorage so the user's last
   // arrangement survives a reload — same pattern as theme + weekStart in
@@ -244,6 +280,7 @@ export default function Summary({
                 padding: '8px 12px',
                 background: space.color,
                 border: 'none',
+                outline: 'none',
                 color: '#fff',
                 fontSize: 13,
                 fontWeight: 700,
@@ -255,6 +292,7 @@ export default function Summary({
                 alignItems: 'center',
                 gap: 10,
                 fontFamily: 'inherit',
+                WebkitTapHighlightColor: 'transparent',
               }}
             >
               <Chevron expanded={!isCollapsed} />
@@ -315,6 +353,7 @@ export default function Summary({
                         padding: '10px 12px',
                         background: 'none',
                         border: 'none',
+                        outline: 'none',
                         borderRight: '1px solid var(--navy-600)',
                         cursor: 'pointer',
                         textAlign: 'left',
@@ -326,6 +365,7 @@ export default function Summary({
                         alignItems: 'flex-start',
                         gap: 8,
                         fontFamily: 'inherit',
+                        WebkitTapHighlightColor: 'transparent',
                       }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--navy-600)')}
                       onMouseLeave={e => (e.currentTarget.style.background = 'none')}
@@ -358,33 +398,46 @@ export default function Summary({
                         // and either signal is enough for this view.
                         const done = kr.status === 'done' || kr.health_status === 'done'
                         return (
-                          <button
+                          <div
                             key={kr.id}
-                            onClick={() => onOpenObjective(space.id, obj.id)}
-                            style={rowButtonStyle}
+                            style={rowDivStyle}
                             onMouseEnter={e =>
                               (e.currentTarget.style.background = 'var(--navy-600)')
                             }
-                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                            onMouseLeave={e =>
+                              (e.currentTarget.style.background = 'transparent')
+                            }
                           >
-                            <Checkbox checked={done} />
-                            <span
-                              style={{
-                                fontSize: 13,
-                                color: done ? 'var(--navy-400)' : 'var(--navy-100)',
-                                textDecoration: done ? 'line-through' : 'none',
-                                lineHeight: 1.35,
-                                // Preserve newlines if the title contains
-                                // them (some users paste multi-line KR
-                                // titles; the screenshot shows this style).
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                minWidth: 0,
-                              }}
+                            <button
+                              onClick={() => onToggleKR(kr)}
+                              style={cbButtonStyle}
+                              aria-label={done ? 'Un-mark done' : 'Mark done'}
                             >
-                              {kr.title}
-                            </span>
-                          </button>
+                              <Checkbox checked={done} />
+                            </button>
+                            <button
+                              onClick={() => onOpenObjective(space.id, obj.id)}
+                              style={titleButtonStyle}
+                            >
+                              <span
+                                style={{
+                                  fontSize: 13,
+                                  color: done ? 'var(--navy-400)' : 'var(--navy-100)',
+                                  textDecoration: done ? 'line-through' : 'none',
+                                  lineHeight: 1.35,
+                                  // Preserve newlines if the title contains
+                                  // them (some users paste multi-line KR
+                                  // titles; the screenshot shows this style).
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                  minWidth: 0,
+                                  display: 'block',
+                                }}
+                              >
+                                {kr.title}
+                              </span>
+                            </button>
+                          </div>
                         )
                       })}
                     </div>
@@ -392,29 +445,43 @@ export default function Summary({
                     {/* Cell 3 — open actions only. */}
                     <div style={{ padding: '4px 0', minWidth: 0 }}>
                       {objActions.map(a => (
-                        <button
+                        <div
                           key={a.id}
-                          onClick={() => onOpenAction(space.id, a)}
-                          style={rowButtonStyle}
+                          style={rowDivStyle}
                           onMouseEnter={e =>
                             (e.currentTarget.style.background = 'var(--navy-600)')
                           }
-                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                          onMouseLeave={e =>
+                            (e.currentTarget.style.background = 'transparent')
+                          }
                         >
-                          <Checkbox checked={false} />
-                          <span
-                            style={{
-                              fontSize: 13,
-                              color: 'var(--navy-200)',
-                              lineHeight: 1.35,
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              minWidth: 0,
-                            }}
+                          <button
+                            onClick={() => onToggleAction(a)}
+                            style={cbButtonStyle}
+                            aria-label={a.completed ? 'Un-complete action' : 'Mark action complete'}
                           >
-                            {a.title}
-                          </span>
-                        </button>
+                            <Checkbox checked={a.completed} />
+                          </button>
+                          <button
+                            onClick={() => onOpenAction(space.id, a)}
+                            style={titleButtonStyle}
+                          >
+                            <span
+                              style={{
+                                fontSize: 13,
+                                color: a.completed ? 'var(--navy-400)' : 'var(--navy-200)',
+                                textDecoration: a.completed ? 'line-through' : 'none',
+                                lineHeight: 1.35,
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                minWidth: 0,
+                                display: 'block',
+                              }}
+                            >
+                              {a.title}
+                            </span>
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>

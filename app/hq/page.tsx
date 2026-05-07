@@ -28,8 +28,9 @@ type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
 
 // MUST match the value in components/SpaceSwitcher.tsx. When the activeSpaceId
 // equals this sentinel, page.tsx routes to Summary (cross-space view) instead
-// of any of the regular tabs, and the bottom nav + FastCapture are hidden
-// since per-space tools don't apply.
+// of any of the regular tabs. The bottom nav and FastCapture stay visible —
+// nav clicks pivot back into the last-used real space, and FastCapture targets
+// that space too. (See goToScreen + fastCaptureSpaceId below.)
 const ALL_SPACES_ID = '__all__'
 
 interface SearchResult { label: string; sub: string; screen: Screen }
@@ -60,6 +61,12 @@ export default function HQPage() {
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
+  // Most-recently-used real (non-sentinel) space. Tracked separately from
+  // activeSpaceId so the bottom nav and FastCapture have a target when the
+  // user is in All Spaces mode — clicking a nav tab from All Spaces switches
+  // back into this space, and FastCapture writes here. Persisted so the
+  // value survives a reload that lands directly on All Spaces.
+  const [lastRealSpaceId, setLastRealSpaceId] = useState('')
   const [closingWizard, setClosingWizard] = useState<string | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
   // Currently-open action panel on the Focus tab. Lifted to page level so
@@ -105,6 +112,12 @@ export default function HQPage() {
   function switchSpace(spaceId: string) {
     setActiveSpaceId(spaceId)
     localStorage.setItem('hq-active-space', spaceId)
+    // Track last-real so All Spaces mode has a fallback for nav clicks and
+    // FastCapture. The sentinel itself never becomes the "last real" target.
+    if (spaceId !== ALL_SPACES_ID) {
+      setLastRealSpaceId(spaceId)
+      localStorage.setItem('hq-last-real-space-id', spaceId)
+    }
   }
 
   function toggleTheme() {
@@ -173,6 +186,15 @@ export default function HQPage() {
       validId = sp.find(s => s.id === savedSpaceId)?.id ?? sp[0]?.id ?? ''
     }
     setActiveSpaceId(validId)
+    // Hydrate last-real-space id. Falls back to the active id (when it's a
+    // real space) and finally to the first space — so clicking a nav tab
+    // from All Spaces always has somewhere to land, even on first run.
+    const savedLastReal = localStorage.getItem('hq-last-real-space-id')
+    const validLastReal =
+      sp.find(s => s.id === savedLastReal)?.id
+      ?? (validId !== ALL_SPACES_ID ? validId : sp[0]?.id)
+      ?? ''
+    setLastRealSpaceId(validLastReal)
     setLoading(false)
   }, [])
 
@@ -267,6 +289,35 @@ export default function HQPage() {
     setOpenObjectiveId(null)
   }
 
+  // Checkbox handlers fired from Summary. Toggle in place; do NOT switch
+  // space or screen. Keeps the user in the All Spaces overview while they
+  // tick things off.
+  async function toggleActionFromSummary(action: WeeklyAction) {
+    try {
+      const updated = await actionsDb.update(action.id, { completed: !action.completed })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+    } catch (err) {
+      console.error('toggleAction (Summary) failed:', err)
+    }
+  }
+  async function toggleKRFromSummary(kr: RoadmapItem) {
+    // Summary's done check is `status === 'done' || health_status === 'done'`,
+    // so to truly un-done a KR we need to clear `status: 'done'` if set —
+    // otherwise the OR keeps it visually checked. Marking done only touches
+    // health_status to avoid stomping a `planned` or `abandoned` status that
+    // some other flow set.
+    const isDone = kr.health_status === 'done' || kr.status === 'done'
+    const patch: Partial<RoadmapItem> = isDone
+      ? { health_status: 'on_track', ...(kr.status === 'done' ? { status: 'active' as const } : {}) }
+      : { health_status: 'done' }
+    try {
+      const updated = await krsDb.update(kr.id, patch)
+      setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
+    } catch (err) {
+      console.error('toggleKR (Summary) failed:', err)
+    }
+  }
+
   // Space-scoped data — everything filters from the active space's objectives.
   // When in All Spaces mode these are all empty (no real space matches the
   // sentinel id), but Summary takes the un-scoped lists directly so it
@@ -284,13 +335,41 @@ export default function HQPage() {
   const spaceLogs = logs.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
 
-  // Nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking
+  // Nav click handler. From a real space, this is just setScreen. From All
+  // Spaces, it pivots into the last-used real space first (per-screen tabs
+  // assume a single space, so there's no useful "All Spaces Focus" view).
+  // Fallback to first space if for some reason there's no last-real id.
+  function goToScreen(target: Screen) {
+    if (isAllSpaces) {
+      const fallbackId = lastRealSpaceId || spaces[0]?.id || ''
+      if (fallbackId) switchSpace(fallbackId)
+    }
+    setScreen(target)
+  }
+
+  // FastCapture target — uses the active space normally, falls back to the
+  // last-used real space when in All Spaces. Empty string means "nothing to
+  // target" (only possible for fresh users with zero spaces); in that case
+  // the FastCapture FAB is suppressed entirely.
+  const fastCaptureSpaceId = isAllSpaces ? lastRealSpaceId : activeSpaceId
+  const fastCaptureObjectives = isAllSpaces
+    ? objectives.filter(o => o.space_id === lastRealSpaceId)
+    : spaceObjectives
+  const fastCaptureRoadmapItems = isAllSpaces
+    ? roadmapItems.filter(i => i.space_id === lastRealSpaceId)
+    : spaceRoadmapItems
+
+  // Nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking. Active highlight is
+  // suppressed in All Spaces (no tab is the "current" tab when the cross-
+  // space view is active — the SpaceSwitcher's "All Spaces" entry carries
+  // that visual instead).
+  const navActive = (id: Screen) => !isAllSpaces && screen === id
   const NAV: { id: Screen; label: string; icon: React.ReactNode; fab?: boolean }[] = [
-    { id: 'reflect',  label: 'Reflect',  icon: <ReflectIcon  active={screen === 'reflect'} /> },
-    { id: 'focus',    label: 'Focus',    icon: <FocusIcon    active={screen === 'focus'} /> },
+    { id: 'reflect',  label: 'Reflect',  icon: <ReflectIcon  active={navActive('reflect')} /> },
+    { id: 'focus',    label: 'Focus',    icon: <FocusIcon    active={navActive('focus')} /> },
     { id: 'okr',      label: 'OKRs',     icon: <OKRIcon />, fab: true },
-    { id: 'roadmap',  label: 'Roadmap',  icon: <RoadmapIcon  active={screen === 'roadmap'} /> },
-    { id: 'park',     label: 'Parking',  icon: <ParkIcon     active={screen === 'park'} /> },
+    { id: 'roadmap',  label: 'Roadmap',  icon: <RoadmapIcon  active={navActive('roadmap')} /> },
+    { id: 'park',     label: 'Parking',  icon: <ParkIcon     active={navActive('park')} /> },
   ]
 
   return (
@@ -383,6 +462,8 @@ export default function HQPage() {
             actions={actions}
             onOpenObjective={openObjectiveFromSummary}
             onOpenAction={openActionFromSummary}
+            onToggleAction={toggleActionFromSummary}
+            onToggleKR={toggleKRFromSummary}
           />
         ) : (
           <>
@@ -395,41 +476,41 @@ export default function HQPage() {
         )}
       </main>
 
-      {/* Footer nav — hidden in All Spaces mode since the per-screen tabs
-          (Focus / OKRs / Roadmap / Reflect / Park) all assume a single space.
-          Way back is via the SpaceSwitcher pill or by clicking into a space
-          from Summary itself. */}
-      {!isAllSpaces && (
+      {/* Footer nav — visible in every mode including All Spaces. From All
+          Spaces, clicking a tab pivots into the last-used real space + that
+          tab (per-screen tabs all assume a single space). The SpaceSwitcher
+          pill remains the way to deliberately stay in All Spaces while
+          changing tab context. */}
       <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 72, background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '0 8px', zIndex: 40 }}>
         {NAV.map(item => item.fab ? (
-          <button key={item.id} onClick={() => setScreen(item.id)}
+          <button key={item.id} onClick={() => goToScreen(item.id)}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', marginTop: -20 }}>
-            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--accent)', border: '3px solid var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: screen === item.id ? '0 0 0 3px var(--accent-dim)' : 'none', transition: 'box-shadow .2s' }}>
+            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--accent)', border: '3px solid var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: !isAllSpaces && screen === item.id ? '0 0 0 3px var(--accent-dim)' : 'none', transition: 'box-shadow .2s' }}>
               {item.icon}
             </div>
-            <span style={{ fontSize: 10, fontWeight: 700, color: screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
+            <span style={{ fontSize: 10, fontWeight: 700, color: !isAllSpaces && screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
           </button>
         ) : (
-          <button key={item.id} onClick={() => setScreen(item.id)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: screen === item.id ? 'var(--accent-dim)' : 'none', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: 12, minWidth: 56, position: 'relative', transition: 'background .15s' }}>
+          <button key={item.id} onClick={() => goToScreen(item.id)}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: !isAllSpaces && screen === item.id ? 'var(--accent-dim)' : 'none', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: 12, minWidth: 56, position: 'relative', transition: 'background .15s' }}>
             {item.id === 'park' && parkedCount > 0 && (
               <span style={{ position: 'absolute', top: 2, right: 6, background: 'var(--amber)', color: '#0b1520', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, lineHeight: 1.4 }}>{parkedCount}</span>
             )}
             {item.icon}
-            <span style={{ fontSize: 10, fontWeight: 600, color: screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, color: !isAllSpaces && screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
           </button>
         ))}
       </nav>
-      )}
 
-      {/* FastCapture is hidden in All Spaces mode — it requires a single
-          target space to attach captured items to. */}
-      {!isAllSpaces && (
+      {/* FastCapture — also visible in All Spaces, where it targets the
+          last-used real space. Only suppressed if there's no real space at
+          all (no-op edge case for fresh users with zero spaces). */}
+      {fastCaptureSpaceId && (
       <FastCapture
-        objectives={spaceObjectives}
-        roadmapItems={spaceRoadmapItems}
+        objectives={fastCaptureObjectives}
+        roadmapItems={fastCaptureRoadmapItems}
         weekStart={weekStart}
-        activeSpaceId={activeSpaceId}
+        activeSpaceId={fastCaptureSpaceId}
         setObjectives={setObjectives}
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}
