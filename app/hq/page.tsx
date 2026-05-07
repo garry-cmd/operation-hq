@@ -339,10 +339,24 @@ export default function HQPage() {
   // Spaces, it pivots into the last-used real space first (per-screen tabs
   // assume a single space, so there's no useful "All Spaces Focus" view).
   // Fallback to first space if for some reason there's no last-real id.
+  //
+  // Focus snap: if weekStart is in the past, advance it to today's Monday.
+  // Past weeks are read-only territory for the Reflect tab; Focus from the
+  // bottom nav should land on "now," not wherever the user last walked
+  // backward to with Focus's own ‹ button (which persisted to localStorage).
+  // Forward weekStart values (e.g. pre-planned next week) are left alone.
+  // Other entry points to Focus that intentionally target a specific week —
+  // openActionFromSummary, the close-week wizard's commitFinish — set
+  // weekStart directly without going through goToScreen, so they're
+  // unaffected by this snap.
   function goToScreen(target: Screen) {
     if (isAllSpaces) {
       const fallbackId = lastRealSpaceId || spaces[0]?.id || ''
       if (fallbackId) switchSpace(fallbackId)
+    }
+    if (target === 'focus') {
+      const today = getMonday()
+      if (weekStart < today) setWeekStart(() => today)
     }
     setScreen(target)
   }
