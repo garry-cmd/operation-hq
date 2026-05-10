@@ -20,6 +20,9 @@ export type NewReviewInput = {
   adjust_notes: string
   krs_hit: number
   krs_total: number
+  // Optional: set on creation by skipWeek (skip-as-close in one write so a
+  // skip never leaves a draft behind). commitFinish uses markClosed instead.
+  closed_at?: string | null
 }
 
 /** All reviews across all spaces, newest first. */
@@ -54,4 +57,15 @@ export async function update(
     .single()
   if (error) throw error
   return data
+}
+
+/**
+ * Mark a review row as fully closed. Called by the wizard's commitFinish
+ * (normal close) and skipWeek (skip-as-close). Drafts have closed_at = null
+ * until this fires; the forced-launch effect in app/hq/page.tsx ignores rows
+ * with closed_at = null so abandoning the wizard mid-Step-2 doesn't suppress
+ * the re-prompt.
+ */
+export async function markClosed(id: string): Promise<WeeklyReview> {
+  return update(id, { closed_at: new Date().toISOString() })
 }

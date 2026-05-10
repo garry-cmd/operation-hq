@@ -115,6 +115,12 @@ export interface WeeklyReview {
   krs_hit: number
   krs_total: number
   space_id: string
+  // Set by the wizard's commitFinish (after Step 2 → celebrating → Open the
+  // week) or by skipWeek. NULL means the review row is a draft — Step 1 was
+  // saved but the user bailed before fully committing. Forced-launch in
+  // app/hq/page.tsx uses this to re-prompt drafts; the old "row exists ⇒
+  // closed" contract trapped users mid-flow.
+  closed_at: string | null
 }
 
 export interface HabitCheckin {

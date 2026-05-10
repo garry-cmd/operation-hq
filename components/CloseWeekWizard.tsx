@@ -364,6 +364,11 @@ export default function CloseWeekWizard({
         adjust_notes: '[skipped]',
         krs_hit: 0,
         krs_total: 0,
+        // Skip is "close-as-marker" — there is no Step 2 to resume, so write
+        // closed_at in the same DB roundtrip. A skip that left closed_at=null
+        // would self-contradict (forced-launch would re-prompt the skipped
+        // week, defeating the whole point of skipping).
+        closed_at: new Date().toISOString(),
       }
       if (existingReview) {
         try {
@@ -395,7 +400,25 @@ export default function CloseWeekWizard({
     setCelebrating(true)
   }
 
-  function commitFinish() {
+  async function commitFinish() {
+    // Mark the review as fully closed. Without this, the forced-launch in
+    // app/hq/page.tsx would suppress re-prompting (it used to treat any
+    // review row as "closed"), but abandoned mid-Step-2 sessions left
+    // closed_at = null. Reaching commitFinish IS the moment the user has
+    // explicitly completed the ceremony, so this is where we write it.
+    const reviewRow = reviews.find(r => r.week_start === closingWeek)
+    if (reviewRow && !reviewRow.closed_at) {
+      try {
+        const closed = await reviewsDb.markClosed(reviewRow.id)
+        setReviews(prev => prev.map(r => r.id === reviewRow.id ? closed : r))
+      } catch (err) {
+        // Don't block the week advance on this — it's an audit marker, not
+        // load-bearing for the user's next action. Surface it though, so a
+        // persistent failure isn't silent.
+        console.error('markClosed failed:', err)
+        toast('Closed locally — could not save close marker.')
+      }
+    }
     setWeekStart(() => nextWeek)
     try { window.localStorage.removeItem(storageKey) } catch { /* noop */ }
     toast(`Week of ${formatWeek(closingWeek)} closed`)

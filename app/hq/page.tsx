@@ -221,10 +221,13 @@ export default function HQPage() {
       roadmapItems.filter(i => i.space_id === activeSpaceId).map(i => i.id)
     )
 
-    const hasReview = reviews.some(
-      r => r.space_id === activeSpaceId && r.week_start === lastMonday
+    // Only a fully-closed review (closed_at set by commitFinish/skipWeek)
+    // suppresses the re-prompt. A draft (Step 1 saved, Step 2 abandoned)
+    // still triggers — the user wants to be brought back to finish closing.
+    const hasClosedReview = reviews.some(
+      r => r.space_id === activeSpaceId && r.week_start === lastMonday && r.closed_at != null
     )
-    if (hasReview) return
+    if (hasClosedReview) return
 
     const hadActions = actions.some(
       a => spaceKRIds.has(a.roadmap_item_id) && a.week_start === lastMonday
