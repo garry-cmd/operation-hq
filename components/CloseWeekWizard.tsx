@@ -21,7 +21,7 @@ const HEALTH_OPTIONS: { value: HealthStatus; label: string; bg: string; fg: stri
   { value: 'off_track', label: 'off track', bg: 'var(--red-bg, #f4dcd2)',   fg: 'var(--red-text, #7a3a28)' },
   { value: 'blocked',   label: 'blocked',   bg: 'var(--amber-bg, #f4e4c2)', fg: 'var(--amber-text, #6a4a10)' },
   { value: 'backlog',   label: 'backlog',   bg: 'var(--navy-600, #c0ccdc)', fg: 'var(--navy-100, #2a3a5a)' },
-  { value: 'done',      label: 'done',      bg: 'var(--navy-700, #2a3a5a)', fg: 'var(--navy-50, #fff)' },
+  { value: 'done',      label: 'done',      bg: 'var(--navy-50)',           fg: 'var(--navy-900)' },
 ]
 
 const RATINGS: { value: ReviewRating; label: string; color: string }[] = [
