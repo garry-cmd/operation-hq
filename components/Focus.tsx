@@ -54,6 +54,14 @@ export default function Focus({
   logs, setLogs, openActionId, setOpenActionId,
 }: Props) {
   const [planning, setPlanning] = useState(false)
+  // Inline-add state for the per-KR "+ Add action" row.
+  // addingForKR is the KR id whose input is open (only one at a time);
+  // draftTitle is the in-progress title. Cleared after each submit so the
+  // input stays open + focused for batch entry. Hitting Enter on an empty
+  // input is treated as "close" — symmetrical with Escape, and the natural
+  // mobile dismissal (no keyboard Escape).
+  const [addingForKR, setAddingForKR] = useState<string | null>(null)
+  const [draftTitle, setDraftTitle] = useState('')
   const activeKRs = getCurrentQuarterKRs(roadmapItems, ACTIVE_Q)
   const habitKRs = activeKRs.filter(kr => kr.is_habit)
   const today = getToday()
@@ -127,6 +135,31 @@ export default function Focus({
       setActions(prev => prev.map(a => a.id === action.id ? updated : a))
     } catch (err) {
       console.error('toggleAction failed:', err)
+    }
+  }
+
+  // Inline-add submit. Empty title closes the input (Enter-on-empty as
+  // dismiss). On success: append optimistically, clear the draft, leave
+  // the input mounted so focus is retained for batch entry. Failure
+  // surfaces a toast but leaves the draft intact so the user can retry.
+  async function createInlineAction(krId: string) {
+    const title = draftTitle.trim()
+    if (!title) {
+      setAddingForKR(null)
+      setDraftTitle('')
+      return
+    }
+    try {
+      const created = await actionsDb.create({
+        roadmap_item_id: krId,
+        title,
+        week_start: weekStart,
+      })
+      setActions(prev => [...prev, created])
+      setDraftTitle('')
+    } catch (err) {
+      console.error('createInlineAction failed:', err)
+      toast('Could not add action')
     }
   }
 
@@ -417,6 +450,52 @@ export default function Focus({
                         </div>
                       </div>
                     ))}
+                    {/* Inline-add affordance. Only renders for real KR groups
+                        (orphan-action buckets have no KR to attach to). Tap the
+                        dashed button → it morphs into an input with autoFocus.
+                        Enter submits, Enter-on-empty closes, Esc closes, × closes.
+                        Input stays mounted across submits so focus is preserved
+                        for rapid batch entry. */}
+                    {krGroup.kr && (
+                      addingForKR === krGroup.kr.id ? (
+                        <div style={{ background: 'var(--navy-800)', border: '1px solid var(--accent)', borderRadius: 14, padding: '13px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 13 }}>
+                          <div style={{ width: 26, height: 26, borderRadius: '50%', flexShrink: 0, border: '2px solid var(--accent)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>+</div>
+                          <input
+                            autoFocus
+                            type="text"
+                            value={draftTitle}
+                            onChange={e => setDraftTitle(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                createInlineAction(krGroup.kr!.id)
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault()
+                                setAddingForKR(null)
+                                setDraftTitle('')
+                              }
+                            }}
+                            placeholder="Action title — Enter to add, Esc to close"
+                            style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: 500, color: 'var(--navy-50)', background: 'transparent', border: 'none', outline: 'none', padding: 0, fontFamily: 'inherit', lineHeight: 1.35 }}
+                          />
+                          <button
+                            onClick={() => { setAddingForKR(null); setDraftTitle('') }}
+                            aria-label="Close add"
+                            style={{ flexShrink: 0, width: 22, height: 22, borderRadius: '50%', border: 'none', background: 'transparent', color: 'var(--navy-400)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, lineHeight: 1, padding: 0 }}
+                          >×</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setAddingForKR(krGroup.kr!.id); setDraftTitle('') }}
+                          style={{ width: '100%', background: 'transparent', border: '1px dashed var(--navy-600)', borderRadius: 14, padding: '11px 15px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 11, color: 'var(--navy-400)', fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'left', transition: 'border-color .12s, color .12s' }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--navy-500)'; e.currentTarget.style.color = 'var(--navy-200)' }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--navy-600)'; e.currentTarget.style.color = 'var(--navy-400)' }}
+                        >
+                          <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1 }}>+</span>
+                          <span>Add action</span>
+                        </button>
+                      )
+                    )}
                   </div>
                 )
               })}

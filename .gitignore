@@ -6,4 +6,10 @@ node_modules/
 out/
 *.tsbuildinfo
 next-env.d.ts
+<<<<<<< HEAD
 .vercel
+=======
+
+.vercel
+.env*.local
+>>>>>>> aaf6a74 (Focus: inline + Add action row per KR group)
