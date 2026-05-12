@@ -45,7 +45,10 @@ interface Props {
 }
 
 export default function ObjectiveCard({ obj, krs, actions, weekStart, metricCheckins, setRoadmapItems, setObjectives, setActions, onEditKR, onLogMetric, onObjectiveClick, isActive, toast }: Props) {
-  const [collapsed, setCollapsed] = useState(true)
+  // Default to expanded — objectives are the primary surface of the OKRs tab,
+  // and keeping their KRs visible by tab-load avoids a click-per-objective tax.
+  // No localStorage persistence; collapse state is per-mount.
+  const [collapsed, setCollapsed] = useState(false)
   const [addingKR, setAddingKR] = useState(false)
   const [newKRTitle, setNewKRTitle] = useState('')
   const [newKRIsHabit, setNewKRIsHabit] = useState(false)
