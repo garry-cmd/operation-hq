@@ -28,7 +28,7 @@ interface Props {
 
   // Space switching — passed through to SpaceSwitcher unchanged.
   spaces: Space[]
-  activeSpaceId: string | null
+  activeSpaceId: string
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
   onSpaceSelect: (id: string) => void
