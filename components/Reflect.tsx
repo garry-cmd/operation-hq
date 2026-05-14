@@ -46,7 +46,13 @@ type Props = {
 }
 
 export default function Reflect({ reviews, setReviews, toast }: Props) {
-  const sorted = [...reviews].sort((a, b) => b.week_start.localeCompare(a.week_start))
+  // Drafts (closed_at = null) don't belong in the archive — they're
+  // half-finished ceremonies, not historical entries. The page-level draft
+  // banner brings the user back to finish them; the forced-launcher in
+  // app/hq/page.tsx fires the wizard on space switch when one's pending.
+  const sorted = [...reviews]
+    .filter(r => r.closed_at != null)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start))
 
   return (
     <div>

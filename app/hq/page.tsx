@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
-import { getMonday, ACTIVE_Q, addWeeks } from '@/lib/utils'
+import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
@@ -337,6 +337,13 @@ export default function HQPage() {
   const spaceLinks = links.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceLogs = logs.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
+  // In-progress draft for this space (Step 1 saved, Step 2 abandoned).
+  // Surfaced as the page-level banner below — the lighter parallel to the
+  // forced-launcher overlay. Null when no draft, so the banner stays hidden.
+  // Multiple drafts shouldn't exist in practice (unique constraint on
+  // (space_id, week_start) + only commitFinish/skipWeek set closed_at), so
+  // first match is fine.
+  const draftReview = spaceReviews.find(r => r.closed_at == null) ?? null
 
   // Nav click handler. From a real space, this is just setScreen. From All
   // Spaces, it pivots into the last-used real space first (per-screen tabs
@@ -484,6 +491,27 @@ export default function HQPage() {
           />
         ) : (
           <>
+            {draftReview && (
+              <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                padding: '10px 14px', marginBottom: 16,
+                background: 'var(--amber-bg)', border: '1px solid var(--amber-text)', borderRadius: 10,
+              }}>
+                <div style={{ fontSize: 13, color: 'var(--amber-text)', lineHeight: 1.4 }}>
+                  <strong style={{ fontWeight: 600 }}>Close in progress</strong> — you started reflecting on the week of <strong style={{ fontWeight: 600 }}>{formatWeek(draftReview.week_start)}</strong> but haven&apos;t finished planning yet.
+                </div>
+                <button
+                  onClick={() => setClosingWizard(draftReview.week_start)}
+                  style={{
+                    fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 999,
+                    background: 'var(--amber-text)', color: 'var(--navy-900)', border: 'none',
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}
+                >
+                  Resume →
+                </button>
+              </div>
+            )}
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
