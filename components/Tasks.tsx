@@ -23,7 +23,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, Priority } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
-import { parseQuickAdd, todayISO } from '@/lib/recurrence'
+import { parseQuickAdd, parseRecurrence, todayISO } from '@/lib/recurrence'
 
 interface Props {
   spaces: Space[]
@@ -457,7 +457,7 @@ function TaskRow({ task, tags, space, selected, onToggle, onClick }: {
         }}>
         {done && '✓'}
       </span>
-      <span style={{ width: 10, height: 10, borderRadius: 2, background: PRIORITY_COLOR[task.priority], border: task.priority === 4 ? '1px solid var(--navy-500)' : 'none' }} />
+      <span style={{ width: 10, height: 10, borderRadius: 2, background: task.priority < 4 ? PRIORITY_COLOR[task.priority] : 'transparent' }} />
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
         <span style={{ fontSize: 13.5, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {task.title}
@@ -489,8 +489,15 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
   const [title, setTitle] = useState(task.title)
   const [desc, setDesc] = useState(task.description ?? '')
   const [tagInput, setTagInput] = useState('')
+  const [recurrenceInput, setRecurrenceInput] = useState(task.recurrence_text ?? '')
+  const [recurrenceError, setRecurrenceError] = useState<string | null>(null)
   // Keep local state in sync when the selected task changes
-  useEffect(() => { setTitle(task.title); setDesc(task.description ?? '') }, [task.id])
+  useEffect(() => {
+    setTitle(task.title)
+    setDesc(task.description ?? '')
+    setRecurrenceInput(task.recurrence_text ?? '')
+    setRecurrenceError(null)
+  }, [task.id])
 
   const space = spaces.find(s => s.id === task.space_id)
   const linkedKR = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
@@ -501,6 +508,29 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
   function commitDesc() {
     const v = desc.trim() || null
     if (v !== task.description) onPatch({ description: v })
+  }
+  function commitRecurrence() {
+    const trimmed = recurrenceInput.trim()
+    setRecurrenceError(null)
+    if (!trimmed) {
+      if (task.recurrence_text) onPatch({ recurrence_text: null, recurrence_rule: null })
+      return
+    }
+    if (trimmed === task.recurrence_text) return
+    const parsed = parseRecurrence(trimmed)
+    if (!parsed) {
+      setRecurrenceError("Couldn't parse — try 'every monday', 'daily', 'every 2 weeks'")
+      return
+    }
+    // DB CHECK constraint: recurring task must have a due_date.
+    // If none set, default to today so the row is valid.
+    const patch: Partial<Task> = {
+      recurrence_text: parsed.text,
+      recurrence_rule: parsed.rule,
+    }
+    if (!task.due_date) patch.due_date = todayISO()
+    onPatch(patch)
+    setRecurrenceInput(parsed.text) // normalize displayed text
   }
   function addTag() {
     const t = tagInput.trim().toLowerCase().replace(/^#/, '')
@@ -543,16 +573,19 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
       </Field>
 
       <Field label="Recurrence">
-        <span style={{ fontSize: 12, color: task.recurrence_text ? 'var(--navy-100)' : 'var(--navy-400)' }}>
-          {task.recurrence_text ?? 'One-shot'}
-        </span>
-        {task.recurrence_text && (
-          <button onClick={() => onPatch({ recurrence_text: null, recurrence_rule: null })}
-            style={{ marginLeft: 8, fontSize: 11, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer' }}>
-            Clear
-          </button>
-        )}
+        <input
+          value={recurrenceInput}
+          onChange={e => setRecurrenceInput(e.target.value)}
+          onBlur={commitRecurrence}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } }}
+          placeholder="One-shot (try 'every monday', 'daily')"
+          style={{ ...inputStyle, fontSize: 12 }} />
       </Field>
+      {recurrenceError && (
+        <div style={{ fontSize: 10.5, color: 'var(--red-text)', marginTop: -8, marginBottom: 10, paddingLeft: 2 }}>
+          {recurrenceError}
+        </div>
+      )}
 
       <Field label="Space">
         <span style={{ fontSize: 12, color: 'var(--navy-100)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
