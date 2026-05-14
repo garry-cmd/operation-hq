@@ -499,22 +499,6 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
           {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
         </header>
 
-        {/* Quick-add */}
-        <form onSubmit={e => { e.preventDefault(); onQuickAdd() }}>
-          <input ref={quickAddRef}
-            value={quickAdd}
-            onChange={e => setQuickAdd(e.target.value)}
-            placeholder='+ Add task… try "review deck tomorrow 3pm #stellar p1"'
-            style={{
-              width: '100%', padding: '10px 14px', marginBottom: 6,
-              background: 'var(--navy-800)', border: '1px dashed var(--navy-500)', borderRadius: 8,
-              color: 'var(--navy-100)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
-              transition: 'border-color .15s',
-            }}
-            onFocus={e => { e.currentTarget.style.borderStyle = 'solid'; e.currentTarget.style.borderColor = 'var(--accent)' }}
-            onBlur={e => { e.currentTarget.style.borderStyle = 'dashed'; e.currentTarget.style.borderColor = 'var(--navy-500)' }} />
-        </form>
-
         {sections.length === 0 && (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
             Nothing here. {scope.kind === 'smart' && scope.view === 'today' && 'Enjoy your day.'}
@@ -537,6 +521,22 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
             ))}
           </section>
         ))}
+
+        {/* Quick-add — sits at the bottom of the list, after all sections */}
+        <form onSubmit={e => { e.preventDefault(); onQuickAdd() }} style={{ marginTop: 18 }}>
+          <input ref={quickAddRef}
+            value={quickAdd}
+            onChange={e => setQuickAdd(e.target.value)}
+            placeholder='+ Add task… try "review deck tomorrow 3pm #stellar p1"'
+            style={{
+              width: '100%', padding: '10px 14px',
+              background: 'var(--navy-800)', border: '1px dashed var(--navy-500)', borderRadius: 8,
+              color: 'var(--navy-100)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+              transition: 'border-color .15s',
+            }}
+            onFocus={e => { e.currentTarget.style.borderStyle = 'solid'; e.currentTarget.style.borderColor = 'var(--accent)' }}
+            onBlur={e => { e.currentTarget.style.borderStyle = 'dashed'; e.currentTarget.style.borderColor = 'var(--navy-500)' }} />
+        </form>
       </main>
 
       {/* ── Detail panel ── */}
