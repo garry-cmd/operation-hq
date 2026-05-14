@@ -17,20 +17,22 @@ import Focus from '@/components/Focus'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Summary from '@/components/Summary'
+import Tasks from '@/components/Tasks'
+import Notes from '@/components/Notes'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
-import SpaceSwitcher from '@/components/SpaceSwitcher'
+import NavRail from '@/components/NavRail'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
 import MetricLogModal from '@/components/MetricLogModal'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park'
+type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes'
 
 // MUST match the value in components/SpaceSwitcher.tsx. When the activeSpaceId
 // equals this sentinel, page.tsx routes to Summary (cross-space view) instead
-// of any of the regular tabs. The bottom nav and FastCapture stay visible —
-// nav clicks pivot back into the last-used real space, and FastCapture targets
-// that space too. (See goToScreen + fastCaptureSpaceId below.)
+// of any of the regular tabs. The NavRail stays visible — screen clicks pivot
+// back into the last-used real space, and FastCapture targets that space too.
+// (See goToScreen + fastCaptureSpaceId below.)
 const ALL_SPACES_ID = '__all__'
 
 interface SearchResult { label: string; sub: string; screen: Screen }
@@ -41,13 +43,9 @@ export default function HQPage() {
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
   const [weekStart, setWeekStartRaw] = useState<string>(getMonday())
-  const [avatarOpen, setAvatarOpen] = useState(false)
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchFocused, setSearchFocused] = useState(false)
-  const searchRef = useRef<HTMLInputElement>(null)
-  const avatarRef = useRef<HTMLDivElement>(null)
 
   const [objectives, setObjectives] = useState<AnnualObjective[]>([])
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([])
@@ -131,14 +129,6 @@ export default function HQPage() {
     supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user ?? null))
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null))
     return () => subscription.unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (avatarRef.current && !avatarRef.current.contains(e.target as Node)) setAvatarOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
   }, [])
 
   const loadAll = useCallback(async () => {
@@ -260,7 +250,7 @@ export default function HQPage() {
     }
     const link = `${window.location.origin}/share/${shareToken}`
     navigator.clipboard.writeText(link)
-    setCopied(true); setAvatarOpen(false); setToast('Share link copied!')
+    setCopied(true); setToast('Share link copied!')
     setTimeout(() => setCopied(false), 2000)
   }
 
@@ -387,96 +377,39 @@ export default function HQPage() {
     ? roadmapItems.filter(i => i.space_id === lastRealSpaceId)
     : spaceRoadmapItems
 
-  // Nav — Reflect | Focus | OKRs⚡ | Roadmap | Parking. Active highlight is
-  // suppressed in All Spaces (no tab is the "current" tab when the cross-
-  // space view is active — the SpaceSwitcher's "All Spaces" entry carries
-  // that visual instead).
-  const navActive = (id: Screen) => !isAllSpaces && screen === id
-  const NAV: { id: Screen; label: string; icon: React.ReactNode; fab?: boolean }[] = [
-    { id: 'reflect',  label: 'Reflect',  icon: <ReflectIcon  active={navActive('reflect')} /> },
-    { id: 'focus',    label: 'Focus',    icon: <FocusIcon    active={navActive('focus')} /> },
-    { id: 'okr',      label: 'OKRs',     icon: <OKRIcon />, fab: true },
-    { id: 'roadmap',  label: 'Roadmap',  icon: <RoadmapIcon  active={navActive('roadmap')} /> },
-    { id: 'park',     label: 'Parking',  icon: <ParkIcon     active={navActive('park')} /> },
-  ]
+  // Active-screen detection is now owned by NavRail; the bottom nav and its
+  // NAV/navActive scaffolding were removed when the rail landed.
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', background: 'var(--navy-900)' }}>
-      {/* Topbar */}
-      <header style={{ position: 'sticky', top: 0, zIndex: 40, height: 54, background: 'var(--navy-800)', borderBottom: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', padding: '0 16px', gap: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)' }}>
-            Op <span style={{ color: 'var(--accent)' }}>HQ</span>
-          </div>
-          {spaces.length > 0 && (
-            <SpaceSwitcher
-              spaces={spaces}
-              activeSpaceId={activeSpaceId}
-              objectives={objectives}
-              roadmapItems={roadmapItems}
-              onSelect={switchSpace}
-              onSpaceCreated={space => setSpaces(prev => [...prev, space])}
-              onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
-            />
-          )}
-        </div>
-        {/* Search */}
-        <div style={{ flex: 1, position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--navy-700)', border: `1px solid ${searchFocused ? 'var(--accent)' : 'var(--navy-500)'}`, borderRadius: 99, height: 34, padding: '0 12px', transition: 'border-color .15s' }}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}><circle cx="5.5" cy="5.5" r="4" stroke="var(--navy-400)" strokeWidth="1.4"/><path d="M9 9l2.5 2.5" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round"/></svg>
-            <input ref={searchRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocused(true)} onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-              placeholder="Search objectives, key results, actions…"
-              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', fontSize: 12, color: 'var(--navy-100)', fontFamily: 'inherit' }} />
-            {searchQuery && <button onClick={() => setSearchQuery('')} style={{ color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
-          </div>
-          {searchFocused && searchResults.length > 0 && (
-            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4, background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 12, overflow: 'hidden', zIndex: 50 }}>
-              {searchResults.map((r, i) => (
-                <button key={i} onMouseDown={() => { setScreen(r.screen); setSearchQuery(''); setSearchFocused(false) }}
-                  style={{ width: '100%', padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 2, background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)', cursor: 'pointer', textAlign: 'left' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--navy-600)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                  <span style={{ fontSize: 12, color: 'var(--navy-50)', fontWeight: 500 }}>{r.label}</span>
-                  <span style={{ fontSize: 10, color: 'var(--navy-400)' }}>{r.sub}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        {/* Avatar */}
-        <div ref={avatarRef} style={{ position: 'relative', flexShrink: 0 }}>
-          <button onClick={() => setAvatarOpen(o => !o)}
-            style={{ width: 32, height: 32, borderRadius: '50%', background: avatarOpen ? 'var(--accent)' : 'var(--accent-dim)', color: avatarOpen ? '#fff' : 'var(--accent)', fontSize: 11, fontWeight: 700, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {initials}
-          </button>
-          {avatarOpen && (
-            <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 6, background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 12, overflow: 'hidden', minWidth: 190, zIndex: 50 }}>
-              <button onClick={() => { toggleTheme(); setAvatarOpen(false) }}
-                style={{ width: '100%', padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)', cursor: 'pointer', fontSize: 12, color: 'var(--navy-100)', textAlign: 'left' }}>
-                {theme === 'dark'
-                  ? <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="7" r="3" stroke="currentColor" strokeWidth="1.3"/><path d="M7 1v1M7 12v1M1 7h1M12 7h1M2.9 2.9l.7.7M10.4 10.4l.7.7M10.4 2.9l-.7.7M2.9 10.4l.7-.7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                  : <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12 7.5A5 5 0 1 1 6.5 2a3.5 3.5 0 0 0 5.5 5.5Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"/></svg>
-                }
-                {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              </button>
-              <button onClick={copyShareLink}
-                style={{ width: '100%', padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)', cursor: 'pointer', fontSize: 12, color: 'var(--navy-100)', textAlign: 'left' }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="10.5" cy="3" r="1.75" stroke="currentColor" strokeWidth="1.3"/><circle cx="3.5" cy="7" r="1.75" stroke="currentColor" strokeWidth="1.3"/><circle cx="10.5" cy="11" r="1.75" stroke="currentColor" strokeWidth="1.3"/><path d="M5.1 6.1l3.7-2.1M5.1 7.9l3.7 2.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-                Share with Melissa
-              </button>
-              <button onClick={() => supabase.auth.signOut()}
-                style={{ width: '100%', padding: '11px 14px', display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--navy-300)', textAlign: 'left' }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M9 2H11.5C12.05 2 12.5 2.45 12.5 3V11C12.5 11.55 12.05 12 11.5 12H9M5.5 9.5L2 7M2 7L5.5 4.5M2 7H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                Sign out
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--navy-900)' }}>
+      <NavRail
+        screen={screen}
+        isAllSpaces={isAllSpaces}
+        onScreenChange={goToScreen}
+        spaces={spaces}
+        activeSpaceId={activeSpaceId}
+        objectives={objectives}
+        roadmapItems={roadmapItems}
+        onSpaceSelect={switchSpace}
+        onSpaceCreated={space => setSpaces(prev => [...prev, space])}
+        onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
+        focusOpenCount={spaceActions.filter(a => a.week_start === weekStart && !a.completed).length}
+        parkedCount={parkedCount}
+        reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        searchResults={searchResults}
+        initials={initials}
+        email={user?.email ?? ''}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onCopyShareLink={copyShareLink}
+        onSignOut={() => supabase.auth.signOut()}
+      />
 
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       {/* Main — Roadmap and Summary both get a wider cap because their dense layouts use the room directly; other tabs stay narrow on purpose so their side-space can be claimed deliberately. The okr+objectivePanel and focus+actionPanel cases also widen so the panel has room on the right. */}
-      <main style={{ flex: 1, padding: '20px 16px 100px', maxWidth: isAllSpaces || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      <main style={{ padding: '24px 28px', maxWidth: isAllSpaces || screen === 'roadmap' || screen === 'tasks' || screen === 'notes' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
@@ -518,38 +451,15 @@ export default function HQPage() {
             )}
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} />}
+            {screen === 'tasks'   && <Tasks />}
+            {screen === 'notes'   && <Notes />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
             {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
       </main>
-
-      {/* Footer nav — visible in every mode including All Spaces. From All
-          Spaces, clicking a tab pivots into the last-used real space + that
-          tab (per-screen tabs all assume a single space). The SpaceSwitcher
-          pill remains the way to deliberately stay in All Spaces while
-          changing tab context. */}
-      <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, height: 72, background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'space-around', padding: '0 8px', zIndex: 40 }}>
-        {NAV.map(item => item.fab ? (
-          <button key={item.id} onClick={() => goToScreen(item.id)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', marginTop: -20 }}>
-            <div style={{ width: 52, height: 52, borderRadius: '50%', background: 'var(--accent)', border: '3px solid var(--navy-800)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: !isAllSpaces && screen === item.id ? '0 0 0 3px var(--accent-dim)' : 'none', transition: 'box-shadow .2s' }}>
-              {item.icon}
-            </div>
-            <span style={{ fontSize: 10, fontWeight: 700, color: !isAllSpaces && screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
-          </button>
-        ) : (
-          <button key={item.id} onClick={() => goToScreen(item.id)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, background: !isAllSpaces && screen === item.id ? 'var(--accent-dim)' : 'none', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: 12, minWidth: 56, position: 'relative', transition: 'background .15s' }}>
-            {item.id === 'park' && parkedCount > 0 && (
-              <span style={{ position: 'absolute', top: 2, right: 6, background: 'var(--amber)', color: '#0b1520', fontSize: 9, fontWeight: 700, padding: '1px 5px', borderRadius: 99, lineHeight: 1.4 }}>{parkedCount}</span>
-            )}
-            {item.icon}
-            <span style={{ fontSize: 10, fontWeight: 600, color: !isAllSpaces && screen === item.id ? 'var(--accent)' : 'var(--navy-400)' }}>{item.label}</span>
-          </button>
-        ))}
-      </nav>
+      </div>
 
       {/* FastCapture — also visible in All Spaces, where it targets the
           last-used real space. Only suppressed if there's no real space at
@@ -618,26 +528,7 @@ export default function HQPage() {
   )
 }
 
-// ── Icons ──────────────────────────────────────────────────────────
-function ReflectIcon({ active }: { active: boolean }) {
-  const c = active ? 'var(--accent)' : 'var(--navy-400)'
-  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><circle cx="11" cy="11" r="8" stroke={c} strokeWidth="1.5"/><path d="M11 6v5l3 2" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-}
-function FocusIcon({ active }: { active: boolean }) {
-  const c = active ? 'var(--accent)' : 'var(--navy-400)'
-  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 2.5L7 11h4l-1 8.5 5.5-9.5H12L11 2.5Z" stroke={c} strokeWidth="1.5" strokeLinejoin="round"/></svg>
-}
-function OKRIcon() {
-  return <svg width="26" height="26" viewBox="0 0 26 26" fill="none"><circle cx="13" cy="13" r="10" stroke="white" strokeWidth="1.8"/><circle cx="13" cy="13" r="6" stroke="white" strokeWidth="1.8"/><circle cx="13" cy="13" r="2" fill="white"/></svg>
-}
-function RoadmapIcon({ active }: { active: boolean }) {
-  const c = active ? 'var(--accent)' : 'var(--navy-400)'
-  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="2" y="5" width="5" height="13" rx="1.5" stroke={c} strokeWidth="1.5"/><rect x="9" y="3" width="5" height="17" rx="1.5" stroke={c} strokeWidth="1.5"/><rect x="16" y="7" width="5" height="10" rx="1.5" stroke={c} strokeWidth="1.5"/></svg>
-}
-function ParkIcon({ active }: { active: boolean }) {
-  const c = active ? 'var(--accent)' : 'var(--navy-400)'
-  return <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><rect x="3" y="3" width="16" height="16" rx="4" stroke={c} strokeWidth="1.5"/><path d="M9 8h4a2.5 2.5 0 0 1 0 5H9V8Z" stroke={c} strokeWidth="1.5"/><path d="M9 13v4" stroke={c} strokeWidth="1.5" strokeLinecap="round"/></svg>
-}
+// (Bottom-nav icons removed — NavRail.tsx ships its own desktop-rail icons.)
 
 // ── Login ──────────────────────────────────────────────────────────
 function LoginPage() {
