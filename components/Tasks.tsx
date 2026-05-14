@@ -151,7 +151,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
     return {
       today: open.filter(t => t.due_date && t.due_date <= today).length,
       upcoming: open.filter(t => t.due_date && t.due_date > today).length,
-      inbox: open.filter(t => !t.due_date).length,
+      inbox: open.filter(t => !t.due_date && !t.list_id).length,
       all: open.length,
       bySpace: spaces.reduce<Record<string, number>>((acc, s) => {
         acc[s.id] = open.filter(t => t.space_id === s.id).length
@@ -176,7 +176,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
       pool = pool.filter(t => !t.completed_at)
       if (scope.view === 'today')    pool = pool.filter(t => t.due_date && t.due_date <= today)
       if (scope.view === 'upcoming') pool = pool.filter(t => t.due_date && t.due_date > today)
-      if (scope.view === 'inbox')    pool = pool.filter(t => !t.due_date)
+      if (scope.view === 'inbox')    pool = pool.filter(t => !t.due_date && !t.list_id)
       // 'all' = no further filter
     } else if (scope.kind === 'space') {
       pool = pool.filter(t => t.space_id === scope.spaceId)
@@ -761,14 +761,9 @@ function TaskRow({ task, tags, space, list, selected, onToggle, onClick }: {
         <span style={{ fontSize: 13.5, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {task.title}
         </span>
-        {(space || list || tags.length > 0 || task.recurrence_text) && (
+        {(space || tags.length > 0 || task.recurrence_text) && (
           <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-            {space && <span style={{ fontSize: 10.5, color: 'var(--navy-300)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: space.color }} />{space.name}
-            </span>}
-            {list && <span style={{ fontSize: 10.5, color: 'var(--navy-300)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ width: 10, textAlign: 'center', opacity: 0.7 }}>☰</span>{list.name}
-            </span>}
+            {space && <span title={space.name} style={{ width: 6, height: 6, borderRadius: '50%', background: space.color, flexShrink: 0 }} />}
             {tags.map(tag => <span key={tag} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)' }}>#{tag}</span>)}
             {task.recurrence_text && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--slate-bg)', color: 'var(--slate-text)' }}>↻ {task.recurrence_text}</span>}
           </span>
@@ -909,6 +904,12 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
       </div>
 
       <textarea value={title} onChange={e => setTitle(e.target.value)} onBlur={commitTitle}
+        onKeyDown={e => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            (e.target as HTMLTextAreaElement).blur()
+          }
+        }}
         rows={2}
         style={{ width: '100%', padding: 10, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 6, color: 'var(--navy-50)', fontSize: 15, fontWeight: 600, fontFamily: 'inherit', resize: 'vertical', outline: 'none', marginBottom: 14 }} />
 

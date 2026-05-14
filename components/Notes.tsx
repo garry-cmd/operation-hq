@@ -54,6 +54,7 @@ export default function Notes({ spaces, activeSpaceId, toast }: Props) {
   const [renameDraft, setRenameDraft] = useState('')
   const [newNotebookFor, setNewNotebookFor] = useState<{ spaceId: string; parentId: string | null } | null>(null)
   const [newNotebookDraft, setNewNotebookDraft] = useState('')
+  const [fullscreen, setFullscreen] = useState(false)
 
   // ── Load everything on mount ─────────────────────────────────────
   useEffect(() => {
@@ -322,10 +323,10 @@ export default function Notes({ spaces, activeSpaceId, toast }: Props) {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '240px 300px 1fr', height: 'calc(100vh - 0px)', minHeight: 0 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: fullscreen ? '0 0 1fr' : '240px 300px 1fr', height: 'calc(100vh - 0px)', minHeight: 0, transition: 'grid-template-columns .2s ease' }}>
 
-      {/* ── LEFT: Notebook tree ── */}
-      <aside style={{ background: 'var(--navy-800)', borderRight: '1px solid var(--navy-600)', overflowY: 'auto', padding: '12px 0' }}>
+      {/* ── LEFT: Notebook tree (hidden in fullscreen) ── */}
+      <aside style={{ background: 'var(--navy-800)', borderRight: fullscreen ? 'none' : '1px solid var(--navy-600)', overflow: fullscreen ? 'hidden' : 'auto', padding: '12px 0', visibility: fullscreen ? 'hidden' : 'visible' }}>
         {spaces.map(space => {
           const isExpanded = expandedSpaces.has(space.id)
           const inboxCount = counts.byInbox[space.id] ?? 0
@@ -414,8 +415,8 @@ export default function Notes({ spaces, activeSpaceId, toast }: Props) {
         )}
       </aside>
 
-      {/* ── MIDDLE: Note list ── */}
-      <section style={{ background: 'var(--navy-900)', borderRight: '1px solid var(--navy-700)', overflowY: 'auto' }}>
+      {/* ── MIDDLE: Note list (hidden in fullscreen) ── */}
+      <section style={{ background: 'var(--navy-900)', borderRight: fullscreen ? 'none' : '1px solid var(--navy-700)', overflow: fullscreen ? 'hidden' : 'auto', visibility: fullscreen ? 'hidden' : 'visible' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 16px 10px' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy-50)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{middleHeading}</div>
@@ -460,6 +461,8 @@ export default function Notes({ spaces, activeSpaceId, toast }: Props) {
             key={selectedNote.id}
             note={selectedNote}
             tags={tagsByNote.get(selectedNote.id) ?? []}
+            fullscreen={fullscreen}
+            onToggleFullscreen={() => setFullscreen(v => !v)}
             onPatch={patch => onUpdateNote(selectedNote.id, patch)}
             onSetTags={tags => onSetNoteTags(selectedNote.id, tags)}
             onDelete={() => { if (confirm('Delete this note?')) onDeleteNote(selectedNote.id) }}
@@ -746,9 +749,11 @@ function NoteListItem({ note, tags, selected, onClick }: {
 
 // ── Editor ─────────────────────────────────────────────────────────
 
-function NoteEditor({ note, tags, onPatch, onSetTags, onDelete }: {
+function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSetTags, onDelete }: {
   note: Note;
   tags: string[];
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
   onPatch: (patch: Partial<Note>) => void;
   onSetTags: (tags: string[]) => void;
   onDelete: () => void;
@@ -817,40 +822,60 @@ function NoteEditor({ note, tags, onPatch, onSetTags, onDelete }: {
     onSetTags(tags.filter(x => x !== t))
   }
 
+  // In fullscreen, center the editor content for comfortable reading.
+  const innerStyle: React.CSSProperties = fullscreen
+    ? { maxWidth: 780, margin: '0 auto', width: '100%' }
+    : {}
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       {/* Header: title + tags + save indicator + delete */}
       <div style={{ padding: '20px 24px 0' }}>
-        <input
-          value={title}
-          onChange={e => setTitle(e.target.value)}
-          onBlur={commitTitle}
-          placeholder="Untitled"
-          style={{
-            width: '100%', border: 'none', background: 'transparent',
-            fontSize: 22, fontWeight: 700, color: 'var(--navy-50)',
-            outline: 'none', fontFamily: 'inherit', padding: '2px 0',
-          }} />
+        <div style={innerStyle}>
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onBlur={commitTitle}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } }}
+            placeholder="Untitled"
+            style={{
+              width: '100%', border: 'none', background: 'transparent',
+              fontSize: 22, fontWeight: 700, color: 'var(--navy-50)',
+              outline: 'none', fontFamily: 'inherit', padding: '2px 0',
+            }} />
+        </div>
       </div>
 
-      <div style={{ padding: '6px 24px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', flex: 1 }}>
-          {tags.map(t => (
-            <span key={t} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              #{t}
-              <button onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
-            </span>
-          ))}
-          <input value={tagInput} onChange={e => setTagInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
-            placeholder="+ tag"
-            style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 11.5, fontFamily: 'inherit', outline: 'none', width: 80 }} />
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : ''}
-          <button onClick={onDelete} title="Delete note" style={{ marginLeft: 10, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>
-            🗑
-          </button>
+      <div style={{ padding: '6px 24px 10px' }}>
+        <div style={{ ...innerStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', flex: 1 }}>
+            {tags.map(t => (
+              <span key={t} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                #{t}
+                <button onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+              </span>
+            ))}
+            <input value={tagInput} onChange={e => setTagInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+              placeholder="+ tag"
+              style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 11.5, fontFamily: 'inherit', outline: 'none', width: 80 }} />
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : ''}
+            <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              style={{ marginLeft: 10, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
+              onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)' }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)' }}>
+              {fullscreen ? (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 1.5v3.5h3.5M10 5l4-4M6 14.5v-3.5H2.5M6 11l-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              )}
+            </button>
+            <button onClick={onDelete} title="Delete note" style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>
+              🗑
+            </button>
+          </div>
         </div>
       </div>
 
@@ -859,7 +884,9 @@ function NoteEditor({ note, tags, onPatch, onSetTags, onDelete }: {
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 24px 60px' }}>
-        <EditorContent editor={editor} />
+        <div style={innerStyle}>
+          <EditorContent editor={editor} />
+        </div>
       </div>
 
       {/* Editor styles injected once; scoped to .notes-editor */}
@@ -869,7 +896,10 @@ function NoteEditor({ note, tags, onPatch, onSetTags, onDelete }: {
         .notes-editor h1 { font-size: 22px; font-weight: 700; margin: 18px 0 10px; color: var(--navy-50); }
         .notes-editor h2 { font-size: 18px; font-weight: 700; margin: 16px 0 8px; color: var(--navy-50); }
         .notes-editor h3 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: var(--navy-50); }
-        .notes-editor ul, .notes-editor ol { padding-left: 22px; margin: 0 0 10px; }
+        .notes-editor ul { list-style-type: disc; padding-left: 22px; margin: 0 0 10px; }
+        .notes-editor ol { list-style-type: decimal; padding-left: 22px; margin: 0 0 10px; }
+        .notes-editor ul ul { list-style-type: circle; }
+        .notes-editor ul ul ul { list-style-type: square; }
         .notes-editor li { margin: 3px 0; }
         .notes-editor code { background: var(--navy-700); padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
         .notes-editor pre { background: var(--navy-800); padding: 10px 12px; border-radius: 6px; margin: 0 0 10px; overflow-x: auto; }
