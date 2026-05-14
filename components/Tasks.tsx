@@ -21,8 +21,9 @@
  */
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, Priority } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, TaskList, Priority } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
+import * as taskListsDb from '@/lib/db/taskLists'
 import {
   parseQuickAdd,
   parseRecurrence,
@@ -47,6 +48,7 @@ type SmartView = 'today' | 'upcoming' | 'inbox' | 'all'
 type ScopeFilter =
   | { kind: 'smart'; view: SmartView }
   | { kind: 'space'; spaceId: string }
+  | { kind: 'list'; listId: string }
   | { kind: 'tag'; tag: string }
 
 const PRIORITY_COLOR: Record<Priority, string> = {
@@ -65,21 +67,32 @@ const PRIORITY_LABEL: Record<Priority, string> = {
 
 export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
+  const [lists, setLists] = useState<TaskList[]>([])
   const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
   const [loading, setLoading] = useState(true)
   const [scope, setScope] = useState<ScopeFilter>({ kind: 'smart', view: 'today' })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [quickAdd, setQuickAdd] = useState('')
   const quickAddRef = useRef<HTMLInputElement>(null)
+  // List sidebar UI state — kebab menu open for which list, inline rename, new-list input
+  const [listMenuOpenId, setListMenuOpenId] = useState<string | null>(null)
+  const [renamingListId, setRenamingListId] = useState<string | null>(null)
+  const [renamingDraft, setRenamingDraft] = useState('')
+  const [newListOpen, setNewListOpen] = useState(false)
+  const [newListDraft, setNewListDraft] = useState('')
 
-  // Load all tasks + their tags on mount.
+  // Load all tasks + their tags + lists on mount.
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
-        const list = await tasksDb.listAll()
+        const [list, listRows] = await Promise.all([
+          tasksDb.listAll(),
+          taskListsDb.listAll(),
+        ])
         if (cancelled) return
         setTasks(list)
+        setLists(listRows)
         const tagRows = await tasksDb.listTagsForTasks(list.map(t => t.id))
         if (cancelled) return
         const map = new Map<string, string[]>()
@@ -121,12 +134,16 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
         acc[s.id] = open.filter(t => t.space_id === s.id).length
         return acc
       }, {}),
+      byList: lists.reduce<Record<string, number>>((acc, l) => {
+        acc[l.id] = open.filter(t => t.list_id === l.id).length
+        return acc
+      }, {}),
       byTag: allTags.reduce<Record<string, number>>((acc, tag) => {
         acc[tag] = open.filter(t => (tagsByTask.get(t.id) ?? []).includes(tag)).length
         return acc
       }, {}),
     }
-  }, [tasks, spaces, allTags, tagsByTask, today])
+  }, [tasks, spaces, lists, allTags, tagsByTask, today])
 
   // Filtered list under the current scope. Order is: open first
   // (sorted by due-then-priority), then completed at the bottom.
@@ -140,6 +157,8 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
       // 'all' = no further filter
     } else if (scope.kind === 'space') {
       pool = pool.filter(t => t.space_id === scope.spaceId)
+    } else if (scope.kind === 'list') {
+      pool = pool.filter(t => t.list_id === scope.listId)
     } else if (scope.kind === 'tag') {
       const tag = scope.tag
       pool = pool.filter(t => (tagsByTask.get(t.id) ?? []).includes(tag))
@@ -204,13 +223,23 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
     if (!raw) return
     const parsed = parseQuickAdd(raw)
     if (!parsed.title) { toast('Need a title'); return }
-    // Target space: if scope is a specific space, use it; otherwise
-    // default to activeSpaceId (the rail's selected space).
-    const targetSpace = scope.kind === 'space' ? scope.spaceId : activeSpaceId
-    if (!targetSpace) { toast('Pick a space first'); return }
+    // Pick the target container: if scope is a list, target that list;
+    // if scope is a specific space, target that space; otherwise fall
+    // back to activeSpaceId (the rail's selected space).
+    let targetSpaceId: string | null = null
+    let targetListId: string | null = null
+    if (scope.kind === 'list') {
+      targetListId = scope.listId
+    } else if (scope.kind === 'space') {
+      targetSpaceId = scope.spaceId
+    } else {
+      targetSpaceId = activeSpaceId
+    }
+    if (!targetSpaceId && !targetListId) { toast('Pick a space or list first'); return }
     try {
       const created = await tasksDb.create({
-        space_id: targetSpace,
+        space_id: targetSpaceId,
+        list_id: targetListId,
         title: parsed.title,
         priority: parsed.priority,
         due_date: parsed.due_date,
@@ -287,6 +316,54 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
     }
   }, [toast])
 
+  // ── List mutations ───────────────────────────────────────────────
+
+  const onCreateList = useCallback(async (name: string) => {
+    const clean = name.trim()
+    if (!clean) return
+    try {
+      const created = await taskListsDb.create({
+        name: clean,
+        sort_order: lists.length,
+      })
+      setLists(prev => [...prev, created])
+      // Jump scope to the newly created list so the user lands ready to add tasks
+      setScope({ kind: 'list', listId: created.id })
+      setSelectedId(null)
+    } catch (e) {
+      console.error('create list failed', e)
+      toast('Could not create list')
+    }
+  }, [lists.length, toast])
+
+  const onRenameList = useCallback(async (id: string, name: string) => {
+    const clean = name.trim()
+    if (!clean) return
+    try {
+      const updated = await taskListsDb.rename(id, clean)
+      setLists(prev => prev.map(l => l.id === id ? updated : l))
+    } catch (e) {
+      console.error('rename list failed', e)
+      toast('Could not rename list')
+    }
+  }, [toast])
+
+  const onDeleteList = useCallback(async (id: string) => {
+    try {
+      await taskListsDb.remove(id)
+      // ON DELETE CASCADE removes the tasks too; mirror that locally.
+      setLists(prev => prev.filter(l => l.id !== id))
+      setTasks(prev => prev.filter(t => t.list_id !== id))
+      if (scope.kind === 'list' && scope.listId === id) {
+        setScope({ kind: 'smart', view: 'today' })
+      }
+      setSelectedId(null)
+    } catch (e) {
+      console.error('delete list failed', e)
+      toast('Could not delete list')
+    }
+  }, [scope, toast])
+
   // ── Rendering ────────────────────────────────────────────────────
 
   const heading = useMemo(() => {
@@ -301,8 +378,12 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
       const space = spaces.find(s => s.id === scope.spaceId)
       return { title: space?.name ?? 'Space', subtitle: '' }
     }
+    if (scope.kind === 'list') {
+      const list = lists.find(l => l.id === scope.listId)
+      return { title: list?.name ?? 'List', subtitle: '' }
+    }
     return { title: `#${scope.tag}`, subtitle: '' }
-  }, [scope, spaces, today])
+  }, [scope, spaces, lists, today])
 
   if (loading) {
     return (
@@ -336,6 +417,66 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
             ))}
           </SidebarSection>
         )}
+
+        <SidebarSection label="Lists">
+          {lists.map(l => (
+            <ListSidebarRow key={l.id}
+              list={l}
+              count={counts.byList[l.id] ?? 0}
+              active={scope.kind === 'list' && scope.listId === l.id}
+              menuOpen={listMenuOpenId === l.id}
+              renaming={renamingListId === l.id}
+              renameDraft={renamingDraft}
+              setRenameDraft={setRenamingDraft}
+              onClick={() => { setScope({ kind: 'list', listId: l.id }); setSelectedId(null) }}
+              onOpenMenu={() => setListMenuOpenId(l.id)}
+              onCloseMenu={() => setListMenuOpenId(null)}
+              onStartRename={() => { setRenamingListId(l.id); setRenamingDraft(l.name); setListMenuOpenId(null) }}
+              onCommitRename={() => {
+                if (renamingDraft.trim() && renamingDraft.trim() !== l.name) onRenameList(l.id, renamingDraft)
+                setRenamingListId(null)
+              }}
+              onCancelRename={() => setRenamingListId(null)}
+              onDelete={() => {
+                if (confirm(`Delete list "${l.name}" and all its tasks? This can't be undone.`)) {
+                  onDeleteList(l.id)
+                }
+                setListMenuOpenId(null)
+              }} />
+          ))}
+          {newListOpen ? (
+            <input autoFocus
+              value={newListDraft}
+              onChange={e => setNewListDraft(e.target.value)}
+              onBlur={() => {
+                if (newListDraft.trim()) onCreateList(newListDraft)
+                setNewListOpen(false)
+                setNewListDraft('')
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') { setNewListOpen(false); setNewListDraft('') }
+              }}
+              placeholder="List name…"
+              style={{
+                width: 'calc(100% - 12px)', margin: '0 6px',
+                padding: '6px 10px', background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
+                borderRadius: 6, color: 'var(--navy-50)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+              }} />
+          ) : (
+            <button onClick={() => { setNewListOpen(true); setNewListDraft('') }}
+              style={{
+                width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 9,
+                padding: '6px 10px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                background: 'none', color: 'var(--navy-400)', fontSize: 12.5, fontFamily: 'inherit', textAlign: 'left',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)'; e.currentTarget.style.color = 'var(--navy-100)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--navy-400)' }}>
+              <span style={{ width: 14, textAlign: 'center' }}>+</span>
+              <span>New list</span>
+            </button>
+          )}
+        </SidebarSection>
 
         {allTags.length > 0 && (
           <SidebarSection label="Tags">
@@ -389,6 +530,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
               <TaskRow key={task.id} task={task}
                 tags={tagsByTask.get(task.id) ?? []}
                 space={spaces.find(s => s.id === task.space_id)}
+                list={lists.find(l => l.id === task.list_id)}
                 selected={selectedId === task.id}
                 onToggle={() => onToggle(task)}
                 onClick={() => setSelectedId(task.id)} />
@@ -402,6 +544,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
         <DetailPanel task={selected}
           tags={tagsByTask.get(selected.id) ?? []}
           spaces={spaces}
+          lists={lists}
           roadmapItems={roadmapItems}
           onPatch={patch => onPatch(selected.id, patch)}
           onSetTags={tags => onSetTags(selected.id, tags)}
@@ -443,8 +586,112 @@ function SidebarRow({ icon, dot, label, count, active, onClick }: { icon?: strin
   )
 }
 
-function TaskRow({ task, tags, space, selected, onToggle, onClick }: {
-  task: Task; tags: string[]; space?: Space; selected: boolean; onToggle: () => void; onClick: () => void
+function ListSidebarRow(props: {
+  list: TaskList
+  count: number
+  active: boolean
+  menuOpen: boolean
+  renaming: boolean
+  renameDraft: string
+  setRenameDraft: (v: string) => void
+  onClick: () => void
+  onOpenMenu: () => void
+  onCloseMenu: () => void
+  onStartRename: () => void
+  onCommitRename: () => void
+  onCancelRename: () => void
+  onDelete: () => void
+}) {
+  const { list, count, active, menuOpen, renaming } = props
+  const [hover, setHover] = useState(false)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+  // Close kebab menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) props.onCloseMenu()
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [menuOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (renaming) {
+    return (
+      <input autoFocus
+        value={props.renameDraft}
+        onChange={e => props.setRenameDraft(e.target.value)}
+        onBlur={props.onCommitRename}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') props.onCancelRename()
+        }}
+        style={{
+          width: 'calc(100% - 12px)', margin: '0 6px',
+          padding: '6px 10px', background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
+          borderRadius: 6, color: 'var(--navy-50)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+        }} />
+    )
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <button onClick={props.onClick}
+        style={{
+          width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 9,
+          padding: '6px 10px', border: 'none', borderRadius: 6, cursor: 'pointer',
+          background: active ? 'var(--accent-dim)' : (hover ? 'var(--navy-700)' : 'none'),
+          color: active ? 'var(--accent)' : 'var(--navy-100)',
+          fontSize: 13, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+        }}>
+        <span style={{ width: 14, textAlign: 'center', opacity: 0.7 }}>☰</span>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
+        {!hover && count > 0 && <span style={{ fontSize: 11, color: active ? 'var(--accent)' : 'var(--navy-400)' }}>{count}</span>}
+      </button>
+      {hover && (
+        <button onClick={e => { e.stopPropagation(); props.onOpenMenu() }}
+          style={{
+            position: 'absolute', top: '50%', right: 10, transform: 'translateY(-50%)',
+            background: 'none', border: 'none', padding: '2px 4px', borderRadius: 3,
+            color: 'var(--navy-300)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-600)'; e.currentTarget.style.color = 'var(--navy-50)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--navy-300)' }}>
+          ⋯
+        </button>
+      )}
+      {menuOpen && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 6, zIndex: 30, marginTop: 2,
+          background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 6,
+          padding: 4, minWidth: 130, boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        }}>
+          <button onClick={props.onStartRename}
+            style={menuItemStyle}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+            Rename
+          </button>
+          <button onClick={props.onDelete}
+            style={{ ...menuItemStyle, color: 'var(--red-text)' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const menuItemStyle: React.CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
+  padding: '6px 10px', fontSize: 12, color: 'var(--navy-100)', cursor: 'pointer',
+  borderRadius: 4, fontFamily: 'inherit',
+}
+
+function TaskRow({ task, tags, space, list, selected, onToggle, onClick }: {
+  task: Task; tags: string[]; space?: Space; list?: TaskList; selected: boolean; onToggle: () => void; onClick: () => void
 }) {
   const done = !!task.completed_at
   return (
@@ -472,10 +719,13 @@ function TaskRow({ task, tags, space, selected, onToggle, onClick }: {
         <span style={{ fontSize: 13.5, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {task.title}
         </span>
-        {(space || tags.length > 0 || task.recurrence_text) && (
+        {(space || list || tags.length > 0 || task.recurrence_text) && (
           <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             {space && <span style={{ fontSize: 10.5, color: 'var(--navy-300)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
               <span style={{ width: 6, height: 6, borderRadius: '50%', background: space.color }} />{space.name}
+            </span>}
+            {list && <span style={{ fontSize: 10.5, color: 'var(--navy-300)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 10, textAlign: 'center', opacity: 0.7 }}>☰</span>{list.name}
             </span>}
             {tags.map(tag => <span key={tag} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)' }}>#{tag}</span>)}
             {task.recurrence_text && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--slate-bg)', color: 'var(--slate-text)' }}>↻ {task.recurrence_text}</span>}
@@ -489,8 +739,8 @@ function TaskRow({ task, tags, space, selected, onToggle, onClick }: {
   )
 }
 
-function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onDelete, onClose }: {
-  task: Task; tags: string[]; spaces: Space[]; roadmapItems: RoadmapItem[];
+function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTags, onDelete, onClose }: {
+  task: Task; tags: string[]; spaces: Space[]; lists: TaskList[]; roadmapItems: RoadmapItem[];
   onPatch: (patch: Partial<Task>) => void;
   onSetTags: (tags: string[]) => void;
   onDelete: () => void;
@@ -534,8 +784,19 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
     ? recurrenceLabel(task.recurrence_rule, task.due_date)
     : 'One-shot'
 
-  const space = spaces.find(s => s.id === task.space_id)
+  const list = lists.find(l => l.id === task.list_id)
   const linkedKR = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
+  const containerValue = task.space_id ? `s:${task.space_id}` : (task.list_id ? `l:${task.list_id}` : '')
+
+  function onChangeContainer(value: string) {
+    const [kind, id] = value.split(':')
+    if (kind === 's') {
+      onPatch({ space_id: id, list_id: null })
+    } else if (kind === 'l') {
+      // List-tasks can't link to a KR (DB CHECK constraint), so clear it on move.
+      onPatch({ space_id: null, list_id: id, roadmap_item_id: null })
+    }
+  }
 
   function commitTitle() {
     if (title.trim() && title !== task.title) onPatch({ title: title.trim() })
@@ -713,14 +974,22 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
         </div>
       )}
 
-      <Field label="Space">
-        <span style={{ fontSize: 12, color: 'var(--navy-100)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-          {space && <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color }} />}
-          {space?.name ?? '—'}
-        </span>
+      <Field label={list ? 'List' : 'Space'}>
+        <select value={containerValue} onChange={e => onChangeContainer(e.target.value)} style={selectStyle}>
+          {spaces.length > 0 && (
+            <optgroup label="Spaces">
+              {spaces.map(s => <option key={s.id} value={`s:${s.id}`}>{s.name}</option>)}
+            </optgroup>
+          )}
+          {lists.length > 0 && (
+            <optgroup label="Lists">
+              {lists.map(l => <option key={l.id} value={`l:${l.id}`}>{l.name}</option>)}
+            </optgroup>
+          )}
+        </select>
       </Field>
 
-      {linkedKR && (
+      {linkedKR && !list && (
         <Field label="Linked KR">
           <span style={{ fontSize: 12, color: 'var(--accent)' }}>{linkedKR.title}</span>
         </Field>

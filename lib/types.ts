@@ -169,7 +169,8 @@ export interface RecurrenceRule {
 
 export interface Task {
   id: string
-  space_id: string
+  space_id: string | null
+  list_id: string | null
   roadmap_item_id: string | null
   parent_task_id: string | null
   title: string
@@ -186,8 +187,9 @@ export interface Task {
 }
 
 export interface NewTaskInput {
-  space_id: string
   title: string
+  space_id?: string | null
+  list_id?: string | null
   roadmap_item_id?: string | null
   parent_task_id?: string | null
   description?: string | null
@@ -201,4 +203,17 @@ export interface NewTaskInput {
 export interface TaskTag {
   task_id: string
   tag: string
+}
+
+export interface TaskList {
+  id: string
+  name: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NewTaskListInput {
+  name: string
+  sort_order?: number
 }
