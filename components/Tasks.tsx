@@ -65,6 +65,29 @@ const PRIORITY_LABEL: Record<Priority, string> = {
   4: 'P4 · None',
 }
 
+// ── Sidebar icons (match NavRail line-art family) ────────────────
+function TodayIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="11" rx="1.4" stroke="currentColor" strokeWidth="1.4"/><path d="M2 6h12M5.5 1.5v3M10.5 1.5v3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><circle cx="8" cy="10" r="1.4" fill="currentColor"/></svg>
+}
+function UpcomingIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 4l4 4-4 4M8 4l4 4-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+}
+function InboxIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2 9v4a1 1 0 001 1h10a1 1 0 001-1V9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M2 9l1.4-5.4a1 1 0 011-.7h7.2a1 1 0 011 .7L14 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M2 9h3l1 1.5h4l1-1.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+}
+function AllOpenIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4.8 8c0-1.4-1-2.4-2.2-2.4S.5 6.6.5 8s1 2.4 2.2 2.4c1 0 1.6-.6 2.4-1.6.8-1 1.6-2.8 3.2-2.8 1.2 0 2.2 1 2.2 2.4s-1 2.4-2.2 2.4c-1 0-1.6-.6-2.4-1.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+}
+function ListIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5.5 4h8M5.5 8h8M5.5 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="2.5" cy="4" r="0.9" fill="currentColor"/><circle cx="2.5" cy="8" r="0.9" fill="currentColor"/><circle cx="2.5" cy="12" r="0.9" fill="currentColor"/></svg>
+}
+function HashIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 1.5L4.5 14.5M11.5 1.5L10 14.5M1.5 5h13M1.5 11h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+}
+function PlusIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+}
+
 export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [lists, setLists] = useState<TaskList[]>([])
@@ -399,10 +422,10 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
       {/* ── Sub-sidebar ── */}
       <aside style={{ background: 'var(--navy-800)', borderRight: '1px solid var(--navy-600)', overflowY: 'auto' }}>
         <SidebarSection label="Smart views">
-          <SidebarRow icon="📅" label="Today"    count={counts.today}    active={scope.kind === 'smart' && scope.view === 'today'}    onClick={() => { setScope({ kind: 'smart', view: 'today' });    setSelectedId(null) }} />
-          <SidebarRow icon="⏭"  label="Upcoming" count={counts.upcoming} active={scope.kind === 'smart' && scope.view === 'upcoming'} onClick={() => { setScope({ kind: 'smart', view: 'upcoming' }); setSelectedId(null) }} />
-          <SidebarRow icon="📥" label="Inbox"    count={counts.inbox}    active={scope.kind === 'smart' && scope.view === 'inbox'}    onClick={() => { setScope({ kind: 'smart', view: 'inbox' });    setSelectedId(null) }} />
-          <SidebarRow icon="∞"  label="All open" count={counts.all}      active={scope.kind === 'smart' && scope.view === 'all'}      onClick={() => { setScope({ kind: 'smart', view: 'all' });      setSelectedId(null) }} />
+          <SidebarRow icon={<TodayIcon />}    label="Today"    count={counts.today}    active={scope.kind === 'smart' && scope.view === 'today'}    onClick={() => { setScope({ kind: 'smart', view: 'today' });    setSelectedId(null) }} />
+          <SidebarRow icon={<UpcomingIcon />} label="Upcoming" count={counts.upcoming} active={scope.kind === 'smart' && scope.view === 'upcoming'} onClick={() => { setScope({ kind: 'smart', view: 'upcoming' }); setSelectedId(null) }} />
+          <SidebarRow icon={<InboxIcon />}    label="Inbox"    count={counts.inbox}    active={scope.kind === 'smart' && scope.view === 'inbox'}    onClick={() => { setScope({ kind: 'smart', view: 'inbox' });    setSelectedId(null) }} />
+          <SidebarRow icon={<AllOpenIcon />}  label="All open" count={counts.all}      active={scope.kind === 'smart' && scope.view === 'all'}      onClick={() => { setScope({ kind: 'smart', view: 'all' });      setSelectedId(null) }} />
         </SidebarSection>
 
         {spaces.length > 0 && (
@@ -460,19 +483,20 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
               placeholder="List name…"
               style={{
                 width: 'calc(100% - 12px)', margin: '0 6px',
-                padding: '6px 10px', background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
-                borderRadius: 6, color: 'var(--navy-50)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                padding: '7px 12px', background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
+                borderRadius: 6, color: 'var(--navy-50)', fontSize: 13.5, fontFamily: 'inherit', outline: 'none',
               }} />
           ) : (
             <button onClick={() => { setNewListOpen(true); setNewListDraft('') }}
               style={{
-                width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 9,
-                padding: '6px 10px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                background: 'none', color: 'var(--navy-400)', fontSize: 12.5, fontFamily: 'inherit', textAlign: 'left',
+                width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 10,
+                padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
+                background: 'none', color: 'var(--navy-400)', fontSize: 13.5, fontFamily: 'inherit', textAlign: 'left',
+                transition: 'background .15s, color .15s',
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)'; e.currentTarget.style.color = 'var(--navy-100)' }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-600)'; e.currentTarget.style.color = 'var(--navy-100)' }}
               onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--navy-400)' }}>
-              <span style={{ width: 14, textAlign: 'center' }}>+</span>
+              <span style={{ width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.85 }}><PlusIcon /></span>
               <span>New list</span>
             </button>
           )}
@@ -482,7 +506,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
           <SidebarSection label="Tags">
             {allTags.map(tag => (
               <SidebarRow key={tag}
-                icon="#"
+                icon={<HashIcon />}
                 label={tag}
                 count={counts.byTag[tag] ?? 0}
                 active={scope.kind === 'tag' && scope.tag === tag}
@@ -560,28 +584,37 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
 function SidebarSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ padding: '14px 14px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>{label}</div>
+      <div style={{ padding: '14px 18px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>{label}</div>
       {children}
     </div>
   )
 }
 
-function SidebarRow({ icon, dot, label, count, active, onClick }: { icon?: string; dot?: string; label: string; count?: number; active?: boolean; onClick: () => void }) {
+function SidebarRow({ icon, dot, label, count, active, onClick }: { icon?: React.ReactNode; dot?: string; label: string; count?: number; active?: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick}
       style={{
-        width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 9,
-        padding: '6px 10px', border: 'none', borderRadius: 6, cursor: 'pointer',
+        width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 10,
+        padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
         background: active ? 'var(--accent-dim)' : 'none',
         color: active ? 'var(--accent)' : 'var(--navy-100)',
-        fontSize: 13, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+        fontSize: 13.5, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+        transition: 'background .15s',
       }}
-      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--navy-700)' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--navy-600)' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
-      {icon && <span style={{ width: 14, textAlign: 'center', opacity: 0.7 }}>{icon}</span>}
-      {dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} />}
+      {icon && <span style={{ width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.85 }}>{icon}</span>}
+      {dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0, margin: '0 5px' }} />}
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      {count != null && count > 0 && <span style={{ fontSize: 11, color: active ? 'var(--accent)' : 'var(--navy-400)' }}>{count}</span>}
+      {count != null && count > 0 && (
+        <span style={{
+          fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, lineHeight: 1.4,
+          background: active ? 'var(--accent)' : 'var(--navy-600)',
+          color: active ? '#fff' : 'var(--navy-300)',
+        }}>
+          {count}
+        </span>
+      )}
     </button>
   )
 }
@@ -627,8 +660,8 @@ function ListSidebarRow(props: {
         }}
         style={{
           width: 'calc(100% - 12px)', margin: '0 6px',
-          padding: '6px 10px', background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
-          borderRadius: 6, color: 'var(--navy-50)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+          padding: '7px 12px', background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
+          borderRadius: 6, color: 'var(--navy-50)', fontSize: 13.5, fontFamily: 'inherit', outline: 'none',
         }} />
     )
   }
@@ -638,15 +671,24 @@ function ListSidebarRow(props: {
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <button onClick={props.onClick}
         style={{
-          width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 9,
-          padding: '6px 10px', border: 'none', borderRadius: 6, cursor: 'pointer',
-          background: active ? 'var(--accent-dim)' : (hover ? 'var(--navy-700)' : 'none'),
+          width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 10,
+          padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
+          background: active ? 'var(--accent-dim)' : (hover ? 'var(--navy-600)' : 'none'),
           color: active ? 'var(--accent)' : 'var(--navy-100)',
-          fontSize: 13, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+          fontSize: 13.5, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+          transition: 'background .15s',
         }}>
-        <span style={{ width: 14, textAlign: 'center', opacity: 0.7 }}>☰</span>
+        <span style={{ width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, opacity: 0.85 }}><ListIcon /></span>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{list.name}</span>
-        {!hover && count > 0 && <span style={{ fontSize: 11, color: active ? 'var(--accent)' : 'var(--navy-400)' }}>{count}</span>}
+        {!hover && count > 0 && (
+          <span style={{
+            fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99, lineHeight: 1.4,
+            background: active ? 'var(--accent)' : 'var(--navy-600)',
+            color: active ? '#fff' : 'var(--navy-300)',
+          }}>
+            {count}
+          </span>
+        )}
       </button>
       {hover && (
         <button onClick={e => { e.stopPropagation(); props.onOpenMenu() }}
