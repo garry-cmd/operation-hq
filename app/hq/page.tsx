@@ -19,6 +19,7 @@ import ParkingLot from '@/components/ParkingLot'
 import Summary from '@/components/Summary'
 import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
+import Tags from '@/components/Tags'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import NavRail from '@/components/NavRail'
@@ -26,7 +27,7 @@ import CloseWeekWizard from '@/components/CloseWeekWizard'
 import MetricLogModal from '@/components/MetricLogModal'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes'
+type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'tags'
 
 // MUST match the value in components/SpaceSwitcher.tsx. When the activeSpaceId
 // equals this sentinel, page.tsx routes to Summary (cross-space view) instead
@@ -73,6 +74,14 @@ export default function HQPage() {
   // Currently-open objective panel on the OKRs tab. Same pattern as
   // openActionId — lifted to page level so <main> can widen for it.
   const [openObjectiveId, setOpenObjectiveId] = useState<string | null>(null)
+  // Cross-app jump targets. Set by Tags clicks; consumed (and cleared) by
+  // the destination screen's mount effect so subsequent re-renders don't
+  // re-select the item.
+  const [tasksInitialId, setTasksInitialId] = useState<string | null>(null)
+  const [notesInitialId, setNotesInitialId] = useState<string | null>(null)
+  // Reverse direction: when clicking a tag chip on a task/note row,
+  // prefill the Tags page with that tag selected.
+  const [tagsInitialTag, setTagsInitialTag] = useState<string | null>(null)
 
   // Guards the once-per-space force-launch check. Reset when the user switches
   // spaces so a different space's unclosed last week can also trigger.
@@ -408,7 +417,7 @@ export default function HQPage() {
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-      {/* Tasks/Notes use full viewport width for their multi-pane layouts;
+      {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}
       {screen === 'tasks' && !isAllSpaces && !loading ? (
@@ -417,12 +426,26 @@ export default function HQPage() {
           activeSpaceId={activeSpaceId}
           objectives={spaceObjectives}
           roadmapItems={spaceRoadmapItems}
+          initialTaskId={tasksInitialId}
+          onConsumeInitialTaskId={() => setTasksInitialId(null)}
+          onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
           toast={setToast}
         />
       ) : screen === 'notes' && !isAllSpaces && !loading ? (
         <Notes
           spaces={spaces}
           activeSpaceId={activeSpaceId}
+          initialNoteId={notesInitialId}
+          onConsumeInitialNoteId={() => setNotesInitialId(null)}
+          onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
+          toast={setToast}
+        />
+      ) : screen === 'tags' && !isAllSpaces && !loading ? (
+        <Tags
+          spaces={spaces}
+          initialTag={tagsInitialTag}
+          onJumpToTask={(id) => { setTasksInitialId(id); setTagsInitialTag(null); setScreen('tasks') }}
+          onJumpToNote={(id) => { setNotesInitialId(id); setTagsInitialTag(null); setScreen('notes') }}
           toast={setToast}
         />
       ) : (

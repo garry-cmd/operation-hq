@@ -27,6 +27,12 @@ import Placeholder from '@tiptap/extension-placeholder'
 interface Props {
   spaces: Space[]
   activeSpaceId: string
+  /** Note to focus when entering — set by cross-app jump from Tags. */
+  initialNoteId?: string | null
+  /** Called once the initial selection has been consumed. */
+  onConsumeInitialNoteId?: () => void
+  /** Called when the user clicks a tag chip — jumps to the Tags page. */
+  onJumpToTag?: (tag: string) => void
   toast: (msg: string) => void
 }
 
@@ -40,7 +46,7 @@ type Scope =
 
 const EMPTY_DOC: NoteBody = { type: 'doc', content: [{ type: 'paragraph' }] }
 
-export default function Notes({ spaces, activeSpaceId, toast }: Props) {
+export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeInitialNoteId, onJumpToTag, toast }: Props) {
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
   const [notes, setNotes] = useState<Note[]>([])
   const [tagsByNote, setTagsByNote] = useState<Map<string, string[]>>(new Map())
@@ -87,6 +93,20 @@ export default function Notes({ spaces, activeSpaceId, toast }: Props) {
     load()
     return () => { cancelled = true }
   }, [toast])
+
+  // Cross-app jump: when Tags hands us an initialNoteId, find the note,
+  // switch scope to its container, and select it.
+  useEffect(() => {
+    if (!initialNoteId) return
+    if (loading) return
+    const target = notes.find(n => n.id === initialNoteId)
+    if (target) {
+      if (target.notebook_id) setScope({ kind: 'notebook', notebookId: target.notebook_id })
+      else setScope({ kind: 'inbox', spaceId: target.space_id })
+      setSelectedNoteId(target.id)
+    }
+    onConsumeInitialNoteId?.()
+  }, [initialNoteId, loading, notes, onConsumeInitialNoteId])
 
   // Derived: notebooks grouped by space, and by parent for nesting.
   const notebooksBySpace = useMemo(() => {
@@ -449,6 +469,7 @@ export default function Notes({ spaces, activeSpaceId, toast }: Props) {
               tags={tagsByNote.get(note.id) ?? []}
               selected={selectedNoteId === note.id}
               onClick={() => setSelectedNoteId(note.id)}
+              onTagClick={onJumpToTag}
             />
           ))
         )}
@@ -712,8 +733,8 @@ function SubNotebookInputPortal({ value, setValue, onCommit, onCancel }: {
   )
 }
 
-function NoteListItem({ note, tags, selected, onClick }: {
-  note: Note; tags: string[]; selected: boolean; onClick: () => void
+function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
+  note: Note; tags: string[]; selected: boolean; onClick: () => void; onTagClick?: (tag: string) => void
 }) {
   const preview = useMemo(() => extractText(note.body).slice(0, 140), [note.body])
   return (
@@ -740,7 +761,11 @@ function NoteListItem({ note, tags, selected, onClick }: {
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <span style={{ fontSize: 10.5, color: 'var(--navy-400)' }}>{formatRelative(note.updated_at)}</span>
         {tags.map(t => (
-          <span key={t} style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)' }}>#{t}</span>
+          <span key={t}
+            onClick={e => { if (onTagClick) { e.stopPropagation(); onTagClick(t) } }}
+            style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)', cursor: onTagClick ? 'pointer' : 'default' }}>
+            #{t}
+          </span>
         ))}
       </div>
     </button>

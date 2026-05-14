@@ -41,6 +41,12 @@ interface Props {
   activeSpaceId: string
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
+  /** Task to focus when entering — set by cross-app jump from Tags page. */
+  initialTaskId?: string | null
+  /** Called once the initial selection has been consumed. */
+  onConsumeInitialTaskId?: () => void
+  /** Called when the user clicks a tag chip on a row — jumps to Tags page. */
+  onJumpToTag?: (tag: string) => void
   toast: (msg: string) => void
 }
 
@@ -88,7 +94,7 @@ function PlusIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
-export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Props) {
+export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [lists, setLists] = useState<TaskList[]>([])
   const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
@@ -135,6 +141,22 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
     load()
     return () => { cancelled = true }
   }, [toast])
+
+  // Cross-app jump: when Tags hands us an initialTaskId, find the task,
+  // switch scope to its natural container, and select it. Then tell the
+  // parent to clear the prop so toggling away/back doesn't re-fire.
+  useEffect(() => {
+    if (!initialTaskId) return
+    if (loading) return
+    const target = tasks.find(t => t.id === initialTaskId)
+    if (target) {
+      if (target.list_id) setScope({ kind: 'list', listId: target.list_id })
+      else if (target.space_id) setScope({ kind: 'space', spaceId: target.space_id })
+      else setScope({ kind: 'smart', view: 'all' })
+      setSelectedId(target.id)
+    }
+    onConsumeInitialTaskId?.()
+  }, [initialTaskId, loading, tasks, onConsumeInitialTaskId])
 
   // Derived: all tags across all tasks (for the sidebar).
   const allTags = useMemo(() => {
@@ -541,7 +563,8 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Pr
                 list={lists.find(l => l.id === task.list_id)}
                 selected={selectedId === task.id}
                 onToggle={() => onToggle(task)}
-                onClick={() => setSelectedId(task.id)} />
+                onClick={() => setSelectedId(task.id)}
+                onTagClick={onJumpToTag} />
             ))}
           </section>
         ))}
@@ -732,8 +755,8 @@ const menuItemStyle: React.CSSProperties = {
   borderRadius: 4, fontFamily: 'inherit',
 }
 
-function TaskRow({ task, tags, space, list, selected, onToggle, onClick }: {
-  task: Task; tags: string[]; space?: Space; list?: TaskList; selected: boolean; onToggle: () => void; onClick: () => void
+function TaskRow({ task, tags, space, list, selected, onToggle, onClick, onTagClick }: {
+  task: Task; tags: string[]; space?: Space; list?: TaskList; selected: boolean; onToggle: () => void; onClick: () => void; onTagClick?: (tag: string) => void
 }) {
   const done = !!task.completed_at
   return (
@@ -764,7 +787,17 @@ function TaskRow({ task, tags, space, list, selected, onToggle, onClick }: {
         {(space || tags.length > 0 || task.recurrence_text) && (
           <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             {space && <span title={space.name} style={{ width: 6, height: 6, borderRadius: '50%', background: space.color, flexShrink: 0 }} />}
-            {tags.map(tag => <span key={tag} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)' }}>#{tag}</span>)}
+            {tags.map(tag => (
+              <span key={tag}
+                onClick={e => { if (onTagClick) { e.stopPropagation(); onTagClick(tag) } }}
+                style={{
+                  fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+                  background: 'var(--indigo-bg)', color: 'var(--indigo-text)',
+                  cursor: onTagClick ? 'pointer' : 'default',
+                }}>
+                #{tag}
+              </span>
+            ))}
             {task.recurrence_text && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--slate-bg)', color: 'var(--slate-text)' }}>↻ {task.recurrence_text}</span>}
           </span>
         )}

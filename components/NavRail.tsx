@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'reflect' | 'park'
+export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags'
 
 export interface SearchResult { label: string; sub: string; screen: Screen }
 
@@ -70,6 +70,12 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
     items: [
       { id: 'okr', label: 'OKRs', icon: <OKRIcon /> },
       { id: 'roadmap', label: 'Roadmap', icon: <RoadmapIcon /> },
+    ],
+  },
+  {
+    label: 'Meta',
+    items: [
+      { id: 'tags', label: 'Tags', icon: <TagsIcon /> },
     ],
   },
   {
@@ -363,4 +369,7 @@ function ReflectIcon() {
 }
 function ParkIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/><path d="M6.4 11.5V4.5h2.4c1.2 0 2.1.9 2.1 2.1s-.9 2.1-2.1 2.1H6.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+}
+function TagsIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 1.5L4.5 14.5M11.5 1.5L10 14.5M1.5 5h13M1.5 11h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
 }
