@@ -33,14 +33,16 @@ export async function findActiveByLabel(label: string): Promise<ShareToken | nul
  * Look up an active share token by its token string. Used by the public
  * /share/[token] route to validate inbound requests. Returns null if the
  * token doesn't exist or isn't active.
+ *
+ * Routed through a SECURITY DEFINER RPC (find_active_share_token) so the
+ * public anon role can validate a known token without being able to SELECT
+ * the share_tokens table directly. Without this, the only anon-accessible
+ * read paths would either be (a) a permissive RLS policy that lets anyone
+ * enumerate every active token, or (b) nothing — which is the bug we hit
+ * when Mel's first share link returned "invalid" on May 13.
  */
 export async function findActiveByToken(token: string): Promise<ShareToken | null> {
-  const { data, error } = await supabase
-    .from('share_tokens')
-    .select('token, space_id')
-    .eq('token', token)
-    .eq('active', true)
-    .maybeSingle()
+  const { data, error } = await supabase.rpc('find_active_share_token', { p_token: token })
   if (error) throw error
-  return data ?? null
+  return (data as ShareToken | null) ?? null
 }
