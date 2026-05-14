@@ -153,8 +153,10 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               .filter(kr => kr.is_habit)
               .map(kr => {
                 const aggregate = calculateRollingAggregate(kr, habitCheckins, 4)
-                // Color thresholds: <50 red, 50–79 amber, ≥80 teal.
-                const tone = aggregate.percent >= 80 ? 'teal'
+                // Tone: zero sessions yet → slate (don't shout "off track" before
+                // there's any data). Otherwise: <50 red, 50–79 amber, ≥80 teal.
+                const tone = aggregate.sessions === 0 ? 'slate'
+                           : aggregate.percent >= 80 ? 'teal'
                            : aggregate.percent >= 50 ? 'amber'
                            : 'red'
                 return (
@@ -681,18 +683,18 @@ function MetricKPICard({
     : kr.metric_direction === 'up' ? delta > 0 : delta < 0
 
   // Tint by progress, same thresholds as habits — unified language for the row
-  // of cards. Null progress (under-configured KR) falls through to navy neutral.
-  const tone: 'teal' | 'amber' | 'red' | 'neutral' =
-    progressNum == null ? 'neutral'
+  // of cards. Slate covers both "under-configured" (no progress field) and
+  // "no readings yet" — don't shout off-track before there's any data.
+  const hasNoCheckins = latest12Desc.length === 0
+  const tone: 'teal' | 'amber' | 'red' | 'slate' =
+    (progressNum == null || hasNoCheckins) ? 'slate'
     : progressNum >= 80 ? 'teal'
     : progressNum >= 50 ? 'amber'
     : 'red'
 
-  // For the neutral case (under-configured / no data yet) use navy vars so the
-  // card still reads like the others without false-signaling green/red.
-  const tintBg   = tone === 'neutral' ? 'var(--navy-800)' : `var(--${tone}-bg)`
-  const tintEdge = tone === 'neutral' ? 'var(--navy-600)' : `var(--${tone}-text)`
-  const tintText = tone === 'neutral' ? 'var(--navy-100)' : `var(--${tone}-text)`
+  const tintBg   = `var(--${tone}-bg)`
+  const tintEdge = `var(--${tone}-text)`
+  const tintText = `var(--${tone}-text)`
 
   return (
     <button onClick={onTap} style={{

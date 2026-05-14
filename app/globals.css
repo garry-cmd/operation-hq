@@ -45,6 +45,10 @@
   --indigo-bg:   #14101e;
   --indigo-text: #b498d4;
 
+  /* Not started — cool slate, signals "no real signal yet" vs warm warnings */
+  --slate-bg:   #0d1018;
+  --slate-text: #8a93a8;
+
   color-scheme: dark;
 }
 
@@ -67,22 +71,26 @@
 
   /* On track */
   --teal:      #1a4a36;
-  --teal-bg:   #d8eee2;
+  --teal-bg:   #b4e2c5;
   --teal-text: #1f6e48;
 
-  /* Off track — warm, muted (de-saturated to match Done green's restraint) */
+  /* Off track — warmer, more saturated rust so warnings register */
   --red:      #5a2a18;
-  --red-bg:   #ebe0d6;
-  --red-text: #75452e;
+  --red-bg:   #f4c8a6;
+  --red-text: #8a3d18;
 
-  /* Blocked — warm muted */
+  /* Blocked — clearly golden amber, distinct from off-track rust */
   --amber:      #5a4010;
-  --amber-bg:   #ebe5d2;
-  --amber-text: #6a5418;
+  --amber-bg:   #f0db8e;
+  --amber-text: #6e5008;
 
   /* Waiting/tag */
-  --indigo-bg:   #e8e0f0;
+  --indigo-bg:   #d8c8ec;
   --indigo-text: #4a3070;
+
+  /* Not started — cool slate, breaks the all-warm dashboard for early/no-data KRs */
+  --slate-bg:   #e2e6ee;
+  --slate-text: #4a5468;
 
   color-scheme: light;
 }
