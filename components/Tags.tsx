@@ -14,10 +14,11 @@
  * Read-only browser: no edits happen here. Housekeeping (rename/merge/
  * delete) is a follow-up tier.
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { Space, Task, Note, TaskTag, NoteTag } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
 import * as notesDb from '@/lib/db/notes'
+import * as tagsDb from '@/lib/db/tags'
 
 interface Props {
   spaces: Space[]
@@ -47,6 +48,13 @@ export default function Tags({ spaces, onJumpToTask, onJumpToNote, initialTag, t
   const [selectedTag, setSelectedTag] = useState<string | null>(initialTag ?? null)
   const [filterMode, setFilterMode] = useState<ItemFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  // Housekeeping UI state — only one tag in active mutation mode at a time.
+  const [menuOpenTag, setMenuOpenTag] = useState<string | null>(null)
+  const [renamingTag, setRenamingTag] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [mergingTag, setMergingTag] = useState<string | null>(null)
+  const [deletingTag, setDeletingTag] = useState<string | null>(null)
+  const [working, setWorking] = useState(false)
 
   // Load everything once.
   useEffect(() => {
@@ -154,6 +162,77 @@ export default function Tags({ spaces, onJumpToTask, onJumpToNote, initialTag, t
 
   const selectedSummary = selectedTag ? tagSummaries.find(s => s.tag === selectedTag) ?? null : null
 
+  // ── Mutations ────────────────────────────────────────────────────
+
+  /** Re-pull tag rows after a mutation. The task/note row arrays don't
+   *  change; only the join-table mappings do. */
+  const reloadTags = useCallback(async () => {
+    try {
+      const [tt, nt] = await Promise.all([
+        tasksDb.listTagsForTasks(tasks.map(x => x.id)),
+        notesDb.listTagsForNotes(notes.map(x => x.id)),
+      ])
+      setTaskTagRows(tt)
+      setNoteTagRows(nt)
+    } catch (e) {
+      console.error('reload tags failed', e)
+      toast('Failed to refresh tags')
+    }
+  }, [tasks, notes, toast])
+
+  const onRenameCommit = useCallback(async (from: string, to: string) => {
+    const trimmed = to.trim().toLowerCase().replace(/^#/, '')
+    setRenamingTag(null)
+    if (!trimmed || trimmed === from) return
+    // Was the target tag already in use? Then this becomes a merge.
+    const targetExisted = await tagsDb.exists(trimmed)
+    setWorking(true)
+    try {
+      const finalTag = await tagsDb.rename(from, trimmed)
+      await reloadTags()
+      if (selectedTag === from) setSelectedTag(finalTag)
+      toast(targetExisted ? `Merged #${from} into #${finalTag}` : `Renamed to #${finalTag}`)
+    } catch (e) {
+      console.error('rename failed', e)
+      toast('Could not rename tag')
+    } finally {
+      setWorking(false)
+    }
+  }, [reloadTags, selectedTag, toast])
+
+  const onMergeCommit = useCallback(async (source: string, target: string) => {
+    setMergingTag(null)
+    if (!target || target === source) return
+    setWorking(true)
+    try {
+      await tagsDb.merge(source, target)
+      await reloadTags()
+      if (selectedTag === source) setSelectedTag(target)
+      toast(`Merged #${source} into #${target}`)
+    } catch (e) {
+      console.error('merge failed', e)
+      toast('Could not merge tag')
+    } finally {
+      setWorking(false)
+    }
+  }, [reloadTags, selectedTag, toast])
+
+  const onDeleteCommit = useCallback(async (tag: string) => {
+    setDeletingTag(null)
+    setWorking(true)
+    try {
+      await tagsDb.remove(tag)
+      await reloadTags()
+      if (selectedTag === tag) setSelectedTag(null)
+      toast(`Deleted #${tag}`)
+    } catch (e) {
+      console.error('delete failed', e)
+      toast('Could not delete tag')
+    } finally {
+      setWorking(false)
+    }
+  }, [reloadTags, selectedTag, toast])
+
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--navy-400)', fontSize: 13 }}>
@@ -186,37 +265,26 @@ export default function Tags({ spaces, onJumpToTask, onJumpToNote, initialTag, t
           </div>
         ) : (
           <div style={{ padding: '0 6px 20px' }}>
-            {visibleTags.map(s => {
-              const isActive = s.tag === selectedTag
-              return (
-                <button key={s.tag} onClick={() => setSelectedTag(s.tag)}
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                    background: isActive ? 'var(--accent-dim)' : 'none',
-                    color: isActive ? 'var(--accent)' : 'var(--navy-100)',
-                    fontSize: 13, fontWeight: isActive ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
-                    transition: 'background .15s',
-                  }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--navy-600)' }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'none' }}>
-                  <span style={{ width: 12, textAlign: 'center', color: isActive ? 'var(--accent)' : 'var(--navy-400)', fontWeight: 500 }}>#</span>
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.tag}</span>
-                  <span style={{ display: 'inline-flex', gap: 3 }}>
-                    {s.taskCount > 0 && (
-                      <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'rgba(91,141,239,0.18)', color: '#5b8def', letterSpacing: 0.2 }}>
-                        {s.taskCount}T
-                      </span>
-                    )}
-                    {s.noteCount > 0 && (
-                      <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'rgba(139,92,246,0.18)', color: '#8b5cf6', letterSpacing: 0.2 }}>
-                        {s.noteCount}N
-                      </span>
-                    )}
-                  </span>
-                </button>
-              )
-            })}
+            {visibleTags.map(s => (
+              <TagRow
+                key={s.tag}
+                summary={s}
+                active={s.tag === selectedTag}
+                menuOpen={menuOpenTag === s.tag}
+                renaming={renamingTag === s.tag}
+                renameDraft={renameDraft}
+                setRenameDraft={setRenameDraft}
+                disabled={working}
+                onSelect={() => setSelectedTag(s.tag)}
+                onOpenMenu={() => setMenuOpenTag(s.tag)}
+                onCloseMenu={() => setMenuOpenTag(null)}
+                onStartRename={() => { setRenamingTag(s.tag); setRenameDraft(s.tag); setMenuOpenTag(null) }}
+                onCommitRename={() => onRenameCommit(s.tag, renameDraft)}
+                onCancelRename={() => setRenamingTag(null)}
+                onStartMerge={() => { setMergingTag(s.tag); setMenuOpenTag(null) }}
+                onStartDelete={() => { setDeletingTag(s.tag); setMenuOpenTag(null) }}
+              />
+            ))}
             {visibleTags.length === 0 && (
               <div style={{ padding: 18, textAlign: 'center', color: 'var(--navy-400)', fontSize: 12 }}>
                 No matches.
@@ -269,6 +337,23 @@ export default function Tags({ spaces, onJumpToTask, onJumpToNote, initialTag, t
           </div>
         )}
       </section>
+
+      {mergingTag && (
+        <MergePicker
+          source={mergingTag}
+          allTags={tagSummaries.map(s => s.tag)}
+          onCommit={target => onMergeCommit(mergingTag, target)}
+          onCancel={() => setMergingTag(null)}
+        />
+      )}
+      {deletingTag && (
+        <DeleteDialog
+          tag={deletingTag}
+          summary={tagSummaries.find(s => s.tag === deletingTag) ?? null}
+          onConfirm={() => onDeleteCommit(deletingTag)}
+          onCancel={() => setDeletingTag(null)}
+        />
+      )}
     </div>
   )
 }
@@ -384,6 +469,251 @@ function NoteRow({ note, spaces, onClick }: { note: Note; spaces: Space[]; onCli
         </div>
       </div>
     </button>
+  )
+}
+
+// ── TagRow (left-pane row with hover-kebab + inline rename) ────────
+
+function TagRow(props: {
+  summary: TagSummary
+  active: boolean
+  menuOpen: boolean
+  renaming: boolean
+  renameDraft: string
+  setRenameDraft: (v: string) => void
+  disabled: boolean
+  onSelect: () => void
+  onOpenMenu: () => void
+  onCloseMenu: () => void
+  onStartRename: () => void
+  onCommitRename: () => void
+  onCancelRename: () => void
+  onStartMerge: () => void
+  onStartDelete: () => void
+}) {
+  const { summary: s, active, menuOpen, renaming } = props
+  const [hover, setHover] = useState(false)
+  const wrapRef = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    if (!menuOpen) return
+    function onDoc(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) props.onCloseMenu()
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [menuOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (renaming) {
+    return (
+      <input autoFocus
+        value={props.renameDraft}
+        onChange={e => props.setRenameDraft(e.target.value)}
+        onBlur={props.onCommitRename}
+        onKeyDown={e => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+          if (e.key === 'Escape') props.onCancelRename()
+        }}
+        style={{
+          width: '100%', padding: '7px 12px',
+          background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
+          borderRadius: 6, color: 'var(--navy-50)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+        }} />
+    )
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+      <button onClick={props.onSelect}
+        disabled={props.disabled}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+          padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
+          background: active ? 'var(--accent-dim)' : (hover ? 'var(--navy-600)' : 'none'),
+          color: active ? 'var(--accent)' : 'var(--navy-100)',
+          fontSize: 13, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+          transition: 'background .15s',
+        }}>
+        <span style={{ width: 12, textAlign: 'center', color: active ? 'var(--accent)' : 'var(--navy-400)', fontWeight: 500 }}>#</span>
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.tag}</span>
+        {!hover && (
+          <span style={{ display: 'inline-flex', gap: 3 }}>
+            {s.taskCount > 0 && (
+              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'rgba(91,141,239,0.18)', color: '#5b8def', letterSpacing: 0.2 }}>
+                {s.taskCount}T
+              </span>
+            )}
+            {s.noteCount > 0 && (
+              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '1px 5px', borderRadius: 99, background: 'rgba(139,92,246,0.18)', color: '#8b5cf6', letterSpacing: 0.2 }}>
+                {s.noteCount}N
+              </span>
+            )}
+          </span>
+        )}
+      </button>
+
+      {hover && (
+        <button onClick={e => { e.stopPropagation(); props.onOpenMenu() }}
+          title="Tag actions"
+          style={{
+            position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)',
+            background: 'none', border: 'none', padding: '2px 4px', borderRadius: 3,
+            color: 'var(--navy-300)', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit', lineHeight: 1,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-500)'; e.currentTarget.style.color = 'var(--navy-50)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--navy-300)' }}>
+          ⋯
+        </button>
+      )}
+
+      {menuOpen && (
+        <div style={{
+          position: 'absolute', top: '100%', right: 4, zIndex: 30, marginTop: 2,
+          background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 6,
+          padding: 4, minWidth: 150, boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        }}>
+          <button onClick={props.onStartRename} style={tagMenuItemStyle}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+            Rename
+          </button>
+          <button onClick={props.onStartMerge} style={tagMenuItemStyle}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+            Merge into…
+          </button>
+          <button onClick={props.onStartDelete} style={{ ...tagMenuItemStyle, color: 'var(--red-text)' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+const tagMenuItemStyle: React.CSSProperties = {
+  display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
+  padding: '6px 10px', fontSize: 12, color: 'var(--navy-100)', cursor: 'pointer',
+  borderRadius: 4, fontFamily: 'inherit',
+}
+
+// ── MergePicker (modal with searchable tag list) ───────────────────
+
+function MergePicker({ source, allTags, onCommit, onCancel }: {
+  source: string; allTags: string[]; onCommit: (target: string) => void; onCancel: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const candidates = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return allTags
+      .filter(t => t !== source)
+      .filter(t => !q || t.toLowerCase().includes(q))
+  }, [allTags, source, query])
+
+  // Escape to close
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onCancel() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel])
+
+  return (
+    <div onClick={onCancel}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, width: 400, maxWidth: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 12px 32px rgba(0,0,0,0.5)' }}>
+        <div style={{ padding: '18px 20px 10px' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy-50)' }}>Merge <span style={{ color: 'var(--accent)' }}>#{source}</span> into…</div>
+          <div style={{ fontSize: 12, color: 'var(--navy-400)', marginTop: 4 }}>All items will get the target tag. <code style={{ fontFamily: 'inherit', color: 'var(--navy-200)' }}>#{source}</code> will be removed.</div>
+        </div>
+        <div style={{ padding: '0 14px 8px' }}>
+          <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Pick a target tag…"
+            style={{
+              width: '100%', padding: '8px 12px',
+              background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 6,
+              color: 'var(--navy-50)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+            }} />
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '4px 8px 12px' }}>
+          {candidates.length === 0 ? (
+            <div style={{ padding: 20, textAlign: 'center', color: 'var(--navy-400)', fontSize: 12.5 }}>
+              {allTags.length <= 1 ? 'No other tags to merge into.' : 'No matches.'}
+            </div>
+          ) : (
+            candidates.map(t => (
+              <button key={t} onClick={() => onCommit(t)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 12px', border: 'none', borderRadius: 5, cursor: 'pointer',
+                  background: 'none', color: 'var(--navy-100)', fontSize: 13, fontFamily: 'inherit', textAlign: 'left',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+                <span style={{ width: 12, textAlign: 'center', color: 'var(--navy-400)' }}>#</span>
+                <span>{t}</span>
+              </button>
+            ))
+          )}
+        </div>
+        <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--navy-700)', display: 'flex', justifyContent: 'flex-end' }}>
+          <button onClick={onCancel}
+            style={{ padding: '6px 14px', background: 'none', border: '1px solid var(--navy-600)', borderRadius: 5, color: 'var(--navy-200)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── DeleteDialog ───────────────────────────────────────────────────
+
+function DeleteDialog({ tag, summary, onConfirm, onCancel }: {
+  tag: string; summary: TagSummary | null; onConfirm: () => void; onCancel: () => void
+}) {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onCancel()
+      if (e.key === 'Enter') onConfirm()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onCancel, onConfirm])
+  const t = summary?.taskCount ?? 0
+  const n = summary?.noteCount ?? 0
+  const impact = [
+    t > 0 && `${t} ${t === 1 ? 'task' : 'tasks'}`,
+    n > 0 && `${n} ${n === 1 ? 'note' : 'notes'}`,
+  ].filter(Boolean).join(' and ')
+  return (
+    <div onClick={onCancel}
+      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, width: 380, maxWidth: '100%', boxShadow: '0 12px 32px rgba(0,0,0,0.5)' }}>
+        <div style={{ padding: '20px 22px' }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy-50)', marginBottom: 6 }}>
+            Delete <span style={{ color: 'var(--red-text)' }}>#{tag}</span>?
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--navy-300)', lineHeight: 1.5 }}>
+            {impact ? <>This will remove the tag from <strong style={{ color: 'var(--navy-100)' }}>{impact}</strong>. The items themselves will not be deleted.</> : <>The tag isn't used anywhere.</>}
+          </div>
+        </div>
+        <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--navy-700)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onCancel}
+            style={{ padding: '6px 14px', background: 'none', border: '1px solid var(--navy-600)', borderRadius: 5, color: 'var(--navy-200)', fontSize: 12, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Cancel
+          </button>
+          <button autoFocus onClick={onConfirm}
+            style={{ padding: '6px 14px', background: 'var(--red-text)', border: 'none', borderRadius: 5, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+            Delete tag
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 
