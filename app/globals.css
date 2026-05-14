@@ -26,28 +26,29 @@
   --accent:     #4a8fff;
   --accent-dim: #0e1a2e;
 
-  /* On track — muted green */
+  /* On track — green, visibly tinted bg + brighter text */
   --teal:      #1a3e2a;
-  --teal-bg:   #0a1410;
-  --teal-text: #6ec896;
+  --teal-bg:   #102818;
+  --teal-text: #7eda9e;
 
-  /* Off track — warm rose/copper, deliberately not cool */
+  /* Off track — warm rust, visibly tinted bg + brighter coral text */
   --red:      #5a2a1a;
-  --red-bg:   #160a06;
-  --red-text: #b88872;
+  --red-bg:   #2a120a;
+  --red-text: #e8a888;
 
-  /* Blocked — warm amber, muted */
+  /* Blocked — golden amber, visibly tinted bg + brighter text */
   --amber:      #5a4810;
-  --amber-bg:   #14100a;
-  --amber-text: #c0a078;
+  --amber-bg:   #281e08;
+  --amber-text: #e8c878;
 
-  /* Waiting/tag — soft purple, distinct from accent */
-  --indigo-bg:   #14101e;
-  --indigo-text: #b498d4;
+  /* Waiting/tag — lavender, visibly tinted bg */
+  --indigo-bg:   #1e1830;
+  --indigo-text: #c8a8e8;
 
-  /* Not started — cool slate, signals "no real signal yet" vs warm warnings */
-  --slate-bg:   #0d1018;
-  --slate-text: #8a93a8;
+  /* Not started — cool slate. Stays subtle: this state should feel calm,
+     not loud. Small lift for visibility against the new tinted warm cards. */
+  --slate-bg:   #131722;
+  --slate-text: #9aa3b8;
 
   color-scheme: dark;
 }
