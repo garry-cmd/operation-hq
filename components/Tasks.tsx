@@ -1,32 +1,663 @@
 'use client'
 /**
- * Tasks — placeholder. The real module lands in Phase 2: free-floating
- * tasks per space with priorities, recurrence, tags, optional KR link,
- * and smart views (Today / Upcoming / Inbox). See mock from May 14.
+ * Tasks v1 — desktop three-pane task manager.
+ *
+ *   ┌─ Sub-sidebar 220 ──┬─── Task list flex:1 ─┬─ Detail 340 ─┐
+ *   │ smart views        │ Quick-add            │ Title        │
+ *   │ spaces             │ Sections (Overdue,   │ Priority     │
+ *   │ tags               │   Today, Tomorrow,   │ Due          │
+ *   │                    │   This week, Later,  │ Recurrence   │
+ *   │                    │   No date, Done)     │ Tags         │
+ *   │                    │                      │ Description  │
+ *   └────────────────────┴──────────────────────┴──────────────┘
+ *
+ * State is local to this component for v1. When the nav-rail badge or
+ * global search needs to know about tasks, lift to page.tsx.
+ *
+ * The interesting bits: quick-add uses parseQuickAdd to extract date /
+ * time / priority / recurrence / tags from a single typed line; the
+ * checkbox handler routes recurring tasks through toggleComplete which
+ * advances due_date in place rather than completing the row.
  */
-export default function Tasks() {
-  return (
-    <div style={{ padding: '40px 24px', maxWidth: 720, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 6 }}>Tasks</h1>
-      <p style={{ fontSize: 13, color: 'var(--navy-300)', marginBottom: 28 }}>
-        A robust to-do list for each space — priorities, recurrence, tags, and dates.
-      </p>
-      <div style={{
-        padding: '36px 28px',
-        background: 'var(--navy-800)',
-        border: '1px dashed var(--navy-500)',
-        borderRadius: 14,
-        textAlign: 'center',
-      }}>
-        <div style={{ fontSize: 30, marginBottom: 10, opacity: 0.4 }}>☑</div>
-        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-100)', marginBottom: 4 }}>
-          Coming soon
-        </div>
-        <div style={{ fontSize: 12, color: 'var(--navy-300)', lineHeight: 1.5 }}>
-          Quick capture with natural language, smart views (Today / Upcoming),<br />
-          recurrence rules, tags, and optional links to KRs.
-        </div>
+
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, Priority } from '@/lib/types'
+import * as tasksDb from '@/lib/db/tasks'
+import { parseQuickAdd, todayISO } from '@/lib/recurrence'
+
+interface Props {
+  spaces: Space[]
+  activeSpaceId: string
+  objectives: AnnualObjective[]
+  roadmapItems: RoadmapItem[]
+  toast: (msg: string) => void
+}
+
+type SmartView = 'today' | 'upcoming' | 'inbox' | 'all'
+type ScopeFilter =
+  | { kind: 'smart'; view: SmartView }
+  | { kind: 'space'; spaceId: string }
+  | { kind: 'tag'; tag: string }
+
+const PRIORITY_COLOR: Record<Priority, string> = {
+  1: '#d12d2d',
+  2: '#d4885a',
+  3: '#5b8def',
+  4: 'transparent',
+}
+
+const PRIORITY_LABEL: Record<Priority, string> = {
+  1: 'P1 · Urgent',
+  2: 'P2 · High',
+  3: 'P3 · Medium',
+  4: 'P4 · None',
+}
+
+export default function Tasks({ spaces, activeSpaceId, roadmapItems, toast }: Props) {
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
+  const [loading, setLoading] = useState(true)
+  const [scope, setScope] = useState<ScopeFilter>({ kind: 'smart', view: 'today' })
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [quickAdd, setQuickAdd] = useState('')
+  const quickAddRef = useRef<HTMLInputElement>(null)
+
+  // Load all tasks + their tags on mount.
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        const list = await tasksDb.listAll()
+        if (cancelled) return
+        setTasks(list)
+        const tagRows = await tasksDb.listTagsForTasks(list.map(t => t.id))
+        if (cancelled) return
+        const map = new Map<string, string[]>()
+        for (const row of tagRows) {
+          const arr = map.get(row.task_id) ?? []
+          arr.push(row.tag)
+          map.set(row.task_id, arr)
+        }
+        setTagsByTask(map)
+      } catch (e) {
+        console.error('tasks load failed', e)
+        toast('Failed to load tasks')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [toast])
+
+  // Derived: all tags across all tasks (for the sidebar).
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    for (const arr of tagsByTask.values()) for (const t of arr) set.add(t)
+    return Array.from(set).sort()
+  }, [tagsByTask])
+
+  // Counts shown next to each sidebar entry. Reflect "what would the
+  // user see if they clicked this" — same filter as the main view.
+  const today = todayISO()
+  const counts = useMemo(() => {
+    const open = tasks.filter(t => !t.completed_at)
+    return {
+      today: open.filter(t => t.due_date && t.due_date <= today).length,
+      upcoming: open.filter(t => t.due_date && t.due_date > today).length,
+      inbox: open.filter(t => !t.due_date).length,
+      all: open.length,
+      bySpace: spaces.reduce<Record<string, number>>((acc, s) => {
+        acc[s.id] = open.filter(t => t.space_id === s.id).length
+        return acc
+      }, {}),
+      byTag: allTags.reduce<Record<string, number>>((acc, tag) => {
+        acc[tag] = open.filter(t => (tagsByTask.get(t.id) ?? []).includes(tag)).length
+        return acc
+      }, {}),
+    }
+  }, [tasks, spaces, allTags, tagsByTask, today])
+
+  // Filtered list under the current scope. Order is: open first
+  // (sorted by due-then-priority), then completed at the bottom.
+  const filtered = useMemo(() => {
+    let pool = tasks
+    if (scope.kind === 'smart') {
+      pool = pool.filter(t => !t.completed_at)
+      if (scope.view === 'today')    pool = pool.filter(t => t.due_date && t.due_date <= today)
+      if (scope.view === 'upcoming') pool = pool.filter(t => t.due_date && t.due_date > today)
+      if (scope.view === 'inbox')    pool = pool.filter(t => !t.due_date)
+      // 'all' = no further filter
+    } else if (scope.kind === 'space') {
+      pool = pool.filter(t => t.space_id === scope.spaceId)
+    } else if (scope.kind === 'tag') {
+      const tag = scope.tag
+      pool = pool.filter(t => (tagsByTask.get(t.id) ?? []).includes(tag))
+    }
+    return pool.sort((a, b) => {
+      // Completed at the end
+      if (!!a.completed_at !== !!b.completed_at) return a.completed_at ? 1 : -1
+      // Then by due_date (nulls last)
+      if (a.due_date !== b.due_date) {
+        if (!a.due_date) return 1
+        if (!b.due_date) return -1
+        return a.due_date < b.due_date ? -1 : 1
+      }
+      // Then by priority (1 first)
+      if (a.priority !== b.priority) return a.priority - b.priority
+      return a.created_at < b.created_at ? -1 : 1
+    })
+  }, [tasks, scope, tagsByTask, today])
+
+  // Section the filtered list by due bucket. Sections render in this
+  // fixed order. We compute the buckets up-front to keep the JSX flat.
+  const sections = useMemo(() => {
+    const overdue: Task[] = []
+    const todayBucket: Task[] = []
+    const tomorrowBucket: Task[] = []
+    const thisWeek: Task[] = []
+    const later: Task[] = []
+    const noDate: Task[] = []
+    const done: Task[] = []
+    const tomorrow = isoAddDays(today, 1)
+    const weekEnd = isoAddDays(today, 7)
+
+    for (const t of filtered) {
+      if (t.completed_at) { done.push(t); continue }
+      if (!t.due_date)    { noDate.push(t); continue }
+      if (t.due_date < today)             overdue.push(t)
+      else if (t.due_date === today)      todayBucket.push(t)
+      else if (t.due_date === tomorrow)   tomorrowBucket.push(t)
+      else if (t.due_date <= weekEnd)     thisWeek.push(t)
+      else                                later.push(t)
+    }
+    return [
+      { name: 'Overdue',   tasks: overdue,        accent: 'var(--red-text)' },
+      { name: 'Today',     tasks: todayBucket,    accent: 'var(--accent)' },
+      { name: 'Tomorrow',  tasks: tomorrowBucket, accent: undefined },
+      { name: 'This week', tasks: thisWeek,       accent: undefined },
+      { name: 'Later',     tasks: later,          accent: undefined },
+      { name: 'No date',   tasks: noDate,         accent: undefined },
+      { name: 'Done',      tasks: done,           accent: 'var(--navy-400)' },
+    ].filter(s => s.tasks.length > 0)
+  }, [filtered, today])
+
+  const selected = useMemo(
+    () => selectedId ? tasks.find(t => t.id === selectedId) ?? null : null,
+    [tasks, selectedId]
+  )
+
+  // ── Mutations ────────────────────────────────────────────────────
+
+  const onQuickAdd = useCallback(async () => {
+    const raw = quickAdd.trim()
+    if (!raw) return
+    const parsed = parseQuickAdd(raw)
+    if (!parsed.title) { toast('Need a title'); return }
+    // Target space: if scope is a specific space, use it; otherwise
+    // default to activeSpaceId (the rail's selected space).
+    const targetSpace = scope.kind === 'space' ? scope.spaceId : activeSpaceId
+    if (!targetSpace) { toast('Pick a space first'); return }
+    try {
+      const created = await tasksDb.create({
+        space_id: targetSpace,
+        title: parsed.title,
+        priority: parsed.priority,
+        due_date: parsed.due_date,
+        due_time: parsed.due_time,
+        recurrence_text: parsed.recurrence_text,
+        recurrence_rule: parsed.recurrence_rule,
+      })
+      if (parsed.tags && parsed.tags.length > 0) {
+        await tasksDb.setTags(created.id, parsed.tags)
+        setTagsByTask(prev => {
+          const next = new Map(prev)
+          next.set(created.id, parsed.tags!)
+          return next
+        })
+      }
+      setTasks(prev => [...prev, created])
+      setQuickAdd('')
+      // If the scope is "Inbox" but the new task has a date, switch to
+      // Today so the user sees what they just created. Otherwise leave
+      // the scope alone.
+      if (scope.kind === 'smart' && scope.view === 'inbox' && parsed.due_date) {
+        setScope({ kind: 'smart', view: 'today' })
+      }
+    } catch (e) {
+      console.error('quick add failed', e)
+      toast('Could not create task')
+    }
+  }, [quickAdd, scope, activeSpaceId, toast])
+
+  const onToggle = useCallback(async (task: Task) => {
+    try {
+      const updated = await tasksDb.toggleComplete(task)
+      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
+    } catch (e) {
+      console.error('toggle failed', e)
+      toast('Could not update task')
+    }
+  }, [toast])
+
+  const onPatch = useCallback(async (id: string, patch: Partial<Task>) => {
+    try {
+      const updated = await tasksDb.update(id, patch)
+      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
+    } catch (e) {
+      console.error('patch failed', e)
+      toast('Could not update task')
+    }
+  }, [toast])
+
+  const onDelete = useCallback(async (id: string) => {
+    try {
+      await tasksDb.remove(id)
+      setTasks(prev => prev.filter(t => t.id !== id))
+      setTagsByTask(prev => { const next = new Map(prev); next.delete(id); return next })
+      if (selectedId === id) setSelectedId(null)
+    } catch (e) {
+      console.error('delete failed', e)
+      toast('Could not delete task')
+    }
+  }, [toast, selectedId])
+
+  const onSetTags = useCallback(async (id: string, tags: string[]) => {
+    try {
+      await tasksDb.setTags(id, tags)
+      setTagsByTask(prev => {
+        const next = new Map(prev)
+        if (tags.length === 0) next.delete(id)
+        else next.set(id, tags)
+        return next
+      })
+    } catch (e) {
+      console.error('set tags failed', e)
+      toast('Could not update tags')
+    }
+  }, [toast])
+
+  // ── Rendering ────────────────────────────────────────────────────
+
+  const heading = useMemo(() => {
+    if (scope.kind === 'smart') {
+      return { title: scope.view === 'today' ? 'Today'
+                    : scope.view === 'upcoming' ? 'Upcoming'
+                    : scope.view === 'inbox' ? 'Inbox'
+                    : 'All tasks',
+               subtitle: scope.view === 'today' ? formatLongDate(today) : '' }
+    }
+    if (scope.kind === 'space') {
+      const space = spaces.find(s => s.id === scope.spaceId)
+      return { title: space?.name ?? 'Space', subtitle: '' }
+    }
+    return { title: `#${scope.tag}`, subtitle: '' }
+  }, [scope, spaces, today])
+
+  if (loading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--navy-400)', fontSize: 13 }}>
+        <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
+        <span style={{ marginLeft: 10 }}>Loading tasks…</span>
       </div>
+    )
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `220px 1fr ${selected ? '340px' : '0'}`, height: 'calc(100vh - 0px)' }}>
+      {/* ── Sub-sidebar ── */}
+      <aside style={{ background: 'var(--navy-800)', borderRight: '1px solid var(--navy-600)', overflowY: 'auto' }}>
+        <SidebarSection label="Smart views">
+          <SidebarRow icon="📅" label="Today"    count={counts.today}    active={scope.kind === 'smart' && scope.view === 'today'}    onClick={() => { setScope({ kind: 'smart', view: 'today' });    setSelectedId(null) }} />
+          <SidebarRow icon="⏭"  label="Upcoming" count={counts.upcoming} active={scope.kind === 'smart' && scope.view === 'upcoming'} onClick={() => { setScope({ kind: 'smart', view: 'upcoming' }); setSelectedId(null) }} />
+          <SidebarRow icon="📥" label="Inbox"    count={counts.inbox}    active={scope.kind === 'smart' && scope.view === 'inbox'}    onClick={() => { setScope({ kind: 'smart', view: 'inbox' });    setSelectedId(null) }} />
+          <SidebarRow icon="∞"  label="All open" count={counts.all}      active={scope.kind === 'smart' && scope.view === 'all'}      onClick={() => { setScope({ kind: 'smart', view: 'all' });      setSelectedId(null) }} />
+        </SidebarSection>
+
+        {spaces.length > 0 && (
+          <SidebarSection label="Spaces">
+            {spaces.map(s => (
+              <SidebarRow key={s.id}
+                dot={s.color}
+                label={s.name}
+                count={counts.bySpace[s.id] ?? 0}
+                active={scope.kind === 'space' && scope.spaceId === s.id}
+                onClick={() => { setScope({ kind: 'space', spaceId: s.id }); setSelectedId(null) }} />
+            ))}
+          </SidebarSection>
+        )}
+
+        {allTags.length > 0 && (
+          <SidebarSection label="Tags">
+            {allTags.map(tag => (
+              <SidebarRow key={tag}
+                icon="#"
+                label={tag}
+                count={counts.byTag[tag] ?? 0}
+                active={scope.kind === 'tag' && scope.tag === tag}
+                onClick={() => { setScope({ kind: 'tag', tag }); setSelectedId(null) }} />
+            ))}
+          </SidebarSection>
+        )}
+      </aside>
+
+      {/* ── Main task list ── */}
+      <main style={{ overflowY: 'auto', padding: '20px 24px 60px' }}>
+        <header style={{ marginBottom: 14 }}>
+          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--navy-50)' }}>{heading.title}</h1>
+          {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
+        </header>
+
+        {/* Quick-add */}
+        <form onSubmit={e => { e.preventDefault(); onQuickAdd() }}>
+          <input ref={quickAddRef}
+            value={quickAdd}
+            onChange={e => setQuickAdd(e.target.value)}
+            placeholder='+ Add task… try "review deck tomorrow 3pm #stellar p1"'
+            style={{
+              width: '100%', padding: '10px 14px', marginBottom: 6,
+              background: 'var(--navy-800)', border: '1px dashed var(--navy-500)', borderRadius: 8,
+              color: 'var(--navy-100)', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+              transition: 'border-color .15s',
+            }}
+            onFocus={e => { e.currentTarget.style.borderStyle = 'solid'; e.currentTarget.style.borderColor = 'var(--accent)' }}
+            onBlur={e => { e.currentTarget.style.borderStyle = 'dashed'; e.currentTarget.style.borderColor = 'var(--navy-500)' }} />
+        </form>
+
+        {sections.length === 0 && (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
+            Nothing here. {scope.kind === 'smart' && scope.view === 'today' && 'Enjoy your day.'}
+          </div>
+        )}
+
+        {sections.map(section => (
+          <section key={section.name} style={{ marginTop: 22 }}>
+            <h2 style={{ fontSize: 12, fontWeight: 700, color: section.accent ?? 'var(--navy-300)', letterSpacing: '0.04em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+              {section.name} · {section.tasks.length}
+            </h2>
+            {section.tasks.map(task => (
+              <TaskRow key={task.id} task={task}
+                tags={tagsByTask.get(task.id) ?? []}
+                space={spaces.find(s => s.id === task.space_id)}
+                selected={selectedId === task.id}
+                onToggle={() => onToggle(task)}
+                onClick={() => setSelectedId(task.id)} />
+            ))}
+          </section>
+        ))}
+      </main>
+
+      {/* ── Detail panel ── */}
+      {selected && (
+        <DetailPanel task={selected}
+          tags={tagsByTask.get(selected.id) ?? []}
+          spaces={spaces}
+          roadmapItems={roadmapItems}
+          onPatch={patch => onPatch(selected.id, patch)}
+          onSetTags={tags => onSetTags(selected.id, tags)}
+          onDelete={() => onDelete(selected.id)}
+          onClose={() => setSelectedId(null)} />
+      )}
     </div>
   )
+}
+
+// ── Sub-components ────────────────────────────────────────────────
+
+function SidebarSection({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div style={{ padding: '14px 14px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>{label}</div>
+      {children}
+    </div>
+  )
+}
+
+function SidebarRow({ icon, dot, label, count, active, onClick }: { icon?: string; dot?: string; label: string; count?: number; active?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick}
+      style={{
+        width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 9,
+        padding: '6px 10px', border: 'none', borderRadius: 6, cursor: 'pointer',
+        background: active ? 'var(--accent-dim)' : 'none',
+        color: active ? 'var(--accent)' : 'var(--navy-100)',
+        fontSize: 13, fontWeight: active ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
+      }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--navy-700)' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
+      {icon && <span style={{ width: 14, textAlign: 'center', opacity: 0.7 }}>{icon}</span>}
+      {dot && <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} />}
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {count != null && count > 0 && <span style={{ fontSize: 11, color: active ? 'var(--accent)' : 'var(--navy-400)' }}>{count}</span>}
+    </button>
+  )
+}
+
+function TaskRow({ task, tags, space, selected, onToggle, onClick }: {
+  task: Task; tags: string[]; space?: Space; selected: boolean; onToggle: () => void; onClick: () => void
+}) {
+  const done = !!task.completed_at
+  return (
+    <button onClick={onClick}
+      style={{
+        width: '100%', display: 'grid', gridTemplateColumns: '22px 10px 1fr auto auto', gap: 10, alignItems: 'center',
+        padding: '8px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
+        background: selected ? 'var(--accent-dim)' : 'none', textAlign: 'left',
+        fontFamily: 'inherit',
+      }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'var(--navy-800)' }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'none' }}>
+      <span onClick={e => { e.stopPropagation(); onToggle() }}
+        style={{
+          width: 17, height: 17, borderRadius: '50%',
+          border: `1.5px solid ${done ? 'var(--teal-text)' : 'var(--navy-400)'}`,
+          background: done ? 'var(--teal-text)' : 'transparent',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontSize: 10, transition: 'all .15s',
+        }}>
+        {done && '✓'}
+      </span>
+      <span style={{ width: 10, height: 10, borderRadius: 2, background: PRIORITY_COLOR[task.priority], border: task.priority === 4 ? '1px solid var(--navy-500)' : 'none' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+        <span style={{ fontSize: 13.5, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {task.title}
+        </span>
+        {(space || tags.length > 0 || task.recurrence_text) && (
+          <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+            {space && <span style={{ fontSize: 10.5, color: 'var(--navy-300)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: space.color }} />{space.name}
+            </span>}
+            {tags.map(tag => <span key={tag} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)' }}>#{tag}</span>)}
+            {task.recurrence_text && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--slate-bg)', color: 'var(--slate-text)' }}>↻ {task.recurrence_text}</span>}
+          </span>
+        )}
+      </div>
+      <span style={{ fontSize: 11, color: dueColor(task.due_date), fontWeight: 500 }}>
+        {formatDue(task.due_date, task.due_time)}
+      </span>
+    </button>
+  )
+}
+
+function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onDelete, onClose }: {
+  task: Task; tags: string[]; spaces: Space[]; roadmapItems: RoadmapItem[];
+  onPatch: (patch: Partial<Task>) => void;
+  onSetTags: (tags: string[]) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const [title, setTitle] = useState(task.title)
+  const [desc, setDesc] = useState(task.description ?? '')
+  const [tagInput, setTagInput] = useState('')
+  // Keep local state in sync when the selected task changes
+  useEffect(() => { setTitle(task.title); setDesc(task.description ?? '') }, [task.id])
+
+  const space = spaces.find(s => s.id === task.space_id)
+  const linkedKR = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
+
+  function commitTitle() {
+    if (title.trim() && title !== task.title) onPatch({ title: title.trim() })
+  }
+  function commitDesc() {
+    const v = desc.trim() || null
+    if (v !== task.description) onPatch({ description: v })
+  }
+  function addTag() {
+    const t = tagInput.trim().toLowerCase().replace(/^#/, '')
+    if (!t) return
+    if (tags.includes(t)) { setTagInput(''); return }
+    onSetTags([...tags, t])
+    setTagInput('')
+  }
+  function removeTag(t: string) {
+    onSetTags(tags.filter(x => x !== t))
+  }
+
+  return (
+    <aside style={{ background: 'var(--navy-800)', borderLeft: '1px solid var(--navy-600)', overflowY: 'auto', padding: '20px 18px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>Task detail</span>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
+      </div>
+
+      <textarea value={title} onChange={e => setTitle(e.target.value)} onBlur={commitTitle}
+        rows={2}
+        style={{ width: '100%', padding: 10, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 6, color: 'var(--navy-50)', fontSize: 15, fontWeight: 600, fontFamily: 'inherit', resize: 'vertical', outline: 'none', marginBottom: 14 }} />
+
+      <Field label="Priority">
+        <select value={task.priority} onChange={e => onPatch({ priority: parseInt(e.target.value, 10) as Priority })}
+          style={selectStyle}>
+          <option value={1}>P1 · Urgent</option>
+          <option value={2}>P2 · High</option>
+          <option value={3}>P3 · Medium</option>
+          <option value={4}>P4 · None</option>
+        </select>
+      </Field>
+
+      <Field label="Due date">
+        <input type="date" value={task.due_date ?? ''} onChange={e => onPatch({ due_date: e.target.value || null })} style={inputStyle} />
+      </Field>
+
+      <Field label="Time">
+        <input type="time" value={task.due_time?.slice(0, 5) ?? ''} onChange={e => onPatch({ due_time: e.target.value ? `${e.target.value}:00` : null })} style={inputStyle} />
+      </Field>
+
+      <Field label="Recurrence">
+        <span style={{ fontSize: 12, color: task.recurrence_text ? 'var(--navy-100)' : 'var(--navy-400)' }}>
+          {task.recurrence_text ?? 'One-shot'}
+        </span>
+        {task.recurrence_text && (
+          <button onClick={() => onPatch({ recurrence_text: null, recurrence_rule: null })}
+            style={{ marginLeft: 8, fontSize: 11, background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer' }}>
+            Clear
+          </button>
+        )}
+      </Field>
+
+      <Field label="Space">
+        <span style={{ fontSize: 12, color: 'var(--navy-100)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          {space && <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color }} />}
+          {space?.name ?? '—'}
+        </span>
+      </Field>
+
+      {linkedKR && (
+        <Field label="Linked KR">
+          <span style={{ fontSize: 12, color: 'var(--accent)' }}>{linkedKR.title}</span>
+        </Field>
+      )}
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--navy-300)', marginBottom: 6 }}>Tags</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 6 }}>
+          {tags.map(t => (
+            <span key={t} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              #{t}
+              <button onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+            </span>
+          ))}
+        </div>
+        <input value={tagInput} onChange={e => setTagInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+          placeholder="Add tag…"
+          style={{ ...inputStyle, fontSize: 11.5 }} />
+      </div>
+
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ fontSize: 11, color: 'var(--navy-300)', marginBottom: 6 }}>Description</div>
+        <textarea value={desc} onChange={e => setDesc(e.target.value)} onBlur={commitDesc}
+          rows={4}
+          style={{ width: '100%', padding: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 5, color: 'var(--navy-100)', fontSize: 12, fontFamily: 'inherit', resize: 'vertical', outline: 'none' }} />
+      </div>
+
+      <button onClick={() => { if (confirm('Delete this task?')) onDelete() }}
+        style={{ width: '100%', padding: '8px 12px', background: 'none', border: '1px solid var(--red-text)', borderRadius: 6, color: 'var(--red-text)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+        Delete task
+      </button>
+    </aside>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--navy-700)', fontSize: 12 }}>
+      <span style={{ color: 'var(--navy-300)' }}>{label}</span>
+      <span>{children}</span>
+    </div>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 5,
+  color: 'var(--navy-100)', fontSize: 12, padding: '4px 8px', fontFamily: 'inherit',
+}
+
+const selectStyle: React.CSSProperties = { ...inputStyle }
+
+// ── Helpers ───────────────────────────────────────────────────────
+
+function isoAddDays(iso: string, n: number): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  date.setDate(date.getDate() + n)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatLongDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  const date = new Date(y, m - 1, d)
+  return date.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
+}
+
+function formatDue(iso: string | null, time: string | null): string {
+  if (!iso) return ''
+  const today = todayISO()
+  const tomorrow = isoAddDays(today, 1)
+  const yesterday = isoAddDays(today, -1)
+  let label: string
+  if (iso === today) label = 'Today'
+  else if (iso === tomorrow) label = 'Tomorrow'
+  else if (iso === yesterday) label = 'Yesterday'
+  else if (iso < today) {
+    const days = Math.round((Date.parse(today) - Date.parse(iso)) / 86400000)
+    label = `${days}d late`
+  } else {
+    const [y, m, d] = iso.split('-').map(Number)
+    label = new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  }
+  if (time) {
+    const [h, mi] = time.split(':').map(Number)
+    const ampm = h >= 12 ? 'pm' : 'am'
+    const h12 = h % 12 || 12
+    label += ` ${h12}${mi ? ':' + String(mi).padStart(2, '0') : ''}${ampm}`
+  }
+  return label
+}
+
+function dueColor(iso: string | null): string {
+  if (!iso) return 'var(--navy-400)'
+  const today = todayISO()
+  if (iso < today) return 'var(--red-text)'
+  if (iso === today) return 'var(--accent)'
+  return 'var(--navy-300)'
 }

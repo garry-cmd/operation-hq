@@ -148,3 +148,57 @@ export interface ShareToken {
   token: string
   space_id: string
 }
+
+// ── Tasks ─────────────────────────────────────────────────────────────
+// Free-floating per-space todos with priorities, recurrence, tags,
+// subtasks, and an optional KR link. Separate from weekly_actions
+// (which is KR-coupled and week-scoped); the two coexist.
+//
+// Recurrence model: rolling. A recurring task keeps a single row across
+// occurrences — completing it advances due_date instead of spawning a
+// new row. completed_at therefore stays NULL on recurring tasks.
+
+export type Priority = 1 | 2 | 3 | 4
+
+export interface RecurrenceRule {
+  freq: 'daily' | 'weekly' | 'monthly' | 'yearly'
+  interval?: number                                              // every N (default 1)
+  byday?: ('MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU')[]    // weekly only
+  bymonthday?: number                                            // monthly only (1–31)
+}
+
+export interface Task {
+  id: string
+  space_id: string
+  roadmap_item_id: string | null
+  parent_task_id: string | null
+  title: string
+  description: string | null
+  priority: Priority
+  due_date: string | null
+  due_time: string | null
+  recurrence_text: string | null
+  recurrence_rule: RecurrenceRule | null
+  completed_at: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NewTaskInput {
+  space_id: string
+  title: string
+  roadmap_item_id?: string | null
+  parent_task_id?: string | null
+  description?: string | null
+  priority?: Priority
+  due_date?: string | null
+  due_time?: string | null
+  recurrence_text?: string | null
+  recurrence_rule?: RecurrenceRule | null
+}
+
+export interface TaskTag {
+  task_id: string
+  tag: string
+}
