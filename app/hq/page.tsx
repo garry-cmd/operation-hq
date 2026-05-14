@@ -254,6 +254,10 @@ export default function HQPage() {
   })()
 
   function copyShareLink() {
+    if (!shareToken) {
+      setToast('No share link configured yet')
+      return
+    }
     const link = `${window.location.origin}/share/${shareToken}`
     navigator.clipboard.writeText(link)
     setCopied(true); setAvatarOpen(false); setToast('Share link copied!')
