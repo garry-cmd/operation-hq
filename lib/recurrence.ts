@@ -186,6 +186,14 @@ export function parseRecurrence(input: string): { text: string; rule: Recurrence
     return { text: 'every year', rule: { freq: 'yearly', interval: 1 } }
   }
 
+  // "every weekday" / "weekdays" / "every weekdays"
+  if (stripped === 'weekday' || stripped === 'weekdays' || s === 'weekdays') {
+    return {
+      text: 'every weekday',
+      rule: { freq: 'weekly', interval: 1, byday: ['MO', 'TU', 'WE', 'TH', 'FR'] },
+    }
+  }
+
   // "every monday" / "every monday, wednesday" / "every mon & wed"
   // Split on commas, "and", or "&".
   const dayParts = stripped.split(/[,&]|\s+and\s+/).map(p => p.trim()).filter(Boolean)
@@ -424,4 +432,211 @@ function parsePriorityToken(raw: string): Priority | null {
 
 function pad(n: number): string {
   return String(n).padStart(2, '0')
+}
+
+// ── Recurrence presets (detail-panel dropdown) ─────────────────────
+
+const DAY_NAME_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
+const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
+
+function ordinal(n: number): string {
+  const s = ['th', 'st', 'nd', 'rd']
+  const v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
+
+export type RecurrencePresetId = 'daily' | 'weekly' | 'weekdays' | 'monthly' | 'yearly'
+
+export interface RecurrencePreset {
+  id: RecurrencePresetId
+  label: string         // e.g. "Every week"
+  sublabel?: string     // e.g. "on Thursday"
+  text: string          // parser-friendly canonical form stored in recurrence_text
+  rule: RecurrenceRule
+}
+
+/**
+ * Build the preset list shown in the detail-panel dropdown.
+ * All anchored to `anchor` (typically todayISO()) so the suggested
+ * weekly day, monthly day-of-month, and yearly month/day reflect the
+ * day the user is making the choice.
+ */
+export function buildRecurrencePresets(anchor: string): RecurrencePreset[] {
+  const d = fromISO(anchor)
+  const dow = d.getDay()
+  const code = DOW[dow]
+  const dayName = DAY_NAME_LONG[dow]
+  const monthName = MONTH_NAME[d.getMonth()]
+  const dom = d.getDate()
+  return [
+    {
+      id: 'daily',
+      label: 'Every day',
+      text: 'every day',
+      rule: { freq: 'daily', interval: 1 },
+    },
+    {
+      id: 'weekly',
+      label: 'Every week',
+      sublabel: `on ${dayName}`,
+      text: `every ${dayName.toLowerCase()}`,
+      rule: { freq: 'weekly', interval: 1, byday: [code] },
+    },
+    {
+      id: 'weekdays',
+      label: 'Every weekday',
+      sublabel: '(Mon–Fri)',
+      text: 'every weekday',
+      rule: { freq: 'weekly', interval: 1, byday: ['MO', 'TU', 'WE', 'TH', 'FR'] },
+    },
+    {
+      id: 'monthly',
+      label: 'Every month',
+      sublabel: `on the ${ordinal(dom)}`,
+      text: 'every month',
+      rule: { freq: 'monthly', interval: 1, bymonthday: dom },
+    },
+    {
+      id: 'yearly',
+      label: 'Every year',
+      sublabel: `on ${monthName} ${dom}`,
+      text: 'every year',
+      rule: { freq: 'yearly', interval: 1 },
+    },
+  ]
+}
+
+/**
+ * Compute the due_date the task should have once a recurrence rule
+ * is applied. Silent snap forward: if the current due_date doesn't
+ * fit the new rule, advance from `today` to the first date that does.
+ * If the current due_date already fits, keep it.
+ */
+export function snapDueDateToRule(
+  currentDue: string | null,
+  rule: RecurrenceRule,
+  today: string,
+): string {
+  switch (rule.freq) {
+    case 'daily':
+      return currentDue ?? today
+
+    case 'weekly': {
+      const tCode = DOW[fromISO(today).getDay()]
+      const days = (rule.byday && rule.byday.length > 0) ? rule.byday : [tCode]
+      if (currentDue && days.includes(dayCode(currentDue))) return currentDue
+      // First matching weekday from today, inclusive
+      for (let i = 0; i < 7; i++) {
+        const cand = addDays(today, i)
+        if (days.includes(dayCode(cand))) return cand
+      }
+      return today
+    }
+
+    case 'monthly': {
+      const dom = rule.bymonthday ?? fromISO(today).getDate()
+      if (currentDue && fromISO(currentDue).getDate() === dom) return currentDue
+      // Walk forward up to ~62 days; finds same-day-of-month in this or next month
+      for (let i = 0; i < 62; i++) {
+        const cand = addDays(today, i)
+        if (fromISO(cand).getDate() === dom) return cand
+      }
+      return today
+    }
+
+    case 'yearly': {
+      const t = fromISO(today)
+      const month = t.getMonth()
+      const day = t.getDate()
+      if (currentDue) {
+        const c = fromISO(currentDue)
+        if (c.getMonth() === month && c.getDate() === day) return currentDue
+      }
+      const thisYear = new Date(t.getFullYear(), month, day)
+      if (thisYear.getTime() >= t.getTime()) return toISO(thisYear)
+      return toISO(new Date(t.getFullYear() + 1, month, day))
+    }
+  }
+}
+
+/**
+ * Human label for a stored recurrence rule, shown on the detail-panel
+ * trigger button. Richer than recurrence_text so e.g. a monthly rule
+ * reads as "Every month on the 14th" rather than just "every month".
+ */
+export function recurrenceLabel(rule: RecurrenceRule, dueDate: string | null): string {
+  const interval = rule.interval ?? 1
+  switch (rule.freq) {
+    case 'daily':
+      if (interval === 1) return 'Every day'
+      if (interval === 2) return 'Every other day'
+      return `Every ${interval} days`
+
+    case 'weekly': {
+      const days = rule.byday ?? []
+      const isWeekdays =
+        days.length === 5 &&
+        (['MO', 'TU', 'WE', 'TH', 'FR'] as const).every(d => days.includes(d))
+      if (isWeekdays) return 'Every weekday'
+      if (days.length === 1) {
+        const idx = DOW.indexOf(days[0])
+        return interval === 1
+          ? `Every week on ${DAY_NAME_LONG[idx]}`
+          : `Every ${interval} weeks on ${DAY_NAME_LONG[idx]}`
+      }
+      if (days.length > 1) {
+        const names = days.map(c => DAY_NAME_LONG[DOW.indexOf(c)].slice(0, 3)).join(', ')
+        return interval === 1 ? `Weekly · ${names}` : `Every ${interval} weeks · ${names}`
+      }
+      if (interval === 1) return 'Every week'
+      if (interval === 2) return 'Every other week'
+      return `Every ${interval} weeks`
+    }
+
+    case 'monthly': {
+      const dom = rule.bymonthday ?? (dueDate ? fromISO(dueDate).getDate() : null)
+      if (dom !== null) {
+        return interval === 1
+          ? `Every month on the ${ordinal(dom)}`
+          : `Every ${interval} months on the ${ordinal(dom)}`
+      }
+      if (interval === 1) return 'Every month'
+      return `Every ${interval} months`
+    }
+
+    case 'yearly': {
+      if (dueDate) {
+        const d = fromISO(dueDate)
+        return `Every year on ${MONTH_NAME[d.getMonth()]} ${d.getDate()}`
+      }
+      return interval === 1 ? 'Every year' : `Every ${interval} years`
+    }
+  }
+}
+
+/**
+ * Detect whether a stored rule matches one of the canonical presets,
+ * for showing a check mark on the active option. Compares against
+ * presets built from `anchor` so the "weekly on Thursday" preset
+ * matches only on Thursdays (otherwise picking it would silently
+ * change the anchor).
+ */
+export function matchingPresetId(
+  rule: RecurrenceRule,
+  anchor: string,
+): RecurrencePresetId | null {
+  const presets = buildRecurrencePresets(anchor)
+  for (const p of presets) {
+    if (sameRule(p.rule, rule)) return p.id
+  }
+  return null
+}
+
+function sameRule(a: RecurrenceRule, b: RecurrenceRule): boolean {
+  if (a.freq !== b.freq) return false
+  if ((a.interval ?? 1) !== (b.interval ?? 1)) return false
+  if ((a.bymonthday ?? null) !== (b.bymonthday ?? null)) return false
+  const ad = [...(a.byday ?? [])].sort().join(',')
+  const bd = [...(b.byday ?? [])].sort().join(',')
+  return ad === bd
 }

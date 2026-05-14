@@ -23,7 +23,17 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, Priority } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
-import { parseQuickAdd, parseRecurrence, todayISO } from '@/lib/recurrence'
+import {
+  parseQuickAdd,
+  parseRecurrence,
+  todayISO,
+  buildRecurrencePresets,
+  snapDueDateToRule,
+  recurrenceLabel,
+  matchingPresetId,
+  type RecurrencePreset,
+  type RecurrencePresetId,
+} from '@/lib/recurrence'
 
 interface Props {
   spaces: Space[]
@@ -491,13 +501,38 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
   const [tagInput, setTagInput] = useState('')
   const [recurrenceInput, setRecurrenceInput] = useState(task.recurrence_text ?? '')
   const [recurrenceError, setRecurrenceError] = useState<string | null>(null)
+  const [recMenuOpen, setRecMenuOpen] = useState(false)
+  const [recCustomOpen, setRecCustomOpen] = useState(false)
+  const recMenuRef = useRef<HTMLDivElement | null>(null)
   // Keep local state in sync when the selected task changes
   useEffect(() => {
     setTitle(task.title)
     setDesc(task.description ?? '')
     setRecurrenceInput(task.recurrence_text ?? '')
     setRecurrenceError(null)
+    setRecMenuOpen(false)
+    setRecCustomOpen(false)
   }, [task.id])
+  // Close the recurrence menu on outside click
+  useEffect(() => {
+    if (!recMenuOpen) return
+    function onDocClick(e: MouseEvent) {
+      if (recMenuRef.current && !recMenuRef.current.contains(e.target as Node)) {
+        setRecMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [recMenuOpen])
+
+  // Today (anchor for presets) — read once per render. Cheap.
+  const todayAnchor = todayISO()
+  const presets = useMemo(() => buildRecurrencePresets(todayAnchor), [todayAnchor])
+  const activePresetId: RecurrencePresetId | null =
+    task.recurrence_rule ? matchingPresetId(task.recurrence_rule, todayAnchor) : null
+  const triggerLabel = task.recurrence_rule
+    ? recurrenceLabel(task.recurrence_rule, task.due_date)
+    : 'One-shot'
 
   const space = spaces.find(s => s.id === task.space_id)
   const linkedKR = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
@@ -531,6 +566,26 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
     if (!task.due_date) patch.due_date = todayISO()
     onPatch(patch)
     setRecurrenceInput(parsed.text) // normalize displayed text
+  }
+  function applyPreset(preset: RecurrencePreset) {
+    const newDue = snapDueDateToRule(task.due_date, preset.rule, todayAnchor)
+    const patch: Partial<Task> = {
+      recurrence_text: preset.text,
+      recurrence_rule: preset.rule,
+    }
+    if (newDue !== task.due_date) patch.due_date = newDue
+    onPatch(patch)
+    setRecurrenceInput(preset.text)
+    setRecurrenceError(null)
+    setRecMenuOpen(false)
+    setRecCustomOpen(false)
+  }
+  function clearRecurrence() {
+    onPatch({ recurrence_text: null, recurrence_rule: null })
+    setRecurrenceInput('')
+    setRecurrenceError(null)
+    setRecMenuOpen(false)
+    setRecCustomOpen(false)
   }
   function addTag() {
     const t = tagInput.trim().toLowerCase().replace(/^#/, '')
@@ -572,17 +627,88 @@ function DetailPanel({ task, tags, spaces, roadmapItems, onPatch, onSetTags, onD
         <input type="time" value={task.due_time?.slice(0, 5) ?? ''} onChange={e => onPatch({ due_time: e.target.value ? `${e.target.value}:00` : null })} style={inputStyle} />
       </Field>
 
-      <Field label="Recurrence">
-        <input
-          value={recurrenceInput}
-          onChange={e => setRecurrenceInput(e.target.value)}
-          onBlur={commitRecurrence}
-          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } }}
-          placeholder="One-shot (try 'every monday', 'daily')"
-          style={{ ...inputStyle, fontSize: 12 }} />
-      </Field>
+      {/* Recurrence — trigger button opens a preset dropdown; Custom… reveals freeform input */}
+      <div ref={recMenuRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--navy-700)', fontSize: 12, position: 'relative' }}>
+        <span style={{ color: 'var(--navy-300)' }}>Recurrence</span>
+        <button onClick={() => setRecMenuOpen(v => !v)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 5,
+            color: task.recurrence_rule ? 'var(--navy-50)' : 'var(--navy-400)',
+            fontSize: 12, padding: '4px 8px', fontFamily: 'inherit', cursor: 'pointer',
+          }}>
+          {triggerLabel}
+          <span style={{ fontSize: 10, color: 'var(--navy-400)' }}>▾</span>
+        </button>
+
+        {recMenuOpen && (
+          <div style={{
+            position: 'absolute', right: 0, top: 'calc(100% - 4px)', zIndex: 20,
+            width: 230, background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
+            borderRadius: 6, padding: 4, boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+          }}>
+            {presets.map(p => {
+              const isActive = activePresetId === p.id
+              return (
+                <button key={p.id} onClick={() => applyPreset(p)}
+                  style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                    padding: '7px 10px', fontSize: 12, color: 'var(--navy-50)',
+                    cursor: 'pointer', borderRadius: 4, fontFamily: 'inherit',
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+                  <span>
+                    {p.label}
+                    {p.sublabel && <span style={{ color: 'var(--navy-400)', marginLeft: 4 }}>{p.sublabel}</span>}
+                  </span>
+                  {isActive && <span style={{ color: 'var(--accent)', fontSize: 11 }}>✓</span>}
+                </button>
+              )
+            })}
+            <div style={{ height: 1, background: 'var(--navy-700)', margin: '4px 6px' }} />
+            <button onClick={() => { setRecCustomOpen(true); setRecMenuOpen(false); setRecurrenceInput(task.recurrence_text ?? '') }}
+              style={{
+                display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                padding: '7px 10px', fontSize: 12, color: 'var(--navy-50)', cursor: 'pointer',
+                borderRadius: 4, fontFamily: 'inherit',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+              Custom…
+            </button>
+            {task.recurrence_rule && (
+              <button onClick={clearRecurrence}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
+                  padding: '7px 10px', fontSize: 12, color: 'var(--navy-300)', cursor: 'pointer',
+                  borderRadius: 4, fontFamily: 'inherit',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+                Clear recurrence
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {recCustomOpen && (
+        <div style={{ marginTop: 6, marginBottom: 6 }}>
+          <input
+            autoFocus
+            value={recurrenceInput}
+            onChange={e => setRecurrenceInput(e.target.value)}
+            onBlur={commitRecurrence}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } }}
+            placeholder="every monday, daily, every 2 weeks…"
+            style={{ ...inputStyle, fontSize: 12, width: '100%' }} />
+          <div style={{ fontSize: 10.5, color: 'var(--navy-400)', marginTop: 4, paddingLeft: 2 }}>Press Enter to apply</div>
+        </div>
+      )}
       {recurrenceError && (
-        <div style={{ fontSize: 10.5, color: 'var(--red-text)', marginTop: -8, marginBottom: 10, paddingLeft: 2 }}>
+        <div style={{ fontSize: 10.5, color: 'var(--red-text)', marginTop: -4, marginBottom: 8, paddingLeft: 2 }}>
           {recurrenceError}
         </div>
       )}
