@@ -420,7 +420,11 @@ export default function HQPage() {
           toast={setToast}
         />
       ) : screen === 'notes' && !isAllSpaces && !loading ? (
-        <Notes />
+        <Notes
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          toast={setToast}
+        />
       ) : (
       <main style={{ padding: '24px 28px', maxWidth: isAllSpaces || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (

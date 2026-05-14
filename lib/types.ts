@@ -217,3 +217,54 @@ export interface NewTaskListInput {
   name: string
   sort_order?: number
 }
+
+// ── Notes ──────────────────────────────────────────────────────────
+
+/** A notebook is a container for notes, scoped to a space. Notebooks
+ *  can nest one level (Stack → Notebook). UI caps depth at 2. */
+export interface Notebook {
+  id: string
+  space_id: string
+  parent_notebook_id: string | null
+  name: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NewNotebookInput {
+  space_id: string
+  name: string
+  parent_notebook_id?: string | null
+  sort_order?: number
+}
+
+/** TipTap ProseMirror document — we store it as JSONB. We don't strictly
+ *  type the shape here since extensions can add custom node types; treat
+ *  as opaque JSON for storage purposes. */
+export type NoteBody = unknown
+
+export interface Note {
+  id: string
+  space_id: string
+  notebook_id: string | null
+  title: string
+  body: NoteBody | null
+  body_format: string  // 'tiptap_v1'
+  pinned_at: string | null
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NewNoteInput {
+  space_id: string
+  notebook_id?: string | null
+  title?: string
+  body?: NoteBody | null
+}
+
+export interface NoteTag {
+  note_id: string
+  tag: string
+}
