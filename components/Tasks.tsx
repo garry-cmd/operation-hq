@@ -234,7 +234,13 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
     const noDate: Task[] = []
     const done: Task[] = []
     const tomorrow = isoAddDays(today, 1)
-    const weekEnd = isoAddDays(today, 7)
+    // "This week" means the rest of the current calendar week (Mon–Sun).
+    // Compute Sunday-of-this-week from `today`. If today is Sunday, the bucket
+    // is empty (today is already its own section).
+    const [ty, tm, td] = today.split('-').map(Number)
+    const todayDow = new Date(ty, tm - 1, td).getDay()  // 0=Sun, 1=Mon, ... 6=Sat
+    const daysUntilSunday = (7 - todayDow) % 7
+    const sundayOfThisWeek = isoAddDays(today, daysUntilSunday)
 
     for (const t of filtered) {
       if (t.completed_at) { done.push(t); continue }
@@ -242,7 +248,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       if (t.due_date < today)             overdue.push(t)
       else if (t.due_date === today)      todayBucket.push(t)
       else if (t.due_date === tomorrow)   tomorrowBucket.push(t)
-      else if (t.due_date <= weekEnd)     thisWeek.push(t)
+      else if (t.due_date <= sundayOfThisWeek) thisWeek.push(t)
       else                                later.push(t)
     }
     return [
