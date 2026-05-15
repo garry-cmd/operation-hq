@@ -2,7 +2,7 @@ export type ItemStatus = 'planned' | 'active' | 'done' | 'abandoned'
 export type KRStatus = 'not_started' | 'on_track' | 'off_track' | 'blocked' | 'done'
 export type CheckinStatus = 'on_track' | 'off_track' | 'blocked'
 export type ReviewRating = 'strong' | 'steady' | 'rough'
-export type HealthStatus = 'not_started' | 'backlog' | 'on_track' | 'off_track' | 'blocked' | 'done'
+export type HealthStatus = 'not_started' | 'backlog' | 'on_track' | 'off_track' | 'waiting' | 'blocked' | 'done'
 
 export interface Space {
   id: string

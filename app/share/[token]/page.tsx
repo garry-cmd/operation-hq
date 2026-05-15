@@ -12,6 +12,7 @@ const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }>
   backlog:     { bg: 'var(--navy-600)',  color: 'var(--navy-200)', label: 'Backlog' },
   on_track:    { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'On track' },
   off_track:   { bg: 'var(--red-bg)',    color: 'var(--red-text)',  label: 'Off track' },
+  waiting:     { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'Waiting' },
   blocked:     { bg: 'var(--amber-bg)',  color: 'var(--amber-text)', label: 'Blocked' },
   done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done ✓' },
 }

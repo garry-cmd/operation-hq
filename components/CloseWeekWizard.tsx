@@ -19,6 +19,7 @@ const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
 const HEALTH_OPTIONS: { value: HealthStatus; label: string; bg: string; fg: string }[] = [
   { value: 'on_track',  label: 'on track',  bg: 'var(--teal-bg, #d4ecdf)',  fg: 'var(--teal-text, #2a6044)' },
   { value: 'off_track', label: 'off track', bg: 'var(--red-bg, #f4dcd2)',   fg: 'var(--red-text, #7a3a28)' },
+  { value: 'waiting',   label: 'waiting',   bg: 'var(--indigo-bg, #e0d4f0)',fg: 'var(--indigo-text, #4a3070)' },
   { value: 'blocked',   label: 'blocked',   bg: 'var(--amber-bg, #f4e4c2)', fg: 'var(--amber-text, #6a4a10)' },
   { value: 'backlog',   label: 'backlog',   bg: 'var(--navy-600, #c0ccdc)', fg: 'var(--navy-100, #2a3a5a)' },
   { value: 'done',      label: 'done',      bg: 'var(--navy-50)',           fg: 'var(--navy-900)' },

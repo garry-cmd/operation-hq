@@ -448,6 +448,7 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           <option value="backlog">Backlog</option>
           <option value="on_track">On Track</option>
           <option value="off_track">Off Track</option>
+          <option value="waiting">Waiting</option>
           <option value="blocked">Blocked</option>
         </select>
       </div>
@@ -462,6 +463,7 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           <option value="not_started">Not started</option>
           <option value="on_track">On track</option>
           <option value="off_track">Off track</option>
+          <option value="waiting">Waiting</option>
           <option value="blocked">Blocked</option>
           <option value="done">Done</option>
         </select>
