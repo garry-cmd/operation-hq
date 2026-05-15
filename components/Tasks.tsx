@@ -173,7 +173,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
     return {
       today: open.filter(t => t.due_date && t.due_date <= today).length,
       upcoming: open.filter(t => t.due_date && t.due_date > today).length,
-      inbox: open.filter(t => !t.due_date && !t.list_id).length,
+      inbox: open.filter(t => !t.space_id && !t.list_id).length,
       all: open.length,
       bySpace: spaces.reduce<Record<string, number>>((acc, s) => {
         acc[s.id] = open.filter(t => t.space_id === s.id).length
@@ -198,7 +198,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       pool = pool.filter(t => !t.completed_at)
       if (scope.view === 'today')    pool = pool.filter(t => t.due_date && t.due_date <= today)
       if (scope.view === 'upcoming') pool = pool.filter(t => t.due_date && t.due_date > today)
-      if (scope.view === 'inbox')    pool = pool.filter(t => !t.due_date && !t.list_id)
+      if (scope.view === 'inbox')    pool = pool.filter(t => !t.space_id && !t.list_id)
       // 'all' = no further filter
     } else if (scope.kind === 'space') {
       pool = pool.filter(t => t.space_id === scope.spaceId)
@@ -226,39 +226,32 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
   // Section the filtered list by due bucket. Sections render in this
   // fixed order. We compute the buckets up-front to keep the JSX flat.
   const sections = useMemo(() => {
-    const overdue: Task[] = []
-    const todayBucket: Task[] = []
-    const tomorrowBucket: Task[] = []
     const thisWeek: Task[] = []
+    const nextWeek: Task[] = []
     const later: Task[] = []
-    const noDate: Task[] = []
     const done: Task[] = []
-    const tomorrow = isoAddDays(today, 1)
-    // "This week" means the rest of the current calendar week (Mon–Sun).
-    // Compute Sunday-of-this-week from `today`. If today is Sunday, the bucket
-    // is empty (today is already its own section).
+    // Week boundaries: "This week" = today through Sunday of current calendar
+    // week. "Next week" = Mon-Sun of next calendar week. Overdue rolls into
+    // This Week (rows still get row-level rust coloring on the date pill).
+    // Undated open tasks roll into Later.
     const [ty, tm, td] = today.split('-').map(Number)
     const todayDow = new Date(ty, tm - 1, td).getDay()  // 0=Sun, 1=Mon, ... 6=Sat
     const daysUntilSunday = (7 - todayDow) % 7
     const sundayOfThisWeek = isoAddDays(today, daysUntilSunday)
+    const sundayOfNextWeek = isoAddDays(sundayOfThisWeek, 7)
 
     for (const t of filtered) {
       if (t.completed_at) { done.push(t); continue }
-      if (!t.due_date)    { noDate.push(t); continue }
-      if (t.due_date < today)             overdue.push(t)
-      else if (t.due_date === today)      todayBucket.push(t)
-      else if (t.due_date === tomorrow)   tomorrowBucket.push(t)
-      else if (t.due_date <= sundayOfThisWeek) thisWeek.push(t)
-      else                                later.push(t)
+      if (!t.due_date)    { later.push(t); continue }
+      if (t.due_date <= sundayOfThisWeek)       thisWeek.push(t)
+      else if (t.due_date <= sundayOfNextWeek)  nextWeek.push(t)
+      else                                       later.push(t)
     }
     return [
-      { name: 'Overdue',   tasks: overdue,        accent: 'var(--red-text)' },
-      { name: 'Today',     tasks: todayBucket,    accent: 'var(--accent)' },
-      { name: 'Tomorrow',  tasks: tomorrowBucket, accent: undefined },
-      { name: 'This week', tasks: thisWeek,       accent: undefined },
-      { name: 'Later',     tasks: later,          accent: undefined },
-      { name: 'No date',   tasks: noDate,         accent: undefined },
-      { name: 'Done',      tasks: done,           accent: 'var(--navy-400)' },
+      { name: 'This week', tasks: thisWeek, accent: undefined },
+      { name: 'Next week', tasks: nextWeek, accent: undefined },
+      { name: 'Later',     tasks: later,    accent: undefined },
+      { name: 'Done',      tasks: done,     accent: 'var(--navy-400)' },
     ].filter(s => s.tasks.length > 0)
   }, [filtered, today])
 
@@ -275,18 +268,20 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
     const parsed = parseQuickAdd(raw)
     if (!parsed.title) { toast('Need a title'); return }
     // Pick the target container: if scope is a list, target that list;
-    // if scope is a specific space, target that space; otherwise fall
-    // back to activeSpaceId (the rail's selected space).
+    // if scope is a specific space, target that space; if scope is the
+    // Inbox smart view, leave both null (Inbox = no space and no list);
+    // otherwise fall back to activeSpaceId (the rail's selected space).
     let targetSpaceId: string | null = null
     let targetListId: string | null = null
+    const isInboxScope = scope.kind === 'smart' && scope.view === 'inbox'
     if (scope.kind === 'list') {
       targetListId = scope.listId
     } else if (scope.kind === 'space') {
       targetSpaceId = scope.spaceId
-    } else {
+    } else if (!isInboxScope) {
       targetSpaceId = activeSpaceId
     }
-    if (!targetSpaceId && !targetListId) { toast('Pick a space or list first'); return }
+    if (!targetSpaceId && !targetListId && !isInboxScope) { toast('Pick a space or list first'); return }
     try {
       const created = await tasksDb.create({
         space_id: targetSpaceId,
@@ -308,12 +303,6 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       }
       setTasks(prev => [...prev, created])
       setQuickAdd('')
-      // If the scope is "Inbox" but the new task has a date, switch to
-      // Today so the user sees what they just created. Otherwise leave
-      // the scope alone.
-      if (scope.kind === 'smart' && scope.view === 'inbox' && parsed.due_date) {
-        setScope({ kind: 'smart', view: 'today' })
-      }
     } catch (e) {
       console.error('quick add failed', e)
       toast('Could not create task')
