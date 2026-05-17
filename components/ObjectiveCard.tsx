@@ -85,6 +85,36 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
     }
   }
 
+  // Reorder a KR up or down within this objective. Swaps sort_order with the
+  // adjacent sibling (by current sort_order, ignoring gaps). Writes both rows
+  // and optimistically updates local state. Local render also sorts by
+  // sort_order so the visual order tracks immediately — `prev.map(...)` keeps
+  // each item at its existing array index, so without re-sorting the swap
+  // wouldn't show until a reload.
+  async function moveKR(kr: RoadmapItem, direction: 'up' | 'down') {
+    const sorted = [...krs].sort((a, b) => a.sort_order - b.sort_order)
+    const idx = sorted.findIndex(k => k.id === kr.id)
+    if (idx === -1) return
+    const targetIdx = direction === 'up' ? idx - 1 : idx + 1
+    if (targetIdx < 0 || targetIdx >= sorted.length) return  // already at boundary
+    const target = sorted[targetIdx]
+    const krNewOrder = target.sort_order
+    const targetNewOrder = kr.sort_order
+    try {
+      const [updatedKR, updatedTarget] = await Promise.all([
+        krsDb.update(kr.id, { sort_order: krNewOrder }),
+        krsDb.update(target.id, { sort_order: targetNewOrder }),
+      ])
+      setRoadmapItems(prev => prev.map(i =>
+        i.id === updatedKR.id ? updatedKR :
+        i.id === updatedTarget.id ? updatedTarget : i
+      ))
+    } catch (err) {
+      console.error('moveKR failed:', err)
+      toast('Could not reorder.')
+    }
+  }
+
   async function addKR() {
     if (!newKRTitle.trim() || savingKR) return
     setSavingKR(true)
@@ -212,7 +242,15 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
         {/* Body — hidden when collapsed */}
         {!collapsed && (<>
 
-        {krs.map((kr, i) => {
+        {(() => {
+          // Local sort by sort_order so optimistic moveKR updates (which keep
+          // each row at its existing array index) take immediate visual effect.
+          // The DB query also orders by sort_order, so on first load this is
+          // a no-op.
+          const sortedKRs = [...krs].sort((a, b) => a.sort_order - b.sort_order)
+          return sortedKRs.map((kr, i) => {
+          const isFirst = i === 0
+          const isLast = i === sortedKRs.length - 1
           const actCount = weekActions.filter(a => a.roadmap_item_id === kr.id).length
           const h = kr.health_status ?? 'not_started'
           const hs = HEALTH[h]
@@ -226,9 +264,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
             const thisWeek = sorted.find(c => c.week_start === weekStart)
             return { latest, loggedThisWeek: !!thisWeek, unit: kr.metric_unit ?? '' }
           })()
-          // i is unused after the section divider rewrite, but keeping for
-          // potential per-row striping later. Suppress lint with a void.
-          void i
           return (
             <React.Fragment key={kr.id}>
               <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
@@ -287,6 +322,17 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                     style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s' }}>
                     {hs.label}
                   </button>
+                  {/* Reorder controls — boring up/down arrows over a drag handle.
+                      Disabled at the boundaries instead of hidden so the row's
+                      right-edge geometry stays stable across all KRs. */}
+                  <button onClick={() => moveKR(kr, 'up')} disabled={isFirst} title="Move up"
+                    style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isFirst ? 'default' : 'pointer', opacity: isFirst ? 0.35 : 1 }}>
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M3 7l3-3 3 3" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
+                  <button onClick={() => moveKR(kr, 'down')} disabled={isLast} title="Move down"
+                    style={{ width: 22, height: 22, borderRadius: 6, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: isLast ? 'default' : 'pointer', opacity: isLast ? 0.35 : 1 }}>
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M3 5l3 3 3-3" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                  </button>
                   <button onClick={() => onEditKR(kr)}
                     style={{ width: 26, height: 26, borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                     <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M8.5 1.5L10.5 3.5L4 10H2V8L8.5 1.5Z" stroke="var(--navy-300)" strokeWidth="1.3" strokeLinejoin="round"/></svg>
@@ -320,7 +366,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
               )}
             </React.Fragment>
           )
-        })}
+        })
+        })()}
 
         {/* Add key result */}
         {!addingKR ? (
