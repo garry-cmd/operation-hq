@@ -220,13 +220,17 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
               return (
                 <div key={obj.id} style={{ marginBottom: 20, position: 'relative' }}>
-                  {/* Edit button positioned over ObjectiveCard */}
+                  {/* Edit button positioned over ObjectiveCard. Coordinates
+                      track the polished header geometry (May 17): card has
+                      22px horizontal padding, header padding-top 20, chevron
+                      marginTop 4 → chevron at top ~24, right ~22 with width
+                      28. Edit sits 4px to the left of it. */}
                   <button
                     onClick={() => setEditingObjective(obj)}
                     style={{
                       position: 'absolute',
-                      top: 12,
-                      right: 48, // shifted left to clear the chevron at top:12, right:14
+                      top: 24,
+                      right: 54,
                       zIndex: 10,
                       background: 'var(--navy-700)',
                       border: '1px solid var(--navy-600)',

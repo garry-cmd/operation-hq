@@ -20,11 +20,6 @@ const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }>
   done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done ✓' },
 }
 
-function hex2rgba(hex: string, a: number) {
-  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
-  return `rgba(${r},${g},${b},${a})`
-}
-
 interface Props {
   obj: AnnualObjective
   krs: RoadmapItem[]
@@ -61,10 +56,11 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const [hoveredKRId, setHoveredKRId] = useState<string | null>(null)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
-  const onTrack  = krs.filter(k => k.health_status === 'on_track' || k.health_status === 'done').length
+  // Only offTrack/blocked surface as aggregate header chips in the polished
+  // layout — the rest is implicit from the per-KR row state. Done count drives
+  // the hero progress %.
   const offTrack = krs.filter(k => k.health_status === 'off_track').length
   const blocked  = krs.filter(k => k.health_status === 'blocked').length
-  const notStarted = krs.filter(k => k.health_status === 'not_started' || !k.health_status).length
   const doneKRs  = krs.filter(k => k.health_status === 'done').length
   const progress = krs.length > 0 ? Math.round((doneKRs / krs.length) * 100) : 0
 
@@ -161,82 +157,113 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
     setSavingAction(false)
   }
 
-  // Border treatment: accent when the panel is open for this objective,
-  // otherwise the existing color-tinted border.
-  const borderColor = isActive ? 'var(--accent)' : hex2rgba(obj.color, 0.25)
-  const bgColor = hex2rgba(obj.color, 0.04)
-  const hdrBg = hex2rgba(obj.color, 0.1)
-  const divColor = hex2rgba(obj.color, 0.12)
+  // Polish pass (May 17): object color becomes a 3px left-border accent on a
+  // neutral card, instead of tinting the entire card lavender/coral/etc.
+  // Drops the lavender-on-lavender look in favor of dramatic typography and
+  // quiet chrome. Active state still wins — accent border replaces the obj
+  // color when the panel is open for this objective.
+  const accentColor = isActive ? 'var(--accent)' : obj.color
+  const divColor = 'var(--navy-700)'
+
+  // Quarter timing for the progress strip's "N weeks remaining" marker.
+  // ACTIVE_Q format is "<n>Q<yyyy>"; quarter ends on the last day of month n*3.
+  const qMatch = ACTIVE_Q.match(/(\d)Q(\d{4})/)
+  const qLabel = qMatch ? `Q${qMatch[1]}` : ACTIVE_Q
+  const weeksRemaining = (() => {
+    if (!qMatch) return null
+    const qNum = parseInt(qMatch[1], 10)
+    const qYear = parseInt(qMatch[2], 10)
+    // new Date(year, month, 0) = last day of (month-1). qNum*3 gives the
+    // month-after-quarter-end (1-indexed), so day=0 of that = quarter close.
+    const qEnd = new Date(qYear, qNum * 3, 0)
+    const ms = qEnd.getTime() - Date.now()
+    return Math.max(0, Math.ceil(ms / (7 * 24 * 60 * 60 * 1000)))
+  })()
 
   return (
     <>
-      <div style={{ borderRadius: 16, overflow: 'hidden', marginBottom: 14, border: `1px solid ${borderColor}`, background: bgColor, transition: 'border-color .12s' }}>
+      <div style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 14, border: `1px solid var(--navy-700)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--navy-800)', transition: 'border-color .12s' }}>
 
-        {/* Objective header — title is its own click target (opens panel),
-            chevron-icon-only collapses/expands. Status pills + progress are
-            non-interactive read-out. */}
-        <div style={{ padding: '12px 14px', background: hdrBg, display: 'flex', alignItems: 'flex-start', gap: 10, userSelect: 'none' }}>
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: obj.color, flexShrink: 0, marginTop: 3 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
+        {/* Objective header — Keeply-style: tiny crumb label, calm title, hero
+            percentage, progress strip with quarter context. Title is the click
+            target (opens panel); chevron toggles collapse. */}
+        <div style={{ padding: '20px 22px 18px', userSelect: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--navy-400)', marginBottom: 8, lineHeight: 1.4 }}>
+                {qLabel} Objective
+              </div>
+              <button
+                onClick={() => onObjectiveClick(obj.id)}
+                onMouseEnter={() => setTitleHover(true)}
+                onMouseLeave={() => setTitleHover(false)}
+                style={{
+                  fontSize: 18, fontWeight: 500,
+                  color: isActive || titleHover ? 'var(--accent)' : 'var(--navy-50)',
+                  lineHeight: 1.3,
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  textAlign: 'left', fontFamily: 'inherit',
+                  display: 'block', maxWidth: '100%',
+                  letterSpacing: '-.005em',
+                  transition: 'color .12s',
+                }}>
+                {obj.name}
+              </button>
+            </div>
+            {/* Chevron — own click target for collapse/expand */}
             <button
-              onClick={() => onObjectiveClick(obj.id)}
-              onMouseEnter={() => setTitleHover(true)}
-              onMouseLeave={() => setTitleHover(false)}
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? 'Expand' : 'Collapse'}
               style={{
-                fontSize: 14, fontWeight: 700,
-                color: isActive || titleHover ? 'var(--accent)' : 'var(--navy-50)',
-                lineHeight: 1.3, marginBottom: 5,
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                textAlign: 'left', fontFamily: 'inherit',
-                display: 'block', maxWidth: '100%',
-                transition: 'color .12s',
-              }}>
-              {obj.name}
+                flexShrink: 0, marginTop: 4,
+                width: 28, height: 28, borderRadius: 8,
+                border: 'none', background: 'transparent',
+                color: 'var(--navy-400)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'transform .2s, background .12s',
+                transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
             </button>
-            {collapsed ? (
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginBottom: 2 }}>
-                {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
-                {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
-                {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
-                {notStarted > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{notStarted} not started</span>}
-                {krs.length === 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>No key results</span>}
-              </div>
-            ) : (
-              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                {onTrack > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--teal-bg)', color: 'var(--teal-text)' }}>{onTrack} on track</span>}
-                {offTrack > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--red-bg)',  color: 'var(--red-text)' }}>{offTrack} off track</span>}
-                {blocked > 0  && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)' }}>{blocked} blocked</span>}
-                {notStarted > 0 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: 'var(--navy-600)', color: 'var(--navy-400)' }}>{notStarted} not started</span>}
-              </div>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 7 }}>
-              <div style={{ flex: 1, height: 4, background: 'var(--navy-600)', borderRadius: 2, overflow: 'hidden' }}>
-                <div style={{ height: 4, borderRadius: 2, background: progress === 100 ? 'var(--teal)' : obj.color, width: `${progress}%`, transition: 'width .4s ease' }} />
-              </div>
-              <span style={{ fontSize: 10, fontWeight: 700, color: progress === 100 ? 'var(--teal-text)' : 'var(--navy-300)', minWidth: 28, textAlign: 'right', flexShrink: 0 }}>
-                {progress}%
+          </div>
+
+          {/* Hero progress row */}
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 22, marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+              <span style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1, color: progress === 100 ? 'var(--teal-text)' : 'var(--navy-50)', fontFeatureSettings: '"tnum"' }}>
+                {progress}<span style={{ fontSize: 30, letterSpacing: '-.02em' }}>%</span>
               </span>
+              <span style={{ fontSize: 20, fontWeight: 400, color: 'var(--navy-500)', letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>/ 100%</span>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--navy-400)', marginBottom: 4 }}>Of objective</div>
+              <div style={{ fontSize: 13, color: 'var(--navy-300)', fontWeight: 400 }}>
+                {krs.length === 0 ? 'No key results yet' : `${doneKRs} of ${krs.length} KRs hit`}
+              </div>
             </div>
           </div>
-          {/* Chevron button — own click target for collapse/expand */}
-          <button
-            onClick={() => setCollapsed(c => !c)}
-            title={collapsed ? 'Expand' : 'Collapse'}
-            style={{
-              flexShrink: 0, marginTop: 0,
-              width: 28, height: 28, borderRadius: 8,
-              border: 'none', background: 'transparent',
-              color: 'var(--navy-400)', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'transform .2s, background .12s',
-              transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
-          </button>
+
+          {/* Progress bar + quarter context strip */}
+          <div style={{ height: 6, background: 'var(--navy-700)', borderRadius: 99, overflow: 'hidden', marginBottom: 8 }}>
+            <div style={{ height: '100%', width: `${Math.max(progress, krs.length > 0 ? 2 : 0)}%`, background: progress === 100 ? 'var(--teal)' : 'var(--teal-text)', borderRadius: 99, transition: 'width .4s ease' }} />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--navy-500)' }}>
+            <span>Start</span>
+            {weeksRemaining != null && <span>{weeksRemaining} {weeksRemaining === 1 ? 'week' : 'weeks'} remaining</span>}
+            <span>{qLabel} close</span>
+          </div>
+
+          {/* Aggregate status row — only when there's something interesting to flag */}
+          {(offTrack > 0 || blocked > 0) && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
+              {offTrack > 0 && <span style={{ fontSize: 10.5, fontWeight: 500, padding: '3px 9px', borderRadius: 4, background: 'var(--red-bg)', color: 'var(--red-text)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{offTrack} off track</span>}
+              {blocked > 0  && <span style={{ fontSize: 10.5, fontWeight: 500, padding: '3px 9px', borderRadius: 4, background: 'var(--amber-bg)', color: 'var(--amber-text)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{blocked} blocked</span>}
+            </div>
+          )}
         </div>
 
         {/* Body — hidden when collapsed */}
@@ -319,7 +346,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                     Add action
                   </button>
                   <button onClick={() => cycleStatus(kr)}
-                    style={{ fontSize: 11, fontWeight: 700, padding: '5px 11px', borderRadius: 99, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, whiteSpace: 'nowrap', transition: 'all .12s' }}>
+                    style={{ fontSize: 10.5, fontWeight: 500, padding: '3px 9px', borderRadius: 4, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all .12s' }}>
+                    <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor', opacity: 0.55 }} />
                     {hs.label}
                   </button>
                   {/* Reorder controls — boring up/down arrows over a drag handle.
