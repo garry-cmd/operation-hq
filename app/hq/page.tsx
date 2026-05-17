@@ -43,7 +43,14 @@ export default function HQPage() {
   const [screen, setScreen] = useState<Screen>('okr')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
-  const [weekStart, setWeekStartRaw] = useState<string>(getMonday())
+  // Per-space Focus week. Each space tracks its own active week so closing
+  // one space's week doesn't auto-advance the others (which was the prior
+  // behaviour when this was a single string in localStorage `hq-week-start`).
+  // Stored as `hq-week-start-by-space` (JSON object). The old single-string
+  // key is read once on mount as a legacy fallback for spaces missing from
+  // the record.
+  const [weekStartBySpace, setWeekStartBySpaceRaw] = useState<Record<string, string>>({})
+  const [legacyWeekStart, setLegacyWeekStart] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [searchQuery, setSearchQuery] = useState('')
@@ -96,23 +103,59 @@ export default function HQPage() {
     document.documentElement.setAttribute('data-theme', initial)
   }, [])
 
-  // Restore the persisted Focus week on mount, but only if it's not stale.
-  // Saved weeks in the past get ignored (you've been away too long; show
-  // current week), saved weeks today-or-later get restored.
+  // Restore per-space Focus weeks on mount. Also read the legacy single
+  // `hq-week-start` key — if a user upgrades from the old single-week model,
+  // their last saved value becomes a fallback for any space the new record
+  // doesn't already cover. Stale legacy values (in the past) are ignored,
+  // matching the prior behaviour.
   useEffect(() => {
-    const saved = localStorage.getItem('hq-week-start')
     const today = getMonday()
-    if (saved && saved >= today) setWeekStartRaw(() => saved)
+    try {
+      const savedRecord = localStorage.getItem('hq-week-start-by-space')
+      if (savedRecord) {
+        const parsed = JSON.parse(savedRecord)
+        if (parsed && typeof parsed === 'object') {
+          // Drop stale entries (saved weeks in the past) on restore.
+          const fresh: Record<string, string> = {}
+          for (const [spaceId, value] of Object.entries(parsed)) {
+            if (typeof value === 'string' && value >= today) fresh[spaceId] = value
+          }
+          setWeekStartBySpaceRaw(fresh)
+        }
+      }
+    } catch { /* noop */ }
+    try {
+      const savedLegacy = localStorage.getItem('hq-week-start')
+      if (savedLegacy && savedLegacy >= today) setLegacyWeekStart(savedLegacy)
+    } catch { /* noop */ }
   }, [])
 
-  // Persist alongside any state change. We do this in a setter wrapper rather
-  // than a useEffect because useEffect fires on mount with the SSR/initial
-  // state and would overwrite the saved value before the restore effect runs.
+  // The active space's effective week. Falls back to the legacy single-value
+  // key (one-time migration aid), then to today's Monday. Derived rather than
+  // stored so it stays in sync with activeSpaceId.
+  const weekStart = weekStartBySpace[activeSpaceId] ?? legacyWeekStart ?? getMonday()
+
+  // Per-space setter wrapper: writes to `weekStartBySpace[activeSpaceId]` and
+  // persists. Same `(prev: string) => string` updater signature as before so
+  // downstream callers (Focus arrow nav, the wizard, openActionFromSummary)
+  // don't have to change. We persist in the wrapper rather than via useEffect
+  // for the same reason the old code did — useEffect on mount would race the
+  // restore effect.
   const setWeekStart = (updater: (s: string) => string) => {
-    setWeekStartRaw(prev => {
-      const next = updater(prev)
-      try { localStorage.setItem('hq-week-start', next) } catch { /* noop */ }
-      return next
+    setWeekStartForSpace(activeSpaceId, updater)
+  }
+
+  // Lower-level: write a specific space's weekStart. Needed when we know the
+  // target space but `activeSpaceId` hasn't propagated yet (e.g. immediately
+  // after `switchSpace` in cross-space jumps like openActionFromSummary).
+  function setWeekStartForSpace(spaceId: string, updater: (s: string) => string) {
+    if (!spaceId) return
+    setWeekStartBySpaceRaw(prev => {
+      const prevValue = prev[spaceId] ?? legacyWeekStart ?? getMonday()
+      const next = updater(prevValue)
+      const updated = { ...prev, [spaceId]: next }
+      try { localStorage.setItem('hq-week-start-by-space', JSON.stringify(updated)) } catch { /* noop */ }
+      return updated
     })
   }
 
@@ -247,7 +290,15 @@ export default function HQPage() {
     const results: SearchResult[] = []
     objectives.forEach(o => { if (o.name.toLowerCase().includes(q)) results.push({ label: o.name, sub: 'Objective', screen: 'roadmap' }) })
     roadmapItems.filter(i => !i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Key Result', screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap' }) })
-    actions.filter(a => a.week_start === weekStart).forEach(a => { if (a.title.toLowerCase().includes(q)) results.push({ label: a.title, sub: 'Action this week', screen: 'focus' }) })
+    // "Action this week" results: with per-space weekStart, an action is
+    // "this week" relative to its OWN space's active week, not the active
+    // space's. Actions don't carry space_id directly — derive it from
+    // roadmap_items via roadmap_item_id.
+    const today = getMonday()
+    const spaceForKR = new Map(roadmapItems.map(i => [i.id, i.space_id]))
+    const weekStartFor = (spaceId: string | undefined) =>
+      (spaceId && weekStartBySpace[spaceId]) || legacyWeekStart || today
+    actions.filter(a => a.week_start === weekStartFor(spaceForKR.get(a.roadmap_item_id))).forEach(a => { if (a.title.toLowerCase().includes(q)) results.push({ label: a.title, sub: 'Action this week', screen: 'focus' }) })
     roadmapItems.filter(i => i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Parking Lot', screen: 'park' }) })
     return results.slice(0, 6)
   })()
@@ -288,9 +339,10 @@ export default function HQPage() {
     switchSpace(spaceId)
     setScreen('focus')
     // Older open actions live on past weeks; jump to that week so Focus
-    // actually surfaces the action. setWeekStart's wrapper persists it,
-    // and the on-mount stale-week guard only runs once at boot.
-    setWeekStart(() => action.week_start)
+    // actually surfaces the action. Use the explicit-spaceId variant —
+    // `setWeekStart` would read the closure-captured activeSpaceId which
+    // hasn't propagated yet from switchSpace, writing to the wrong record.
+    setWeekStartForSpace(spaceId, () => action.week_start)
     setOpenActionId(action.id)
     setOpenObjectiveId(null)
   }
