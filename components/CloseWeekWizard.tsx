@@ -110,12 +110,17 @@ export default function CloseWeekWizard({
   // OKRs.tsx convention). Past-quarter KRs that are still status='active'
   // are stale by construction and are also excluded.
   // All flavor helpers live in lib/krFilters.ts as a single source of truth.
+  // activeKRs intentionally KEEPS done KRs — it drives the krs_hit/krs_total
+  // stats on the WeeklyReview row at the close. The flavored partitions
+  // below drop done KRs, since they only feed UI surfaces (review cards,
+  // walkthrough) where done items are just noise.
   const activeKRs = getCurrentQuarterKRs(roadmapItems, ACTIVE_Q)
-  const habitKRs = getHabitKRs(roadmapItems, ACTIVE_Q)
-  const metricKRs = getMetricKRs(roadmapItems, ACTIVE_Q)
+  const notDone = (kr: RoadmapItem) => kr.health_status !== 'done'
+  const habitKRs = getHabitKRs(roadmapItems, ACTIVE_Q).filter(notDone)
+  const metricKRs = getMetricKRs(roadmapItems, ACTIVE_Q).filter(notDone)
   // Outcome KRs get the health + progress pills and the Step 2 walkthrough.
   // Metrics and habits each have their own dedicated surfaces.
-  const outcomeKRs = getOutcomeKRs(roadmapItems, ACTIVE_Q)
+  const outcomeKRs = getOutcomeKRs(roadmapItems, ACTIVE_Q).filter(notDone)
 
   // Habit recap for the week being closed.
   const habitRecap = habitKRs.map(kr => {
@@ -486,7 +491,7 @@ export default function CloseWeekWizard({
           />
         ) : (
           <Step2
-            outcomeKRs={outcomeKRs.filter(kr => kr.health_status !== 'done')}
+            outcomeKRs={outcomeKRs}
             objectives={objectives}
             nextWeekActions={nextWeekActions}
             walkthroughActions={walkthroughActions}
