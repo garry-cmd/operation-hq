@@ -677,31 +677,39 @@ function Step1({
               <div key={kr.id} style={{ paddingBottom: 14, marginBottom: 14, borderBottom: '1px solid var(--navy-700)' }}>
                 {obj && <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 2 }}>{obj.name}</div>}
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--navy-50)', marginBottom: 8 }}>{kr.title}</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-                  {HEALTH_OPTIONS.map(opt => (
-                    <button key={opt.value} onClick={() => onSetHealth(kr, opt.value)}
-                      style={{
-                        fontSize: 11, padding: '4px 10px', borderRadius: 99, border: 'none', cursor: 'pointer',
-                        background: kr.health_status === opt.value ? opt.bg : 'var(--navy-700)',
-                        color: kr.health_status === opt.value ? opt.fg : 'var(--navy-300)',
-                        fontWeight: 600,
-                      }}>
-                      ● {opt.label}
-                    </button>
-                  ))}
-                  <span style={{ fontSize: 11, color: 'var(--navy-400)', marginLeft: 4 }}>progress:</span>
-                  {PROGRESS_OPTIONS.map(p => (
-                    <button key={p} onClick={() => onSetProgress(kr, p)}
-                      style={{
-                        fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--navy-600)', cursor: 'pointer',
-                        background: kr.progress === p ? 'var(--accent)' : 'transparent',
-                        color: kr.progress === p ? '#fff' : 'var(--navy-300)',
-                        fontWeight: kr.progress === p ? 600 : 400,
-                        minWidth: 28,
-                      }}>
-                      {p}
-                    </button>
-                  ))}
+                {/* Two logical groups (health pills, progress controls) wrapped in inline-flex
+                    containers so they wrap as UNITS at narrow widths rather than splitting
+                    mid-group (which orphaned `75 100` onto their own line). */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '8px 12px' }}>
+                  <div style={{ display: 'inline-flex', flexWrap: 'nowrap', alignItems: 'center', gap: 6 }}>
+                    {HEALTH_OPTIONS.map(opt => (
+                      <button key={opt.value} onClick={() => onSetHealth(kr, opt.value)}
+                        style={{
+                          fontSize: 11, padding: '4px 10px', borderRadius: 99, border: 'none', cursor: 'pointer',
+                          background: kr.health_status === opt.value ? opt.bg : 'var(--navy-700)',
+                          color: kr.health_status === opt.value ? opt.fg : 'var(--navy-300)',
+                          fontWeight: 600,
+                          whiteSpace: 'nowrap',
+                        }}>
+                        ● {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: 'inline-flex', flexWrap: 'nowrap', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>progress:</span>
+                    {PROGRESS_OPTIONS.map(p => (
+                      <button key={p} onClick={() => onSetProgress(kr, p)}
+                        style={{
+                          fontSize: 11, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--navy-600)', cursor: 'pointer',
+                          background: kr.progress === p ? 'var(--accent)' : 'transparent',
+                          color: kr.progress === p ? '#fff' : 'var(--navy-300)',
+                          fontWeight: kr.progress === p ? 600 : 400,
+                          minWidth: 28,
+                        }}>
+                        {p}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )
