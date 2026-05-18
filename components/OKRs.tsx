@@ -221,28 +221,28 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
               return (
                 <div key={obj.id} style={{ marginBottom: 20, position: 'relative' }}>
                   {/* Edit button positioned over ObjectiveCard. Coordinates
-                      track the polished header geometry (May 17): card has
-                      22px horizontal padding, header padding-top 20, chevron
-                      marginTop 4 → chevron at top ~24, right ~22 with width
-                      28. Edit sits 4px to the left of it. */}
+                      track the compact night-watch header geometry (May 17):
+                      header padding-top 12, chevron marginTop 2 → top 14;
+                      card padding-right 18, chevron width 26 → right edge 18.
+                      Edit sits 4px to the left → right 48. */}
                   <button
                     onClick={() => setEditingObjective(obj)}
                     style={{
                       position: 'absolute',
-                      top: 24,
-                      right: 54,
+                      top: 14,
+                      right: 48,
                       zIndex: 10,
                       background: 'var(--navy-700)',
                       border: '1px solid var(--navy-600)',
-                      color: 'var(--navy-400)',
+                      color: 'var(--nw-label)',
                       cursor: 'pointer',
                       fontSize: 14,
-                      padding: '6px 8px',
+                      padding: '4px 6px',
                       borderRadius: 6
                     }}
                     title="Edit objective"
                   >
-                    <EditIcon size={16} />
+                    <EditIcon size={14} />
                   </button>
 
                   <ObjectiveCard

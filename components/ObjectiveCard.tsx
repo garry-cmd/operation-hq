@@ -11,13 +11,13 @@ import { ACTIVE_Q } from '@/lib/utils'
 // once lived here are dormant; the panel reads/writes them directly.
 const HEALTH_CYCLE: HealthStatus[] = ['not_started', 'backlog', 'on_track', 'off_track', 'waiting', 'blocked', 'done']
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
-  not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
-  backlog:     { bg: 'var(--navy-600)',  color: 'var(--navy-200)', label: 'Backlog' },
-  on_track:    { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'On track' },
-  off_track:   { bg: 'var(--red-bg)',    color: 'var(--red-text)',  label: 'Off track' },
-  waiting:     { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'Waiting' },
-  blocked:     { bg: 'var(--amber-bg)',  color: 'var(--amber-text)', label: 'Blocked' },
-  done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done ✓' },
+  not_started: { bg: 'var(--nw-standby-bg)', color: 'var(--nw-standby-text)', label: 'Standby' },
+  backlog:     { bg: 'var(--nw-standby-bg)', color: 'var(--nw-standby-text)', label: 'Backlog' },
+  on_track:    { bg: 'var(--nw-nominal-bg)', color: 'var(--nw-nominal-text)', label: 'On track' },
+  off_track:   { bg: 'var(--nw-alarm-bg)',   color: 'var(--nw-alarm-text)',   label: 'Off track' },
+  waiting:     { bg: 'var(--indigo-bg)',     color: 'var(--indigo-text)',     label: 'Waiting' },
+  blocked:     { bg: 'var(--nw-caution-bg)', color: 'var(--nw-caution-text)', label: 'Blocked' },
+  done:        { bg: 'var(--nw-nominal-bg)', color: 'var(--nw-nominal-text)', label: 'Done ✓' },
 }
 
 interface Props {
@@ -182,15 +182,16 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
 
   return (
     <>
-      <div style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 14, border: `1px solid var(--navy-700)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--navy-800)', transition: 'border-color .12s' }}>
+      <div style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 12, border: `1px solid var(--navy-700)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--navy-800)', transition: 'border-color .12s' }}>
 
-        {/* Objective header — Keeply-style: tiny crumb label, calm title, hero
-            percentage, progress strip with quarter context. Title is the click
-            target (opens panel); chevron toggles collapse. */}
-        <div style={{ padding: '20px 22px 18px', userSelect: 'none' }}>
+        {/* Objective header — Night Watch palette: amber instrument labels,
+            warm cream title, hero readout color shifts with progress (caution
+            amber → phosphor green at 100%). Compact layout: title and chevron
+            on row 1; hero + status + KRs-hit on row 2; bare progress bar. */}
+        <div style={{ padding: '12px 18px 12px', userSelect: 'none' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--navy-400)', marginBottom: 8, lineHeight: 1.4 }}>
+              <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5, lineHeight: 1.4 }}>
                 {qLabel} Objective
               </div>
               <button
@@ -198,8 +199,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                 onMouseEnter={() => setTitleHover(true)}
                 onMouseLeave={() => setTitleHover(false)}
                 style={{
-                  fontSize: 18, fontWeight: 500,
-                  color: isActive || titleHover ? 'var(--accent)' : 'var(--navy-50)',
+                  fontSize: 16, fontWeight: 500,
+                  color: isActive || titleHover ? 'var(--accent)' : 'var(--nw-cream)',
                   lineHeight: 1.3,
                   background: 'none', border: 'none', padding: 0, cursor: 'pointer',
                   textAlign: 'left', fontFamily: 'inherit',
@@ -215,55 +216,59 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
               onClick={() => setCollapsed(c => !c)}
               title={collapsed ? 'Expand' : 'Collapse'}
               style={{
-                flexShrink: 0, marginTop: 4,
-                width: 28, height: 28, borderRadius: 8,
+                flexShrink: 0, marginTop: 2,
+                width: 26, height: 26, borderRadius: 6,
                 border: 'none', background: 'transparent',
-                color: 'var(--navy-400)', cursor: 'pointer',
+                color: 'var(--nw-label)', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 transition: 'transform .2s, background .12s',
                 transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
               }}
               onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
                 <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
             </button>
           </div>
 
-          {/* Hero progress row */}
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 22, marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
-              <span style={{ fontSize: 56, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1, color: progress === 100 ? 'var(--teal-text)' : 'var(--navy-50)', fontFeatureSettings: '"tnum"' }}>
-                {progress}<span style={{ fontSize: 30, letterSpacing: '-.02em' }}>%</span>
+          {/* Hero readout row — aggregate alarm chip pulled inline so urgency
+              sits next to the % rather than buried below the bar. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 8, gap: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1, color: progress === 100 ? 'var(--nw-nominal-text)' : 'var(--nw-hero-amber)', fontFeatureSettings: '"tnum"' }}>
+                {progress}<span style={{ fontSize: 22, letterSpacing: '-.02em' }}>%</span>
               </span>
-              <span style={{ fontSize: 20, fontWeight: 400, color: 'var(--navy-500)', letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>/ 100%</span>
+              <span style={{ fontSize: 18, fontWeight: 400, color: 'var(--nw-label-dim)', letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>/ 100%</span>
+              {offTrack > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 3, background: 'var(--nw-alarm-bg)', color: 'var(--nw-alarm-text)', letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 6 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor', boxShadow: `0 0 4px var(--nw-glow-red)` }} />
+                  {offTrack} off track
+                </span>
+              )}
+              {blocked > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 3, background: 'var(--nw-caution-bg)', color: 'var(--nw-caution-text)', letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor' }} />
+                  {blocked} blocked
+                </span>
+              )}
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--navy-400)', marginBottom: 4 }}>Of objective</div>
-              <div style={{ fontSize: 13, color: 'var(--navy-300)', fontWeight: 400 }}>
-                {krs.length === 0 ? 'No key results yet' : `${doneKRs} of ${krs.length} KRs hit`}
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+              {weeksRemaining != null && (
+                <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', marginBottom: 2 }}>
+                  {weeksRemaining} wk remain
+                </div>
+              )}
+              <div style={{ fontSize: 12, color: 'var(--nw-label-dim)', fontWeight: 400 }}>
+                {krs.length === 0 ? 'No key results yet' : `${doneKRs} / ${krs.length} KRs hit`}
               </div>
             </div>
           </div>
 
-          {/* Progress bar + quarter context strip */}
-          <div style={{ height: 6, background: 'var(--navy-700)', borderRadius: 99, overflow: 'hidden', marginBottom: 8 }}>
-            <div style={{ height: '100%', width: `${Math.max(progress, krs.length > 0 ? 2 : 0)}%`, background: progress === 100 ? 'var(--teal)' : 'var(--teal-text)', borderRadius: 99, transition: 'width .4s ease' }} />
+          {/* Progress bar — phosphor green with subtle glow on fill */}
+          <div style={{ height: 5, background: 'var(--navy-700)', borderRadius: 99, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.max(progress, krs.length > 0 ? 2 : 0)}%`, background: 'var(--nw-nominal-text)', borderRadius: 99, boxShadow: `0 0 6px var(--nw-glow-green)`, transition: 'width .4s ease' }} />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--navy-500)' }}>
-            <span>Start</span>
-            {weeksRemaining != null && <span>{weeksRemaining} {weeksRemaining === 1 ? 'week' : 'weeks'} remaining</span>}
-            <span>{qLabel} close</span>
-          </div>
-
-          {/* Aggregate status row — only when there's something interesting to flag */}
-          {(offTrack > 0 || blocked > 0) && (
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 14 }}>
-              {offTrack > 0 && <span style={{ fontSize: 10.5, fontWeight: 500, padding: '3px 9px', borderRadius: 4, background: 'var(--red-bg)', color: 'var(--red-text)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{offTrack} off track</span>}
-              {blocked > 0  && <span style={{ fontSize: 10.5, fontWeight: 500, padding: '3px 9px', borderRadius: 4, background: 'var(--amber-bg)', color: 'var(--amber-text)', letterSpacing: '.04em', textTransform: 'uppercase' }}>{blocked} blocked</span>}
-            </div>
-          )}
         </div>
 
         {/* Body — hidden when collapsed */}
@@ -293,18 +298,18 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
           })()
           return (
             <React.Fragment key={kr.id}>
-              <div style={{ padding: '11px 14px', display: 'flex', alignItems: 'flex-start', gap: 10, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
+              <div style={{ padding: '10px 18px', display: 'flex', alignItems: 'flex-start', gap: 12, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ lineHeight: 1.4, marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <div style={{ lineHeight: 1.4, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <button
                       onClick={() => onObjectiveClick(obj.id)}
                       onMouseEnter={() => setHoveredKRId(kr.id)}
                       onMouseLeave={() => setHoveredKRId(null)}
                       style={{
-                        fontSize: 13, fontWeight: 500,
-                        color: hoveredKRId === kr.id ? 'var(--accent)' : 'var(--navy-100)',
+                        fontSize: 14, fontWeight: 500,
+                        color: hoveredKRId === kr.id ? 'var(--accent)' : 'var(--nw-cream)',
                         background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                        textAlign: 'left', fontFamily: 'inherit', lineHeight: 1.4,
+                        textAlign: 'left', fontFamily: 'inherit', lineHeight: 1.35,
                         transition: 'color .12s',
                       }}>
                       {kr.title}
@@ -314,10 +319,10 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                     )}
                   </div>
                   {metricCtx ? (
-                    <div style={{ fontSize: 11, color: 'var(--navy-500)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <div style={{ fontSize: 11, color: 'var(--nw-label-dim)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {metricCtx.latest ? (
                         <span>
-                          Latest: <span style={{ color: 'var(--navy-200)', fontWeight: 600 }}>{metricCtx.latest.value}{metricCtx.unit && ` ${metricCtx.unit}`}</span>
+                          Latest: <span style={{ color: 'var(--nw-cream)', fontWeight: 600 }}>{metricCtx.latest.value}{metricCtx.unit && ` ${metricCtx.unit}`}</span>
                         </span>
                       ) : (
                         <span style={{ fontStyle: 'italic' }}>No readings yet</span>
@@ -334,20 +339,20 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                       </button>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>
+                    <div style={{ fontSize: 11, color: 'var(--nw-label-dim)' }}>
                       {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
                     </div>
                   )}
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginTop: 1 }}>
                   <button onClick={() => setAddingActionKRId(kr.id)}
-                    style={{ fontSize: 10, fontWeight: 600, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+                    style={{ fontSize: 10, fontWeight: 600, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--accent)', background: 'transparent', color: 'var(--accent)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
                     <svg width="9" height="9" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
                     Add action
                   </button>
                   <button onClick={() => cycleStatus(kr)}
-                    style={{ fontSize: 10.5, fontWeight: 500, padding: '3px 9px', borderRadius: 4, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, letterSpacing: '.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all .12s' }}>
-                    <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor', opacity: 0.55 }} />
+                    style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 3, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all .12s' }}>
+                    <span style={{ width: 4, height: 4, borderRadius: 99, background: 'currentColor' }} />
                     {hs.label}
                   </button>
                   {/* Reorder controls — boring up/down arrows over a drag handle.
@@ -400,8 +405,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
         {/* Add key result */}
         {!addingKR ? (
           <button onClick={() => setAddingKR(true)}
-            style={{ width: '100%', padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)', border: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', cursor: 'pointer', color: 'var(--navy-400)', fontSize: 12, fontWeight: 600, transition: 'color .12s' }}>
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
+            style={{ width: '100%', padding: '10px 18px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)', border: 'none', borderLeft: 'none', borderRight: 'none', borderBottom: 'none', cursor: 'pointer', color: 'var(--nw-label)', fontSize: 10.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', transition: 'color .12s' }}>
+            <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M6 2v8M2 6h8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
             Add key result
           </button>
         ) : (

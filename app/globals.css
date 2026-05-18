@@ -50,6 +50,26 @@
   --slate-bg:   #131722;
   --slate-text: #9aa3b8;
 
+  /* ── Night Watch identity tokens (May 17) ──────────────────────────
+     Aircraft-carrier-bridge palette for the OKR card surface. Amber
+     instrument-panel labels, warm cream readouts, alarm/caution/nominal
+     status colors with subtle phosphor glow on critical readouts.
+     Used by ObjectiveCard. Other surfaces keep cobalt for now. */
+  --nw-label:        #c89642;  /* amber instrument label */
+  --nw-label-dim:    #7a6840;  /* dim amber secondary */
+  --nw-cream:        #e8e0d0;  /* warm cream primary text */
+  --nw-hero-amber:   #e8c878;  /* hero readout when in-progress */
+  --nw-alarm-bg:     #2e0a08;
+  --nw-alarm-text:   #ff6452;
+  --nw-caution-bg:   #251a08;
+  --nw-caution-text: #f5b840;
+  --nw-nominal-bg:   #0a2014;
+  --nw-nominal-text: #7fe27a;  /* phosphor green, also progress fill + done hero */
+  --nw-standby-bg:   #15191f;
+  --nw-standby-text: #8e96a8;
+  --nw-glow-red:     rgba(255, 100, 82, 0.5);
+  --nw-glow-green:   rgba(127, 226, 122, 0.45);
+
   color-scheme: dark;
 }
 
@@ -92,6 +112,25 @@
   /* Not started — cool slate, breaks the all-warm dashboard for early/no-data KRs */
   --slate-bg:   #e2e6ee;
   --slate-text: #4a5468;
+
+  /* ── Night Watch identity tokens (May 17) ──────────────────────────
+     Light-mode counterparts. Less "instrument panel," more "warm
+     operational" — deeper amber labels that still read warm against
+     white, darker phosphor green for readouts on a light bg. */
+  --nw-label:        #8a6314;  /* deeper amber label */
+  --nw-label-dim:    #b39450;  /* dim amber secondary */
+  --nw-cream:        #2a2418;  /* warm dark — primary text on light bg */
+  --nw-hero-amber:   #bf7a14;  /* hero readout when in-progress */
+  --nw-alarm-bg:     #fbeaea;
+  --nw-alarm-text:   #a8302b;
+  --nw-caution-bg:   #fcf0d4;
+  --nw-caution-text: #8a5e08;
+  --nw-nominal-bg:   #d6f0dc;
+  --nw-nominal-text: #1a7a3a;
+  --nw-standby-bg:   #eef0f4;
+  --nw-standby-text: #5f6478;
+  --nw-glow-red:     rgba(168, 48, 43, 0.18);
+  --nw-glow-green:   rgba(26, 122, 58, 0.18);
 
   color-scheme: light;
 }
