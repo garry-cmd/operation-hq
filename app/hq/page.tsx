@@ -25,6 +25,7 @@ import Toast from '@/components/Toast'
 import NavRail from '@/components/NavRail'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
 import MetricLogModal from '@/components/MetricLogModal'
+import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'tags'
@@ -54,6 +55,14 @@ export default function HQPage() {
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Mobile fallback (May 17): the NavRail collapses into a hamburger-triggered
+  // slide-in drawer below 900px. Drawer state lives at the page level so the
+  // mobile top bar (which owns the hamburger) and NavRail (which can close
+  // itself on item-click) share it. Always closed on desktop — the rail is
+  // already a permanent column.
+  const isMobile = useIsMobile(900)
+  const [drawerOpen, setDrawerOpen] = useState(false)
 
   const [objectives, setObjectives] = useState<AnnualObjective[]>([])
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([])
@@ -466,9 +475,41 @@ export default function HQPage() {
         onToggleTheme={toggleTheme}
         onCopyShareLink={copyShareLink}
         onSignOut={() => supabase.auth.signOut()}
+        isMobile={isMobile}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
       />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      {/* Mobile-only top bar — hamburger + brand. Hidden on desktop where
+          NavRail is permanently visible. Sticky so it stays during scroll. */}
+      {isMobile && (
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 25,
+          display: 'flex', alignItems: 'center', gap: 10,
+          padding: '10px 14px',
+          background: 'var(--navy-800)',
+          borderBottom: '1px solid var(--navy-600)',
+          minHeight: 48,
+        }}>
+          <button
+            onClick={() => setDrawerOpen(true)}
+            aria-label="Open menu"
+            style={{
+              width: 36, height: 36, borderRadius: 6,
+              background: 'transparent', border: 'none', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--navy-100)',
+            }}>
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+              <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+          </button>
+          <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)' }}>
+            Operation <span style={{ color: 'var(--accent)' }}>HQ</span>
+          </div>
+        </div>
+      )}
       {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}
@@ -501,7 +542,7 @@ export default function HQPage() {
           toast={setToast}
         />
       ) : (
-      <main style={{ padding: '24px 28px', maxWidth: isAllSpaces || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: isAllSpaces || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />

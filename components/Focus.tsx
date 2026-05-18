@@ -267,7 +267,12 @@ export default function Focus({
           <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '12px 16px', marginBottom: 16 }}>
             <h3 style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: 1 }}>Habits</h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr repeat(7, 28px)', columnGap: 8, rowGap: 6, alignItems: 'center' }}>
+            {/* Grid wrapped in an overflow-x container so the 7-day strip
+                can horizontally scroll on narrow viewports (mobile < ~520px
+                runs out of room for [title + 7 × 28px bubbles + gaps]). The
+                inner div has a min-width so the grid columns don't squish. */}
+            <div style={{ overflowX: 'auto', marginLeft: -16, marginRight: -16, padding: '0 16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'minmax(120px, 1fr) repeat(7, 28px)', columnGap: 8, rowGap: 6, alignItems: 'center', minWidth: 360 }}>
               {/* Day-label header row. The first cell is a spacer aligning with
                   the habit-title column underneath. */}
               <div></div>
@@ -348,6 +353,7 @@ export default function Focus({
                   })}
                 </Fragment>
               ))}
+              </div>
             </div>
           </div>
         )}

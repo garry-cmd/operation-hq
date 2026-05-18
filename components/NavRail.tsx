@@ -54,6 +54,14 @@ interface Props {
   onToggleTheme: () => void
   onCopyShareLink: () => void
   onSignOut: () => void
+
+  // Mobile fallback (May 17): when true, the rail is rendered as a fixed
+  // slide-in drawer. `onClose` is called whenever the user navigates or
+  // taps outside-equivalent — the parent owns the open/closed state since
+  // it also owns the hamburger button that toggles it.
+  isMobile?: boolean
+  isOpen?: boolean
+  onClose?: () => void
 }
 
 const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: React.ReactNode }[] }[] = [
@@ -129,14 +137,26 @@ export default function NavRail(props: Props) {
   }
 
   return (
-    <aside style={{
-      width: 240, flexShrink: 0,
-      background: 'var(--navy-700)',
-      borderRight: '1px solid var(--navy-600)',
-      display: 'flex', flexDirection: 'column',
-      position: 'sticky', top: 0, height: '100vh',
-      zIndex: 30,
-    }}>
+    <>
+      {/* Mobile backdrop — only rendered while the drawer is open. Click
+          dismisses, matching native drawer UX. */}
+      {props.isMobile && props.isOpen && (
+        <div onClick={props.onClose}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 39, animation: 'fadeIn .12s ease' }} />
+      )}
+      <aside style={{
+        width: 240, flexShrink: 0,
+        background: 'var(--navy-700)',
+        borderRight: '1px solid var(--navy-600)',
+        display: 'flex', flexDirection: 'column',
+        // Desktop: sticky 240px column. Mobile: fixed slide-in drawer.
+        position: props.isMobile ? 'fixed' : 'sticky',
+        top: 0, left: 0, height: '100vh',
+        zIndex: props.isMobile ? 40 : 30,
+        transform: props.isMobile ? (props.isOpen ? 'translateX(0)' : 'translateX(-100%)') : 'none',
+        transition: props.isMobile ? 'transform .22s ease' : 'none',
+        boxShadow: props.isMobile && props.isOpen ? '4px 0 20px rgba(0,0,0,0.35)' : 'none',
+      }}>
       {/* Top: brand + space switcher + search */}
       <div style={{ padding: '16px 14px 12px' }}>
         <div style={{
@@ -205,7 +225,7 @@ export default function NavRail(props: Props) {
             }}>
               {props.searchResults.map((r, i) => (
                 <button key={i}
-                  onMouseDown={() => { props.onScreenChange(r.screen); props.setSearchQuery(''); setSearchFocused(false) }}
+                  onMouseDown={() => { props.onScreenChange(r.screen); props.setSearchQuery(''); setSearchFocused(false); if (props.isMobile) props.onClose?.() }}
                   style={{
                     width: '100%', padding: '9px 12px', display: 'flex', flexDirection: 'column', gap: 2,
                     background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)',
@@ -237,7 +257,7 @@ export default function NavRail(props: Props) {
               const b = badge(item.id)
               return (
                 <button key={item.id}
-                  onClick={() => props.onScreenChange(item.id)}
+                  onClick={() => { props.onScreenChange(item.id); if (props.isMobile) props.onClose?.() }}
                   style={{
                     width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 10,
                     padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
@@ -342,6 +362,7 @@ export default function NavRail(props: Props) {
         )}
       </div>
     </aside>
+    </>
   )
 }
 

@@ -17,6 +17,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Space, Notebook, Note, NoteTag, NoteBody } from '@/lib/types'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
+import { useIsMobile } from '@/lib/useIsMobile'
 import { useEditor, EditorContent, Editor } from '@tiptap/react'
 import type { Content } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -61,6 +62,13 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
   const [newNotebookFor, setNewNotebookFor] = useState<{ spaceId: string; parentId: string | null } | null>(null)
   const [newNotebookDraft, setNewNotebookDraft] = useState('')
   const [fullscreen, setFullscreen] = useState(false)
+  // Mobile fallback (May 17): below 900px the notebook tree and note list
+  // each collapse to dropdown panels controlled by openers above the editor.
+  // On mobile, opening a note treats the editor as a full-screen overlay so
+  // the user gets the full viewport to read/write.
+  const isMobile = useIsMobile(900)
+  const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
+  const [mobileListOpen, setMobileListOpen] = useState(false)
 
   // ── Load everything on mount ─────────────────────────────────────
   useEffect(() => {
@@ -343,10 +351,67 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: fullscreen ? '0 0 1fr' : '240px 300px 1fr', height: 'calc(100vh - 0px)', minHeight: 0, transition: 'grid-template-columns .2s ease' }}>
+    <div style={{
+      display: 'grid',
+      // Mobile: single column. Tree + list collapse to togglable dropdowns
+      // above the editor; editor takes whatever remains of the viewport.
+      // Desktop: original three-column grid (or fullscreen 0/0/1fr).
+      gridTemplateColumns: isMobile
+        ? '1fr'
+        : fullscreen
+          ? '0 0 1fr'
+          : '240px 300px 1fr',
+      height: 'calc(100vh - 0px)', minHeight: 0, transition: 'grid-template-columns .2s ease',
+    }}>
 
-      {/* ── LEFT: Notebook tree (hidden in fullscreen) ── */}
-      <aside style={{ background: 'var(--navy-800)', borderRight: fullscreen ? 'none' : '1px solid var(--navy-600)', overflow: fullscreen ? 'hidden' : 'auto', padding: '12px 0', visibility: fullscreen ? 'hidden' : 'visible' }}>
+      {/* Mobile-only openers row — two tap targets that toggle the tree
+          and list panels. Hidden on desktop (the panels are always visible). */}
+      {isMobile && (
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--navy-600)', background: 'var(--navy-800)' }}>
+          <button onClick={() => { setMobileTreeOpen(o => !o); setMobileListOpen(false) }}
+            style={{
+              flex: 1, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              fontSize: 12.5, fontWeight: 600, color: 'var(--navy-50)',
+              background: mobileTreeOpen ? 'var(--navy-700)' : 'transparent',
+              border: 'none', borderRight: '1px solid var(--navy-600)', cursor: 'pointer', textAlign: 'left',
+            }}>
+            <span>Notebooks</span>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ transform: mobileTreeOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
+              <path d="M3 5l3 3 3-3" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <button onClick={() => { setMobileListOpen(o => !o); setMobileTreeOpen(false) }}
+            style={{
+              flex: 1, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              fontSize: 12.5, fontWeight: 600, color: 'var(--navy-50)',
+              background: mobileListOpen ? 'var(--navy-700)' : 'transparent',
+              border: 'none', cursor: 'pointer', textAlign: 'left',
+            }}>
+            <span>Notes ({filteredNotes.length})</span>
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ transform: mobileListOpen ? 'rotate(180deg)' : 'rotate(0)' }}>
+              <path d="M3 5l3 3 3-3" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+        </div>
+      )}
+
+      {/* ── LEFT: Notebook tree (hidden in fullscreen, conditional on mobile) ── */}
+      <aside style={{
+        background: 'var(--navy-800)',
+        borderRight: (fullscreen || isMobile) ? 'none' : '1px solid var(--navy-600)',
+        borderBottom: isMobile ? '1px solid var(--navy-600)' : 'none',
+        overflow: fullscreen ? 'hidden' : 'auto',
+        padding: '12px 0',
+        visibility: fullscreen ? 'hidden' : 'visible',
+        ...(isMobile ? {
+          display: mobileTreeOpen ? 'block' : 'none',
+          maxHeight: '60vh',
+        } : {}),
+      }}
+        // Mobile: any click inside (scope-changing rows etc.) closes the
+        // dropdown. Rename inputs and the "new notebook" form stop
+        // propagation themselves to stay open mid-edit.
+        onClick={isMobile ? () => setMobileTreeOpen(false) : undefined}>
         {spaces.map(space => {
           const isExpanded = expandedSpaces.has(space.id)
           const inboxCount = counts.byInbox[space.id] ?? 0
@@ -435,8 +500,18 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
         )}
       </aside>
 
-      {/* ── MIDDLE: Note list (hidden in fullscreen) ── */}
-      <section style={{ background: 'var(--navy-900)', borderRight: fullscreen ? 'none' : '1px solid var(--navy-700)', overflow: fullscreen ? 'hidden' : 'auto', visibility: fullscreen ? 'hidden' : 'visible' }}>
+      {/* ── MIDDLE: Note list (hidden in fullscreen, conditional on mobile) ── */}
+      <section style={{
+        background: 'var(--navy-900)',
+        borderRight: (fullscreen || isMobile) ? 'none' : '1px solid var(--navy-700)',
+        borderBottom: isMobile ? '1px solid var(--navy-600)' : 'none',
+        overflow: fullscreen ? 'hidden' : 'auto',
+        visibility: fullscreen ? 'hidden' : 'visible',
+        ...(isMobile ? {
+          display: mobileListOpen ? 'block' : 'none',
+          maxHeight: '60vh',
+        } : {}),
+      }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 16px 10px' }}>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--navy-50)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{middleHeading}</div>
@@ -468,7 +543,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
               note={note}
               tags={tagsByNote.get(note.id) ?? []}
               selected={selectedNoteId === note.id}
-              onClick={() => setSelectedNoteId(note.id)}
+              onClick={() => { setSelectedNoteId(note.id); if (isMobile) setMobileListOpen(false) }}
               onTagClick={onJumpToTag}
             />
           ))

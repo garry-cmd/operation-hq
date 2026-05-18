@@ -24,6 +24,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, TaskList, Priority } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
 import * as taskListsDb from '@/lib/db/taskLists'
+import { useIsMobile } from '@/lib/useIsMobile'
 import {
   parseQuickAdd,
   parseRecurrence,
@@ -102,6 +103,12 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
   const [scope, setScope] = useState<ScopeFilter>({ kind: 'smart', view: 'today' })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [quickAdd, setQuickAdd] = useState('')
+  // Mobile fallback (May 17): below 900px the sub-sidebar is replaced by a
+  // dropdown opener button. mobileSubOpen toggles a slide-down panel that
+  // reuses the same sub-sidebar markup. Detail panel switches from a side
+  // pane to a full-screen overlay so the main list can take full width.
+  const isMobile = useIsMobile(900)
+  const [mobileSubOpen, setMobileSubOpen] = useState(false)
   const quickAddRef = useRef<HTMLInputElement>(null)
   // List sidebar UI state — kebab menu open for which list, inline rename, new-list input
   const [listMenuOpenId, setListMenuOpenId] = useState<string | null>(null)
@@ -435,9 +442,50 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: `220px 1fr ${selected ? '340px' : '0'}`, height: 'calc(100vh - 0px)' }}>
-      {/* ── Sub-sidebar ── */}
-      <aside style={{ background: 'var(--navy-800)', borderRight: '1px solid var(--navy-600)', overflowY: 'auto' }}>
+    <div style={{
+      display: 'grid',
+      // Mobile: single column. Sub-sidebar collapses to a dropdown above the
+      // task list; detail panel becomes a full-screen overlay.
+      // Desktop: original three-column grid.
+      gridTemplateColumns: isMobile
+        ? '1fr'
+        : `220px 1fr ${selected ? '340px' : '0'}`,
+      height: 'calc(100vh - 0px)',
+    }}>
+      {/* Mobile-only opener — shows current scope, taps to expand the
+          sub-sidebar (rendered below as a dropdown). */}
+      {isMobile && (
+        <button onClick={() => setMobileSubOpen(o => !o)}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '10px 14px', background: 'var(--navy-800)',
+            borderBottom: '1px solid var(--navy-600)',
+            fontSize: 13, fontWeight: 600, color: 'var(--navy-50)',
+            border: 'none', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
+          }}>
+          <span>{heading.title}</span>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ transform: mobileSubOpen ? 'rotate(180deg)' : 'rotate(0)', transition: 'transform .15s' }}>
+            <path d="M3 5l3 3 3-3" stroke="var(--navy-300)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </button>
+      )}
+      {/* ── Sub-sidebar ── desktop: always visible left rail. mobile:
+          collapsed dropdown beneath the opener; hidden until expanded. */}
+      <aside style={{
+        background: 'var(--navy-800)',
+        borderRight: isMobile ? 'none' : '1px solid var(--navy-600)',
+        borderBottom: isMobile ? '1px solid var(--navy-600)' : 'none',
+        overflowY: 'auto',
+        ...(isMobile ? {
+          display: mobileSubOpen ? 'block' : 'none',
+          maxHeight: '60vh',
+        } : {}),
+      }}
+      // Mobile: close the dropdown after any nav click. Inline rename inputs
+      // and the "new list" form stop propagation themselves to avoid being
+      // dismissed mid-edit (the SidebarRenamableRow / lists section handle
+      // their own stopPropagation).
+      onClick={isMobile ? () => setMobileSubOpen(false) : undefined}>
         <SidebarSection label="Smart views">
           <SidebarRow icon={<TodayIcon />}    label="Today"    count={counts.today}    active={scope.kind === 'smart' && scope.view === 'today'}    onClick={() => { setScope({ kind: 'smart', view: 'today' });    setSelectedId(null) }} />
           <SidebarRow icon={<UpcomingIcon />} label="Upcoming" count={counts.upcoming} active={scope.kind === 'smart' && scope.view === 'upcoming'} onClick={() => { setScope({ kind: 'smart', view: 'upcoming' }); setSelectedId(null) }} />
@@ -534,7 +582,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       </aside>
 
       {/* ── Main task list ── */}
-      <main style={{ overflowY: 'auto', padding: '20px 24px 60px' }}>
+      <main style={{ overflowY: 'auto', padding: isMobile ? '14px 14px 80px' : '20px 24px 60px' }}>
         <header style={{ marginBottom: 14 }}>
           <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--navy-50)' }}>{heading.title}</h1>
           {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
@@ -581,17 +629,24 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
         </form>
       </main>
 
-      {/* ── Detail panel ── */}
+      {/* ── Detail panel ── On desktop, occupies the right grid column (340px).
+          On mobile, becomes a fullscreen overlay positioned over everything
+          so the main list isn't squeezed off-screen. */}
       {selected && (
-        <DetailPanel task={selected}
-          tags={tagsByTask.get(selected.id) ?? []}
-          spaces={spaces}
-          lists={lists}
-          roadmapItems={roadmapItems}
-          onPatch={patch => onPatch(selected.id, patch)}
-          onSetTags={tags => onSetTags(selected.id, tags)}
-          onDelete={() => onDelete(selected.id)}
-          onClose={() => setSelectedId(null)} />
+        <div style={isMobile ? {
+          position: 'fixed', inset: 0, zIndex: 50,
+          background: 'var(--navy-800)', overflowY: 'auto',
+        } : undefined}>
+          <DetailPanel task={selected}
+            tags={tagsByTask.get(selected.id) ?? []}
+            spaces={spaces}
+            lists={lists}
+            roadmapItems={roadmapItems}
+            onPatch={patch => onPatch(selected.id, patch)}
+            onSetTags={tags => onSetTags(selected.id, tags)}
+            onDelete={() => onDelete(selected.id)}
+            onClose={() => setSelectedId(null)} />
+        </div>
       )}
     </div>
   )
