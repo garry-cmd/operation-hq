@@ -352,12 +352,15 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
 
   return (
     <div style={{
-      display: 'grid',
-      // Mobile: single column. Tree + list collapse to togglable dropdowns
-      // above the editor; editor takes whatever remains of the viewport.
-      // Desktop: original three-column grid (or fullscreen 0/0/1fr).
+      // Mobile: flex column. Openers stick to the top, tree/list dropdowns
+      // expand inline beneath them, editor fills the remaining viewport via
+      // flex: 1. Grid was unpredictable when most children had display:none
+      // — auto rows were stretching to absorb the 100vh and pushing content
+      // around. Desktop: original three-column grid (or fullscreen 0/0/1fr).
+      display: isMobile ? 'flex' : 'grid',
+      flexDirection: isMobile ? 'column' : undefined,
       gridTemplateColumns: isMobile
-        ? '1fr'
+        ? undefined
         : fullscreen
           ? '0 0 1fr'
           : '240px 300px 1fr',
@@ -367,7 +370,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
       {/* Mobile-only openers row — two tap targets that toggle the tree
           and list panels. Hidden on desktop (the panels are always visible). */}
       {isMobile && (
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--navy-600)', background: 'var(--navy-800)' }}>
+        <div style={{ display: 'flex', borderBottom: '1px solid var(--navy-600)', background: 'var(--navy-800)', flexShrink: 0 }}>
           <button onClick={() => { setMobileTreeOpen(o => !o); setMobileListOpen(false) }}
             style={{
               flex: 1, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -406,6 +409,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
         ...(isMobile ? {
           display: mobileTreeOpen ? 'block' : 'none',
           maxHeight: '60vh',
+          flexShrink: 0,
         } : {}),
       }}
         // Mobile: any click inside (scope-changing rows etc.) closes the
@@ -510,6 +514,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
         ...(isMobile ? {
           display: mobileListOpen ? 'block' : 'none',
           maxHeight: '60vh',
+          flexShrink: 0,
         } : {}),
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '14px 16px 10px' }}>
@@ -550,8 +555,9 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
         )}
       </section>
 
-      {/* ── RIGHT: Editor ── */}
-      <section style={{ overflowY: 'auto' }}>
+      {/* ── RIGHT: Editor ── On mobile this gets flex:1 to consume whatever
+          viewport remains after the openers + any expanded dropdowns. */}
+      <section style={{ overflowY: 'auto', ...(isMobile ? { flex: 1, minHeight: 0 } : {}) }}>
         {selectedNote ? (
           <NoteEditor
             key={selectedNote.id}
