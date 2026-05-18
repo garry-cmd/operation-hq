@@ -51,7 +51,7 @@ interface Props {
   toast: (msg: string) => void
 }
 
-type SmartView = 'today' | 'upcoming' | 'inbox' | 'all'
+type SmartView = 'today' | 'upcoming' | 'inbox' | 'recurring' | 'all'
 type ScopeFilter =
   | { kind: 'smart'; view: SmartView }
   | { kind: 'space'; spaceId: string }
@@ -84,6 +84,9 @@ function InboxIcon() {
 }
 function AllOpenIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M4.8 8c0-1.4-1-2.4-2.2-2.4S.5 6.6.5 8s1 2.4 2.2 2.4c1 0 1.6-.6 2.4-1.6.8-1 1.6-2.8 3.2-2.8 1.2 0 2.2 1 2.2 2.4s-1 2.4-2.2 2.4c-1 0-1.6-.6-2.4-1.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
+}
+function RecurringIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M13.5 7a5.5 5.5 0 0 0-10.4-1.5M2.5 9a5.5 5.5 0 0 0 10.4 1.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/><path d="M11.5 2.5v3h3M4.5 13.5v-3h-3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
 }
 function ListIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M5.5 4h8M5.5 8h8M5.5 12h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="2.5" cy="4" r="0.9" fill="currentColor"/><circle cx="2.5" cy="8" r="0.9" fill="currentColor"/><circle cx="2.5" cy="12" r="0.9" fill="currentColor"/></svg>
@@ -203,6 +206,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       today: open.filter(t => t.due_date && t.due_date <= today).length,
       upcoming: open.filter(t => t.due_date && t.due_date > today).length,
       inbox: open.filter(t => !t.space_id && !t.list_id).length,
+      recurring: open.filter(t => t.recurrence_rule != null).length,
       all: open.length,
       bySpace: spaces.reduce<Record<string, number>>((acc, s) => {
         acc[s.id] = open.filter(t => t.space_id === s.id).length
@@ -228,6 +232,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       if (scope.view === 'today')    pool = pool.filter(t => t.due_date && t.due_date <= today)
       if (scope.view === 'upcoming') pool = pool.filter(t => t.due_date && t.due_date > today)
       if (scope.view === 'inbox')    pool = pool.filter(t => !t.space_id && !t.list_id)
+      if (scope.view === 'recurring') pool = pool.filter(t => t.recurrence_rule != null)
       // 'all' = no further filter
     } else if (scope.kind === 'space') {
       pool = pool.filter(t => t.space_id === scope.spaceId)
@@ -440,6 +445,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       return { title: scope.view === 'today' ? 'Today'
                     : scope.view === 'upcoming' ? 'Upcoming'
                     : scope.view === 'inbox' ? 'Inbox'
+                    : scope.view === 'recurring' ? 'Recurring'
                     : 'All tasks',
                subtitle: scope.view === 'today' ? formatLongDate(today) : '' }
     }
@@ -512,6 +518,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
           <SidebarRow icon={<TodayIcon />}    label="Today"    count={counts.today}    active={scope.kind === 'smart' && scope.view === 'today'}    onClick={() => { setScope({ kind: 'smart', view: 'today' });    setSelectedId(null) }} />
           <SidebarRow icon={<UpcomingIcon />} label="Upcoming" count={counts.upcoming} active={scope.kind === 'smart' && scope.view === 'upcoming'} onClick={() => { setScope({ kind: 'smart', view: 'upcoming' }); setSelectedId(null) }} />
           <SidebarRow icon={<InboxIcon />}    label="Inbox"    count={counts.inbox}    active={scope.kind === 'smart' && scope.view === 'inbox'}    onClick={() => { setScope({ kind: 'smart', view: 'inbox' });    setSelectedId(null) }} />
+          <SidebarRow icon={<RecurringIcon />} label="Recurring" count={counts.recurring} active={scope.kind === 'smart' && scope.view === 'recurring'} onClick={() => { setScope({ kind: 'smart', view: 'recurring' }); setSelectedId(null) }} />
           <SidebarRow icon={<AllOpenIcon />}  label="All open" count={counts.all}      active={scope.kind === 'smart' && scope.view === 'all'}      onClick={() => { setScope({ kind: 'smart', view: 'all' });      setSelectedId(null) }} />
         </SidebarSection>
 
