@@ -109,6 +109,28 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
   // pane to a full-screen overlay so the main list can take full width.
   const isMobile = useIsMobile(900)
   const [mobileSubOpen, setMobileSubOpen] = useState(false)
+
+  // Done-section reveal toggle (May 18). In space/list/tag scopes, completed
+  // tasks pile up in a "Done" section and add visual noise. Default to
+  // hidden, persist the preference across sessions via localStorage so the
+  // user gets the same silence each time they reopen Tasks. Smart views
+  // already filter completed out upstream, so this toggle is only meaningful
+  // in non-smart scopes.
+  const [showDone, setShowDone] = useState(false)
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      const saved = localStorage.getItem('tasks-show-done')
+      if (saved === '1') setShowDone(true)
+    } catch { /* noop */ }
+  }, [])
+  const toggleShowDone = useCallback(() => {
+    setShowDone(prev => {
+      const next = !prev
+      try { localStorage.setItem('tasks-show-done', next ? '1' : '0') } catch { /* noop */ }
+      return next
+    })
+  }, [])
   const quickAddRef = useRef<HTMLInputElement>(null)
   // List sidebar UI state — kebab menu open for which list, inline rename, new-list input
   const [listMenuOpenId, setListMenuOpenId] = useState<string | null>(null)
@@ -594,12 +616,36 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
           </div>
         )}
 
-        {sections.map(section => (
+        {sections.map(section => {
+          const isDone = section.name === 'Done'
+          const collapsed = isDone && !showDone
+          return (
           <section key={section.name} style={{ marginTop: 22 }}>
-            <h2 style={{ fontSize: 12, fontWeight: 700, color: section.accent ?? 'var(--navy-300)', letterSpacing: '0.04em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
-              {section.name} · {section.tasks.length}
-            </h2>
-            {section.tasks.map(task => (
+            {isDone ? (
+              // Done header is a clickable toggle. Rows below are hidden by
+              // default per the showDone preference; count is always visible
+              // so the user knows how much is hiding.
+              <button onClick={toggleShowDone}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  fontSize: 12, fontWeight: 700, color: section.accent ?? 'var(--navy-300)',
+                  letterSpacing: '0.04em', textTransform: 'uppercase',
+                  margin: '0 0 8px', padding: '0 12px',
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}>
+                <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
+                  style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .15s' }}>
+                  <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                {section.name} · {section.tasks.length}
+              </button>
+            ) : (
+              <h2 style={{ fontSize: 12, fontWeight: 700, color: section.accent ?? 'var(--navy-300)', letterSpacing: '0.04em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+                {section.name} · {section.tasks.length}
+              </h2>
+            )}
+            {!collapsed && section.tasks.map(task => (
               <TaskRow key={task.id} task={task}
                 tags={tagsByTask.get(task.id) ?? []}
                 space={spaces.find(s => s.id === task.space_id)}
@@ -610,7 +656,8 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
                 onTagClick={onJumpToTag} />
             ))}
           </section>
-        ))}
+          )
+        })}
 
         {/* Quick-add — sits at the bottom of the list, after all sections */}
         <form onSubmit={e => { e.preventDefault(); onQuickAdd() }} style={{ marginTop: 18 }}>
