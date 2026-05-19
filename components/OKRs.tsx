@@ -426,7 +426,7 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
       footer={
         <>
           <button className="btn" onClick={onDelete}
-            style={{ color: 'var(--red)', marginRight: 'auto' }}
+            style={{ color: 'var(--red-text)', marginRight: 'auto' }}
           >
             Delete
           </button>
@@ -573,7 +573,7 @@ function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
       footer={
         <>
           <button className="btn" onClick={onDelete}
-            style={{ color: 'var(--red)', marginRight: 'auto' }}
+            style={{ color: 'var(--red-text)', marginRight: 'auto' }}
           >
             Delete
           </button>
