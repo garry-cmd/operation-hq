@@ -146,33 +146,43 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
       {/* KPI Dashboard */}
       {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => kr.is_metric).length > 0) && (
         <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-200)', margin: '0 0 12px 0' }}>Key metrics</h2>
+          <h2 style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Key metrics</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
             {/* Habit KPIs */}
             {activeKRs
               .filter(kr => kr.is_habit)
               .map(kr => {
                 const aggregate = calculateRollingAggregate(kr, habitCheckins, 4)
-                // Tone: zero sessions yet → slate (don't shout "off track" before
-                // there's any data). Otherwise: <50 red, 50–79 amber, ≥80 teal.
-                const tone = aggregate.sessions === 0 ? 'slate'
-                           : aggregate.percent >= 80 ? 'teal'
-                           : aggregate.percent >= 50 ? 'amber'
-                           : 'red'
+                // Tone: zero sessions yet → standby (don't shout "off track"
+                // before there's any data). Otherwise: <50 alarm, 50–79
+                // caution, ≥80 nominal. Night-watch token mapping.
+                const tone = aggregate.sessions === 0 ? 'standby'
+                           : aggregate.percent >= 80 ? 'nominal'
+                           : aggregate.percent >= 50 ? 'caution'
+                           : 'alarm'
+                const heroColor = tone === 'nominal' ? 'var(--nw-nominal-text)'
+                                : tone === 'caution' ? 'var(--nw-hero-amber)'
+                                : tone === 'alarm'   ? 'var(--nw-alarm-text)'
+                                : 'var(--nw-standby-text)'
+                const borderAccent = tone === 'nominal' ? 'var(--nw-nominal-text)'
+                                   : tone === 'caution' ? 'var(--nw-caution-text)'
+                                   : tone === 'alarm'   ? 'var(--nw-alarm-text)'
+                                   : 'var(--nw-standby-text)'
                 return (
                   <div key={kr.id} style={{
-                    background: `var(--${tone}-bg)`,
-                    border: `1px solid var(--${tone}-text)`,
+                    background: 'var(--navy-800)',
+                    border: '1px solid var(--navy-700)',
+                    borderLeft: `3px solid ${borderAccent}`,
                     borderRadius: 8,
                     padding: '14px 16px',
                   }}>
-                    <p style={{ fontSize: 12, color: `var(--${tone}-text)`, opacity: 0.85, margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <p style={{ fontSize: 12, color: 'var(--nw-cream)', fontWeight: 500, margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {kr.title}
                     </p>
-                    <p style={{ fontSize: 24, fontWeight: 600, color: `var(--${tone}-text)`, margin: '0 0 3px 0' }}>
-                      {aggregate.percent}%
+                    <p style={{ fontSize: 28, fontWeight: 700, color: heroColor, margin: '0 0 3px 0', letterSpacing: '-.01em', lineHeight: 1, fontFeatureSettings: '"tnum"' }}>
+                      {aggregate.percent}<span style={{ fontSize: 16 }}>%</span>
                     </p>
-                    <div style={{ fontSize: 11, color: `var(--${tone}-text)`, opacity: 0.7, margin: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', margin: 0 }}>
                       {aggregate.sessions}/{aggregate.expected} sessions
                     </div>
                   </div>
@@ -689,42 +699,48 @@ function MetricKPICard({
     : kr.metric_direction === 'up' ? delta > 0 : delta < 0
 
   // Tint by progress, same thresholds as habits — unified language for the row
-  // of cards. Slate covers both "under-configured" (no progress field) and
+  // of cards. Standby covers both "under-configured" (no progress field) and
   // "no readings yet" — don't shout off-track before there's any data.
   const hasNoCheckins = latest12Desc.length === 0
-  const tone: 'teal' | 'amber' | 'red' | 'slate' =
-    (progressNum == null || hasNoCheckins) ? 'slate'
-    : progressNum >= 80 ? 'teal'
-    : progressNum >= 50 ? 'amber'
-    : 'red'
+  const tone: 'nominal' | 'caution' | 'alarm' | 'standby' =
+    (progressNum == null || hasNoCheckins) ? 'standby'
+    : progressNum >= 80 ? 'nominal'
+    : progressNum >= 50 ? 'caution'
+    : 'alarm'
 
-  const tintBg   = `var(--${tone}-bg)`
-  const tintEdge = `var(--${tone}-text)`
-  const tintText = `var(--${tone}-text)`
+  const heroColor = tone === 'nominal' ? 'var(--nw-nominal-text)'
+                  : tone === 'caution' ? 'var(--nw-hero-amber)'
+                  : tone === 'alarm'   ? 'var(--nw-alarm-text)'
+                  : 'var(--nw-standby-text)'
+  const borderAccent = tone === 'nominal' ? 'var(--nw-nominal-text)'
+                     : tone === 'caution' ? 'var(--nw-caution-text)'
+                     : tone === 'alarm'   ? 'var(--nw-alarm-text)'
+                     : 'var(--nw-standby-text)'
 
   return (
     <button onClick={onTap} style={{
       textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
-      background: tintBg, border: `1px solid ${tintEdge}`, borderRadius: 8,
+      background: 'var(--navy-800)', border: '1px solid var(--navy-700)',
+      borderLeft: `3px solid ${borderAccent}`,
+      borderRadius: 8,
       padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8,
       width: '100%',
     }}>
-      <div style={{ fontSize: 12, color: tintText, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
+      <div style={{ fontSize: 12, color: 'var(--nw-cream)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
         {kr.title}
       </div>
 
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
         {current != null ? (
           <>
-            <span style={{ fontSize: 24, fontWeight: 600, color: tintText, lineHeight: 1 }}>
+            <span style={{ fontSize: 28, fontWeight: 700, color: heroColor, lineHeight: 1, letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>
               {isPrefixCurrency(unit) && unit.trim()}{formatMetricNumber(current)}
             </span>
-            {isMeaningfulUnit(unit) && !isPrefixCurrency(unit) && <span style={{ fontSize: 13, color: tintText, opacity: 0.7 }}>{unit.trim()}</span>}
+            {isMeaningfulUnit(unit) && !isPrefixCurrency(unit) && <span style={{ fontSize: 13, color: 'var(--nw-label-dim)' }}>{unit.trim()}</span>}
             {delta != null && (
               <span style={{
                 fontSize: 11, fontWeight: 700, marginLeft: 4,
-                color: deltaIsGood == null ? tintText : (deltaIsGood ? 'var(--teal-text)' : 'var(--red-text)'),
-                opacity: deltaIsGood == null ? 0.6 : 1,
+                color: deltaIsGood == null ? 'var(--nw-label-dim)' : (deltaIsGood ? 'var(--nw-nominal-text)' : 'var(--nw-alarm-text)'),
               }}>
                 {delta > 0 ? '↑ +' : delta < 0 ? '↓ ' : ''}
                 {formatMetricNumber(Number(delta.toFixed(2)))}
@@ -732,14 +748,14 @@ function MetricKPICard({
             )}
           </>
         ) : (
-          <span style={{ fontSize: 14, fontStyle: 'italic', color: tintText, opacity: 0.7 }}>
+          <span style={{ fontSize: 14, fontStyle: 'italic', color: 'var(--nw-label-dim)' }}>
             No readings yet
           </span>
         )}
       </div>
 
       {(startNum != null || targetNum != null) && (
-        <div style={{ fontSize: 10, color: tintText, opacity: 0.65 }}>
+        <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>
           {startNum != null && <>Start {formatMetricValue(startNum, unit)}</>}
           {startNum != null && targetNum != null && <> → </>}
           {targetNum != null && <>Target {formatMetricValue(targetNum, unit)}</>}
