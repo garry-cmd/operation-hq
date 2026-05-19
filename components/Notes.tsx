@@ -37,11 +37,16 @@ interface Props {
   toast: (msg: string) => void
 }
 
-// What's selected in the left pane. 'inbox' = loose notes for a space;
-// 'notebook' = a specific notebook (and, where it has children, its
-// descendants too); 'tag' = the cross-space tag filter.
+// What's selected in the left pane.
+//   'inbox'    = unified inbox: notes with no space AND no notebook
+//   'all'      = every note across spaces
+//   'space'    = all notes in a space (including ones in notebooks)
+//   'notebook' = a specific notebook (and its descendants)
+//   'tag'      = the cross-space tag filter
 type Scope =
-  | { kind: 'inbox'; spaceId: string }
+  | { kind: 'inbox' }
+  | { kind: 'all' }
+  | { kind: 'space'; spaceId: string }
   | { kind: 'notebook'; notebookId: string }
   | { kind: 'tag'; tag: string }
 
@@ -52,7 +57,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
   const [notes, setNotes] = useState<Note[]>([])
   const [tagsByNote, setTagsByNote] = useState<Map<string, string[]>>(new Map())
   const [loading, setLoading] = useState(true)
-  const [scope, setScope] = useState<Scope>({ kind: 'inbox', spaceId: activeSpaceId })
+  const [scope, setScope] = useState<Scope>({ kind: 'inbox' })
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   // Left-pane UI state
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(() => new Set([activeSpaceId]))
@@ -110,7 +115,8 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
     const target = notes.find(n => n.id === initialNoteId)
     if (target) {
       if (target.notebook_id) setScope({ kind: 'notebook', notebookId: target.notebook_id })
-      else setScope({ kind: 'inbox', spaceId: target.space_id })
+      else if (target.space_id) setScope({ kind: 'space', spaceId: target.space_id })
+      else setScope({ kind: 'inbox' })
       setSelectedNoteId(target.id)
     }
     onConsumeInitialNoteId?.()
@@ -148,20 +154,22 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
 
   // Counts shown next to sidebar entries.
   const counts = useMemo(() => {
-    const byInbox: Record<string, number> = {}
+    // Unified inbox (no space AND no notebook) and per-space totals (every
+    // note belonging to that space, regardless of notebook). bySpace mirrors
+    // the Tasks sidebar — clicking a space shows everything in it.
+    let inbox = 0
+    const bySpace: Record<string, number> = {}
     const byNotebook: Record<string, number> = {}
     const byTag: Record<string, number> = {}
     for (const n of notes) {
-      if (n.notebook_id === null) {
-        byInbox[n.space_id] = (byInbox[n.space_id] ?? 0) + 1
-      } else {
-        byNotebook[n.notebook_id] = (byNotebook[n.notebook_id] ?? 0) + 1
-      }
+      if (n.space_id == null && n.notebook_id == null) inbox += 1
+      if (n.space_id != null) bySpace[n.space_id] = (bySpace[n.space_id] ?? 0) + 1
+      if (n.notebook_id != null) byNotebook[n.notebook_id] = (byNotebook[n.notebook_id] ?? 0) + 1
     }
     for (const tag of allTags) {
       byTag[tag] = notes.filter(n => (tagsByNote.get(n.id) ?? []).includes(tag)).length
     }
-    return { byInbox, byNotebook, byTag }
+    return { inbox, all: notes.length, bySpace, byNotebook, byTag }
   }, [notes, allTags, tagsByNote])
 
   // Notes filtered to the current scope. For a notebook scope, include
@@ -170,7 +178,15 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
   const filteredNotes = useMemo(() => {
     if (scope.kind === 'inbox') {
       return notes
-        .filter(n => n.space_id === scope.spaceId && n.notebook_id === null)
+        .filter(n => n.space_id == null && n.notebook_id == null)
+        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+    }
+    if (scope.kind === 'all') {
+      return [...notes].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+    }
+    if (scope.kind === 'space') {
+      return notes
+        .filter(n => n.space_id === scope.spaceId)
         .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
     }
     if (scope.kind === 'notebook') {
@@ -194,9 +210,11 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
 
   // Heading for the middle pane.
   const middleHeading = useMemo(() => {
-    if (scope.kind === 'inbox') {
+    if (scope.kind === 'inbox') return 'Inbox'
+    if (scope.kind === 'all') return 'All notes'
+    if (scope.kind === 'space') {
       const space = spaces.find(s => s.id === scope.spaceId)
-      return space ? `${space.name} · Inbox` : 'Inbox'
+      return space?.name ?? 'Space'
     }
     if (scope.kind === 'notebook') {
       const nb = notebooks.find(n => n.id === scope.notebookId)
@@ -255,28 +273,35 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
       setNotes(prev => prev.map(n => (n.notebook_id && cascade.has(n.notebook_id)) ? { ...n, notebook_id: null } : n))
       if (scope.kind === 'notebook' && cascade.has(scope.notebookId)) {
         const orphan = notes.find(n => n.id === selectedNoteId)
-        setScope({ kind: 'inbox', spaceId: orphan?.space_id ?? activeSpaceId })
+        // After delete: ON DELETE SET NULL drops the notebook_id on orphan
+        // notes but keeps space_id. Land on that space's scope, or unified
+        // inbox if the orphan had no space either.
+        if (orphan?.space_id) setScope({ kind: 'space', spaceId: orphan.space_id })
+        else setScope({ kind: 'inbox' })
       }
     } catch (e) {
       console.error('delete notebook failed', e)
       toast('Could not delete notebook')
     }
-  }, [toast, notebooks, notes, scope, selectedNoteId, activeSpaceId])
+  }, [toast, notebooks, notes, scope, selectedNoteId])
 
   const onCreateNote = useCallback(async () => {
-    // Pick a target container based on scope.
-    let spaceId: string
+    // Pick a target container based on scope. Tag and "all" scopes are
+    // location-ambiguous — drop the new note in the unified inbox so the
+    // user can file it later from there.
+    let spaceId: string | null = null
     let notebookId: string | null = null
     if (scope.kind === 'notebook') {
       const nb = notebooks.find(n => n.id === scope.notebookId)
       if (!nb) return
       spaceId = nb.space_id
       notebookId = nb.id
-    } else if (scope.kind === 'inbox') {
+    } else if (scope.kind === 'space') {
       spaceId = scope.spaceId
+    } else if (scope.kind === 'inbox') {
+      // unified inbox: no space, no notebook
     } else {
-      // tag scope — fall back to active space, no notebook
-      spaceId = activeSpaceId
+      // tag / all → unified inbox by default
     }
     try {
       const created = await notesDb.create({ space_id: spaceId, notebook_id: notebookId })
@@ -286,7 +311,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
       console.error('create note failed', e)
       toast('Could not create note')
     }
-  }, [scope, notebooks, activeSpaceId, toast])
+  }, [scope, notebooks, toast])
 
   const onUpdateNote = useCallback(async (id: string, patch: Partial<Note>) => {
     try {
@@ -416,31 +441,50 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
         // dropdown. Rename inputs and the "new notebook" form stop
         // propagation themselves to stay open mid-edit.
         onClick={isMobile ? () => setMobileTreeOpen(false) : undefined}>
+
+        {/* SMART VIEWS — unified Inbox + All notes, mirroring Tasks. */}
+        <div style={{ padding: '0 6px 4px' }}>
+          <div style={{ padding: '0 8px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Smart views</div>
+          <TreeRow
+            indent={0}
+            icon="📥"
+            label="Inbox"
+            count={counts.inbox}
+            active={scope.kind === 'inbox'}
+            onClick={() => { setScope({ kind: 'inbox' }); setSelectedNoteId(null) }}
+          />
+          <TreeRow
+            indent={0}
+            icon="∞"
+            label="All notes"
+            count={counts.all}
+            active={scope.kind === 'all'}
+            onClick={() => { setScope({ kind: 'all' }); setSelectedNoteId(null) }}
+          />
+        </div>
+
+        {/* SPACES section header — matches Tasks. */}
+        <div style={{ padding: '14px 14px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Spaces</div>
+
         {spaces.map(space => {
           const isExpanded = expandedSpaces.has(space.id)
-          const inboxCount = counts.byInbox[space.id] ?? 0
+          const spaceCount = counts.bySpace[space.id] ?? 0
           const topLevel = notebooksBySpace.get(space.id) ?? []
           return (
             <div key={space.id} style={{ marginBottom: 4 }}>
               <SpaceRow
                 space={space}
                 expanded={isExpanded}
+                count={spaceCount}
+                active={scope.kind === 'space' && scope.spaceId === space.id}
                 onToggle={() => toggleSpace(space.id)}
+                onSelect={() => { setScope({ kind: 'space', spaceId: space.id }); setSelectedNoteId(null) }}
                 onNewNotebook={() => { setNewNotebookFor({ spaceId: space.id, parentId: null }); setNewNotebookDraft('') }}
               />
               {isExpanded && (
                 <div>
-                  {/* Inbox row */}
-                  <TreeRow
-                    indent={1}
-                    icon="📥"
-                    label="Inbox"
-                    count={inboxCount}
-                    muted
-                    active={scope.kind === 'inbox' && scope.spaceId === space.id}
-                    onClick={() => { setScope({ kind: 'inbox', spaceId: space.id }); setSelectedNoteId(null) }}
-                  />
-                  {/* Top-level notebooks */}
+                  {/* Top-level notebooks (no per-space Inbox row anymore;
+                      unified Inbox lives in Smart Views). */}
                   {topLevel.map(nb => (
                     <NotebookBranch
                       key={nb.id}
@@ -593,23 +637,43 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
 
 // ── Sub-components ─────────────────────────────────────────────────
 
-function SpaceRow({ space, expanded, onToggle, onNewNotebook }: {
-  space: Space; expanded: boolean; onToggle: () => void; onNewNotebook: () => void
+function SpaceRow({ space, expanded, count, active, onToggle, onSelect, onNewNotebook }: {
+  space: Space
+  expanded: boolean
+  count: number
+  active: boolean
+  onToggle: () => void
+  onSelect: () => void
+  onNewNotebook: () => void
 }) {
   const [hover, setHover] = useState(false)
   return (
     <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', cursor: 'pointer', fontSize: 12.5, fontWeight: 600, color: 'var(--navy-100)' }}
-      onClick={onToggle}>
-      <span style={{ width: 12, textAlign: 'center', color: 'var(--navy-400)', fontSize: 10 }}>{expanded ? '▾' : '▸'}</span>
+      style={{
+        position: 'relative', display: 'flex', alignItems: 'center', gap: 6,
+        padding: '5px 12px', cursor: 'pointer', fontSize: 12.5, fontWeight: active ? 600 : 600,
+        color: active ? 'var(--accent)' : 'var(--navy-100)',
+        background: active ? 'var(--accent-dim)' : 'transparent',
+      }}
+      // Whole-row click selects the space scope. Chevron has its own
+      // handler that stops propagation so it can toggle expansion
+      // without changing the scope.
+      onClick={onSelect}>
+      <span
+        onClick={e => { e.stopPropagation(); onToggle() }}
+        style={{ width: 12, textAlign: 'center', color: 'var(--navy-400)', fontSize: 10, cursor: 'pointer', padding: '2px 0' }}>
+        {expanded ? '▾' : '▸'}
+      </span>
       <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
-      {hover && (
+      {hover ? (
         <button onClick={e => { e.stopPropagation(); onNewNotebook() }}
           title="New notebook"
           style={{ background: 'none', border: 'none', color: 'var(--navy-300)', padding: '2px 4px', cursor: 'pointer', borderRadius: 3, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>
           +
         </button>
+      ) : (
+        count > 0 && <span style={{ fontSize: 10.5, color: active ? 'var(--accent)' : 'var(--navy-400)' }}>{count}</span>
       )}
     </div>
   )

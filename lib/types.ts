@@ -246,7 +246,9 @@ export type NoteBody = unknown
 
 export interface Note {
   id: string
-  space_id: string
+  // Nullable as of May 18 — a unified "Inbox" smart view holds notes with
+  // no space AND no notebook, matching the Tasks model.
+  space_id: string | null
   notebook_id: string | null
   title: string
   body: NoteBody | null
@@ -258,7 +260,7 @@ export interface Note {
 }
 
 export interface NewNoteInput {
-  space_id: string
+  space_id?: string | null
   notebook_id?: string | null
   title?: string
   body?: NoteBody | null
