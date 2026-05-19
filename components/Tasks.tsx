@@ -42,6 +42,14 @@ interface Props {
   activeSpaceId: string
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
+  // Tasks state lifted to page.tsx (May 18) so the NavRail badge and global
+  // search can read it. This component owns the editing UI but not the data.
+  tasks: Task[]
+  setTasks: (fn: (prev: Task[]) => Task[]) => void
+  lists: TaskList[]
+  setLists: (fn: (prev: TaskList[]) => TaskList[]) => void
+  tagsByTask: Map<string, string[]>
+  setTagsByTask: (fn: (prev: Map<string, string[]>) => Map<string, string[]>) => void
   /** Task to focus when entering — set by cross-app jump from Tags page. */
   initialTaskId?: string | null
   /** Called once the initial selection has been consumed. */
@@ -98,11 +106,11 @@ function PlusIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
-export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [lists, setLists] = useState<TaskList[]>([])
-  const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
-  const [loading, setLoading] = useState(true)
+export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setTasks, lists, setLists, tagsByTask, setTagsByTask, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
+  // Data lifecycle (load + tags) is owned by page.tsx as of May 18. This
+  // component receives tasks/lists/tagsByTask via props and pushes mutations
+  // through the corresponding setters. Eliminating the local load avoids a
+  // double-fetch and keeps the NavRail badge consistent with what's rendered.
   const [scope, setScope] = useState<ScopeFilter>({ kind: 'smart', view: 'today' })
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [quickAdd, setQuickAdd] = useState('')
@@ -142,44 +150,13 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
   const [newListOpen, setNewListOpen] = useState(false)
   const [newListDraft, setNewListDraft] = useState('')
 
-  // Load all tasks + their tags + lists on mount.
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const [list, listRows] = await Promise.all([
-          tasksDb.listAll(),
-          taskListsDb.listAll(),
-        ])
-        if (cancelled) return
-        setTasks(list)
-        setLists(listRows)
-        const tagRows = await tasksDb.listTagsForTasks(list.map(t => t.id))
-        if (cancelled) return
-        const map = new Map<string, string[]>()
-        for (const row of tagRows) {
-          const arr = map.get(row.task_id) ?? []
-          arr.push(row.tag)
-          map.set(row.task_id, arr)
-        }
-        setTagsByTask(map)
-      } catch (e) {
-        console.error('tasks load failed', e)
-        toast('Failed to load tasks')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [toast])
-
   // Cross-app jump: when Tags hands us an initialTaskId, find the task,
   // switch scope to its natural container, and select it. Then tell the
   // parent to clear the prop so toggling away/back doesn't re-fire.
+  // (Loading guard removed May 18: page.tsx blocks render until data is
+  // loaded, so when this component mounts `tasks` is always populated.)
   useEffect(() => {
     if (!initialTaskId) return
-    if (loading) return
     const target = tasks.find(t => t.id === initialTaskId)
     if (target) {
       if (target.list_id) setScope({ kind: 'list', listId: target.list_id })
@@ -188,7 +165,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
       setSelectedId(target.id)
     }
     onConsumeInitialTaskId?.()
-  }, [initialTaskId, loading, tasks, onConsumeInitialTaskId])
+  }, [initialTaskId, tasks, onConsumeInitialTaskId])
 
   // Derived: all tags across all tasks (for the sidebar).
   const allTags = useMemo(() => {
@@ -459,15 +436,6 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
     }
     return { title: `#${scope.tag}`, subtitle: '' }
   }, [scope, spaces, lists, today])
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--navy-400)', fontSize: 13 }}>
-        <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
-        <span style={{ marginLeft: 10 }}>Loading tasks…</span>
-      </div>
-    )
-  }
 
   return (
     <div style={{

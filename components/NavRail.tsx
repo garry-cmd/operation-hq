@@ -19,7 +19,7 @@ import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
 export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags'
 
-export interface SearchResult { label: string; sub: string; screen: Screen }
+export interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string }
 
 interface Props {
   screen: Screen
@@ -46,6 +46,10 @@ interface Props {
   searchQuery: string
   setSearchQuery: (q: string) => void
   searchResults: SearchResult[]
+  // Called when a search result is chosen. The rail used to just call
+  // onScreenChange(r.screen) which lost any per-result deep-link payload
+  // (e.g. r.taskId for global Tasks search). Now page.tsx owns the routing.
+  onPickResult?: (r: SearchResult) => void
 
   // Footer / user menu.
   initials: string
@@ -225,7 +229,12 @@ export default function NavRail(props: Props) {
             }}>
               {props.searchResults.map((r, i) => (
                 <button key={i}
-                  onMouseDown={() => { props.onScreenChange(r.screen); props.setSearchQuery(''); setSearchFocused(false); if (props.isMobile) props.onClose?.() }}
+                  onMouseDown={() => {
+                    if (props.onPickResult) props.onPickResult(r)
+                    else props.onScreenChange(r.screen)
+                    props.setSearchQuery(''); setSearchFocused(false)
+                    if (props.isMobile) props.onClose?.()
+                  }}
                   style={{
                     width: '100%', padding: '9px 12px', display: 'flex', flexDirection: 'column', gap: 2,
                     background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)',

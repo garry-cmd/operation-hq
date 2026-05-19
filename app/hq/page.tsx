@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList } from '@/lib/types'
 import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
@@ -11,6 +11,8 @@ import * as reviewsDb from '@/lib/db/reviews'
 import * as extrasDb from '@/lib/db/objectiveExtras'
 import * as spacesDb from '@/lib/db/spaces'
 import * as shareTokensDb from '@/lib/db/shareTokens'
+import * as tasksDb from '@/lib/db/tasks'
+import * as taskListsDb from '@/lib/db/taskLists'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
@@ -37,7 +39,7 @@ type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'note
 // (See goToScreen + fastCaptureSpaceId below.)
 const ALL_SPACES_ID = '__all__'
 
-interface SearchResult { label: string; sub: string; screen: Screen }
+interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string }
 
 export default function HQPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -73,6 +75,12 @@ export default function HQPage() {
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
+  // Tasks state (May 18). Lifted from Tasks.tsx so the NavRail badge can show
+  // today+overdue counts and the global search can include task titles. The
+  // Tasks component receives these as props plus the corresponding setters.
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [taskLists, setTaskLists] = useState<TaskList[]>([])
+  const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
@@ -202,7 +210,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -214,6 +222,8 @@ export default function HQPage() {
       extrasDb.logs.listAll().catch(fallback('objective_logs', [] as ObjectiveLog[])),
       spacesDb.listAll().catch(fallback('spaces', [] as Space[])),
       shareTokensDb.findActiveByLabel('Melissa').catch(fallback('share_tokens', null)),
+      tasksDb.listAll().catch(fallback('tasks', [] as Task[])),
+      taskListsDb.listAll().catch(fallback('task_lists', [] as TaskList[])),
     ])
     setObjectives(o)
     setRoadmapItems(r)
@@ -226,6 +236,24 @@ export default function HQPage() {
     setLogs(lg)
     setSpaces(sp)
     if (st) setShareToken(st.token)
+    setTasks(tk)
+    setTaskLists(tl)
+    // Tags follow tasks — a second query keyed by the loaded task ids. If
+    // it fails we silently fall back to empty (tag-driven UI degrades to
+    // "no tags," which is preferable to blocking task load).
+    try {
+      const tagRows = await tasksDb.listTagsForTasks(tk.map(t => t.id))
+      const map = new Map<string, string[]>()
+      for (const row of tagRows) {
+        const arr = map.get(row.task_id) ?? []
+        arr.push(row.tag)
+        map.set(row.task_id, arr)
+      }
+      setTagsByTask(map)
+    } catch (err) {
+      console.error('loadAll: task_tags failed:', err)
+      setTagsByTask(new Map())
+    }
     // Set active space from localStorage or default to first.
     // The '__all__' sentinel isn't in `sp`, so handle it explicitly so
     // that "All Spaces" survives a reload like any real space.
@@ -309,7 +337,14 @@ export default function HQPage() {
       (spaceId && weekStartBySpace[spaceId]) || legacyWeekStart || today
     actions.filter(a => a.week_start === weekStartFor(spaceForKR.get(a.roadmap_item_id))).forEach(a => { if (a.title.toLowerCase().includes(q)) results.push({ label: a.title, sub: 'Action this week', screen: 'focus' }) })
     roadmapItems.filter(i => i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Parking Lot', screen: 'park' }) })
-    return results.slice(0, 6)
+    // Tasks (May 18). Match open tasks first, then closed. Carries the task id
+    // so onPickResult can deep-link via tasksInitialId — Tasks.tsx reads that
+    // prop and switches scope + selects the row.
+    const openTaskMatches = tasks.filter(t => !t.completed_at && t.title.toLowerCase().includes(q))
+    const doneTaskMatches = tasks.filter(t =>  t.completed_at && t.title.toLowerCase().includes(q))
+    for (const t of openTaskMatches) results.push({ label: t.title, sub: 'Task', screen: 'tasks', taskId: t.id })
+    for (const t of doneTaskMatches) results.push({ label: t.title, sub: 'Task · done', screen: 'tasks', taskId: t.id })
+    return results.slice(0, 8)
   })()
 
   function copyShareLink() {
@@ -464,11 +499,27 @@ export default function HQPage() {
         onSpaceCreated={space => setSpaces(prev => [...prev, space])}
         onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
         focusOpenCount={spaceActions.filter(a => a.week_start === weekStart && !a.completed).length}
+        tasksOverdueCount={(() => {
+          // Matches the Tasks "Today" smart view filter: open tasks with a
+          // due_date on or before today. Empty due_date is "Later" — doesn't
+          // count toward this badge.
+          const todayLocal = new Date()
+          const today = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, '0')}-${String(todayLocal.getDate()).padStart(2, '0')}`
+          return tasks.filter(t => !t.completed_at && t.due_date && t.due_date <= today).length
+        })()}
         parkedCount={parkedCount}
         reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}
         searchQuery={searchQuery}
         setSearchQuery={setSearchQuery}
         searchResults={searchResults}
+        onPickResult={(r) => {
+          // Deep-link by sub-type. Tasks land via tasksInitialId so
+          // Tasks.tsx auto-selects the row. Everything else just routes.
+          if (r.screen === 'tasks' && r.taskId) {
+            setTasksInitialId(r.taskId)
+          }
+          goToScreen(r.screen)
+        }}
         initials={initials}
         email={user?.email ?? ''}
         theme={theme}
@@ -519,6 +570,12 @@ export default function HQPage() {
           activeSpaceId={activeSpaceId}
           objectives={spaceObjectives}
           roadmapItems={spaceRoadmapItems}
+          tasks={tasks}
+          setTasks={setTasks}
+          lists={taskLists}
+          setLists={setTaskLists}
+          tagsByTask={tagsByTask}
+          setTagsByTask={setTagsByTask}
           initialTaskId={tasksInitialId}
           onConsumeInitialTaskId={() => setTasksInitialId(null)}
           onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
