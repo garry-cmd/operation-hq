@@ -448,7 +448,7 @@ export default function CloseWeekWizard({
           <div style={{ marginTop: 6, fontSize: 13, color: 'var(--navy-300)' }}>Week of {formatWeek(closingWeek)} reflected and archived.</div>
         </div>
         <div style={{ marginTop: 18, textAlign: 'center', animation: 'hq-fade-up .4s .45s both' }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Up next</div>
+          <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em' }}>Up next</div>
           <div style={{ marginTop: 6, fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>Week of {formatWeek(nextWeek)}</div>
           <div style={{ marginTop: 4, fontSize: 12, color: 'var(--navy-300)' }}>
             {nextWeekActions.length} action{nextWeekActions.length === 1 ? '' : 's'} on your list
@@ -546,7 +546,7 @@ function Header({ step, closingWeek, onSkip, skipping }: {
       <div style={{ maxWidth: 700, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
           <div>
-            <div style={{ fontSize: 11, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Closing</div>
+            <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em' }}>Closing</div>
             <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>Week of {formatWeek(closingWeek)}</div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -1011,7 +1011,7 @@ function MetricRow({
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '14px 16px', marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>{title}</div>
+      <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', marginBottom: 12 }}>{title}</div>
       {children}
     </div>
   )

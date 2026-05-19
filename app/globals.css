@@ -22,33 +22,42 @@
   --navy-100: #dde0e8;   /* readable text */
   --navy-50:  #eef0f4;   /* primary text */
 
-  /* Cobalt — the one that lights up */
+  /* Cobalt — the one that lights up. INTERACTIVE color: kept for buttons,
+     links, search focus, active nav. Night-watch is for STATUS DISPLAY.
+     Mixing is intentional — instrument panels have blue indicator lights. */
   --accent:     #4a8fff;
   --accent-dim: #0e1a2e;
 
-  /* On track — green, visibly tinted bg + brighter text */
+  /* ── Semantic status tokens, re-pointed to night-watch values (May 18)
+     to unify the palette across the whole app. ObjectiveCard already used
+     --nw-* tokens; other surfaces (Focus, Roadmap, CloseWeekWizard, Tasks
+     status chips, etc.) reference --teal-bg/text, --red-bg/text, etc., so
+     re-pointing here propagates the look without touching every component.
+     Saturated alarm red and phosphor green make off-track and on-track
+     readouts pop against the cool navy chrome. */
+
+  /* Nominal / on track — phosphor green */
   --teal:      #1a3e2a;
-  --teal-bg:   #102818;
-  --teal-text: #7eda9e;
+  --teal-bg:   #0a2014;
+  --teal-text: #7fe27a;
 
-  /* Off track — warm rust, visibly tinted bg + brighter coral text */
+  /* Alarm / off track — saturated red (was soft peach, now reads as an alert) */
   --red:      #5a2a1a;
-  --red-bg:   #2a120a;
-  --red-text: #e8a888;
+  --red-bg:   #2e0a08;
+  --red-text: #ff6452;
 
-  /* Blocked — golden amber, visibly tinted bg + brighter text */
+  /* Caution / blocked — golden amber */
   --amber:      #5a4810;
-  --amber-bg:   #281e08;
-  --amber-text: #e8c878;
+  --amber-bg:   #251a08;
+  --amber-text: #f5b840;
 
-  /* Waiting/tag — lavender, visibly tinted bg */
+  /* Waiting/tag — lavender, kept distinct from the warm status colors */
   --indigo-bg:   #1e1830;
   --indigo-text: #c8a8e8;
 
-  /* Not started — cool slate. Stays subtle: this state should feel calm,
-     not loud. Small lift for visibility against the new tinted warm cards. */
-  --slate-bg:   #131722;
-  --slate-text: #9aa3b8;
+  /* Standby / not started — cool slate. Stays subtle: should feel calm. */
+  --slate-bg:   #15191f;
+  --slate-text: #8e96a8;
 
   /* ── Night Watch identity tokens (May 17) ──────────────────────────
      Aircraft-carrier-bridge palette for the OKR card surface. Amber
@@ -90,28 +99,33 @@
   --accent:     #2563eb;
   --accent-dim: #e0eaff;
 
-  /* On track */
+  /* ── Semantic status tokens, re-pointed to night-watch-light (May 18). */
+
+  /* Nominal / on track */
   --teal:      #1a4a36;
-  --teal-bg:   #b4e2c5;
-  --teal-text: #1f6e48;
+  --teal-bg:   #d6f0dc;
+  --teal-text: #1a7a3a;
 
-  /* Off track — warmer, more saturated rust so warnings register */
+  /* Alarm / off track — readable red on a soft pink bg, replaces the
+     peach-on-coral that was reading as "warm and pleasant" instead of
+     "alarm." */
   --red:      #5a2a18;
-  --red-bg:   #f4c8a6;
-  --red-text: #8a3d18;
+  --red-bg:   #fbeaea;
+  --red-text: #a8302b;
 
-  /* Blocked — clearly golden amber, distinct from off-track rust */
+  /* Caution / blocked — golden amber, kept distinct from alarm red */
   --amber:      #5a4010;
-  --amber-bg:   #f0db8e;
-  --amber-text: #6e5008;
+  --amber-bg:   #fcf0d4;
+  --amber-text: #8a5e08;
 
   /* Waiting/tag */
   --indigo-bg:   #d8c8ec;
   --indigo-text: #4a3070;
 
-  /* Not started — cool slate, breaks the all-warm dashboard for early/no-data KRs */
-  --slate-bg:   #e2e6ee;
-  --slate-text: #4a5468;
+  /* Standby / not started — cool slate, breaks the warm dashboard for
+     early/no-data KRs */
+  --slate-bg:   #eef0f4;
+  --slate-text: #5f6478;
 
   /* ── Night Watch identity tokens (May 17) ──────────────────────────
      Light-mode counterparts. Less "instrument panel," more "warm

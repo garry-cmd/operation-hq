@@ -265,7 +265,7 @@ export default function Focus({
             row above bubbles), which was ~3x taller for the same info. */}
         {habitProgress.length > 0 && (
           <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '12px 16px', marginBottom: 16 }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: 1 }}>Habits</h3>
+            <h3 style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em' }}>Habits</h3>
 
             {/* Grid wrapped in an overflow-x container so the 7-day strip
                 can horizontally scroll on narrow viewports (mobile < ~520px
@@ -411,8 +411,8 @@ export default function Focus({
         {taskTotal > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: 'var(--navy-200)' }}>This Week's Actions</h3>
-              <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+              <h3 style={{ margin: 0, fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em' }}>This Week's Actions</h3>
+              <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>
                 {taskDone}/{taskTotal} complete
               </div>
             </div>

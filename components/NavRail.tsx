@@ -247,8 +247,8 @@ export default function NavRail(props: Props) {
         {NAV_GROUPS.map(group => (
           <div key={group.label}>
             <div style={{
-              padding: '14px 18px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em',
-              textTransform: 'uppercase', color: 'var(--navy-300)',
+              padding: '14px 18px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em',
+              textTransform: 'uppercase', color: 'var(--nw-label)',
             }}>
               {group.label}
             </div>

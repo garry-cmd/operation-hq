@@ -635,8 +635,8 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
               <button onClick={toggleShowDone}
                 style={{
                   display: 'inline-flex', alignItems: 'center', gap: 6,
-                  fontSize: 12, fontWeight: 700, color: section.accent ?? 'var(--navy-300)',
-                  letterSpacing: '0.04em', textTransform: 'uppercase',
+                  fontSize: 10, fontWeight: 500, color: 'var(--nw-label-dim)',
+                  letterSpacing: '.16em', textTransform: 'uppercase',
                   margin: '0 0 8px', padding: '0 12px',
                   background: 'none', border: 'none', cursor: 'pointer',
                   fontFamily: 'inherit',
@@ -648,7 +648,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
                 {section.name} · {section.tasks.length}
               </button>
             ) : (
-              <h2 style={{ fontSize: 12, fontWeight: 700, color: section.accent ?? 'var(--navy-300)', letterSpacing: '0.04em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+              <h2 style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
                 {section.name} · {section.tasks.length}
               </h2>
             )}
@@ -711,7 +711,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, initialTask
 function SidebarSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ padding: '14px 18px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>{label}</div>
+      <div style={{ padding: '14px 18px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>{label}</div>
       {children}
     </div>
   )
@@ -1036,7 +1036,7 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
   return (
     <aside style={{ background: 'var(--navy-800)', borderLeft: '1px solid var(--navy-600)', overflowY: 'auto', padding: '20px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>Task detail</span>
+        <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Task detail</span>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
       </div>
 

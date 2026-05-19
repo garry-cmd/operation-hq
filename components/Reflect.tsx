@@ -206,7 +206,7 @@ function ReadView({ review, onEdit }: { review: WeeklyReview; onEdit: () => void
 function ReadField({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 13, color: 'var(--navy-100)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{value}</div>
     </div>
   )

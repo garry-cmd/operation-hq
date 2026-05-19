@@ -488,7 +488,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
         {/* TAGS — global, cross-space */}
         {allTags.length > 0 && (
           <div style={{ marginTop: 18, padding: '0 6px' }}>
-            <div style={{ padding: '0 8px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--navy-300)' }}>Tags</div>
+            <div style={{ padding: '0 8px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Tags</div>
             {allTags.map(tag => (
               <TreeRow
                 key={tag}
