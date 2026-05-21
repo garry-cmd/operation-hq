@@ -180,3 +180,176 @@ function formatDateRange(start: string | null, end: string | null): string {
   }
   return `${monthShort(s)} ${s.getDate()}, ${s.getFullYear()} – ${monthShort(e)} ${e.getDate()}, ${e.getFullYear()}`
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// All Spaces dashboard — bucket definitions + assignment
+// ────────────────────────────────────────────────────────────────────────────
+
+export type BucketKey =
+  | 'this-week' | 'next-week' | 'this-month' | 'this-quarter'  // current quarter
+  | 'month-1'   | 'month-2'   | 'month-3'                       // future quarter
+  | 'overdue'                                                    // virtual prepend
+
+export interface BucketDef {
+  key: BucketKey
+  label: string         // column header: "This Week", "Jul", etc.
+  rangeText: string     // sub-header: "May 20 — 24"
+  start: string         // YYYY-MM-DD, inclusive
+  end: string           // YYYY-MM-DD, inclusive
+}
+
+/**
+ * Time buckets when viewing the CURRENT quarter. Cutoffs:
+ *   - This Week:    today → upcoming Sunday
+ *   - Next Week:    next Mon → next Sun
+ *   - This Month:   day after Next Week → end of that calendar month
+ *   - This Quarter: day after This Month → end of viewed quarter (catches
+ *                   default-dated items: their end_date = quarterEnd lands here)
+ *
+ * Buckets are capped at quarter end so an item dated in the next quarter
+ * never falls into the current-quarter dashboard.
+ */
+export function getCurrentQuarterBuckets(today: Date, quarter: string): BucketDef[] {
+  const qRange = getQuarterRange(quarter)
+  const qEnd = qRange?.end ?? formatLocalDate(today)
+
+  const todayStr = formatLocalDate(today)
+  const thisMonday = getMonday(today)
+  const thisSunday = addDays(thisMonday, 6)
+  const nextMonday = addDays(thisMonday, 7)
+  const nextSunday = addDays(thisMonday, 13)
+  const monthStart = addDays(nextSunday, 1)
+  const monthEnd = lastDayOfMonth(parseDateLocal(monthStart))
+  const quarterStart = addDays(monthEnd, 1)
+
+  return [
+    {
+      key: 'this-week',
+      label: 'This Week',
+      rangeText: formatRange(todayStr, thisSunday),
+      start: todayStr,
+      end: minDate(thisSunday, qEnd),
+    },
+    {
+      key: 'next-week',
+      label: 'Next Week',
+      rangeText: formatRange(nextMonday, nextSunday),
+      start: nextMonday,
+      end: minDate(nextSunday, qEnd),
+    },
+    {
+      key: 'this-month',
+      label: 'This Month',
+      rangeText: formatRange(monthStart, minDate(monthEnd, qEnd)),
+      start: monthStart,
+      end: minDate(monthEnd, qEnd),
+    },
+    {
+      key: 'this-quarter',
+      label: 'This Quarter',
+      rangeText: quarterStart > qEnd ? '—' : `Rest of ${quarter.replace(/^(\d)Q/, 'Q$1 ')}`,
+      start: quarterStart,
+      end: qEnd,
+    },
+  ]
+}
+
+/**
+ * Time buckets for a FUTURE quarter — month-based, since week-level cutoffs
+ * stop making sense when "today" isn't inside the viewed range. One column
+ * per calendar month of the quarter. Used for planning ahead.
+ */
+export function getFutureQuarterBuckets(quarter: string): BucketDef[] {
+  const m = quarter.match(/^([1-4])Q(\d{4})$/)
+  if (!m) return []
+  const q = parseInt(m[1], 10)
+  const y = parseInt(m[2], 10)
+  const months: BucketDef[] = []
+  for (let i = 0; i < 3; i++) {
+    const monthIdx = (q - 1) * 3 + i  // 0-indexed (Jan = 0)
+    const start = new Date(y, monthIdx, 1)
+    const end = new Date(y, monthIdx + 1, 0)
+    months.push({
+      key: `month-${i + 1}` as BucketKey,
+      label: start.toLocaleDateString('en-US', { month: 'long' }),
+      rangeText: `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+      start: formatLocalDate(start),
+      end: formatLocalDate(end),
+    })
+  }
+  return months
+}
+
+/**
+ * Drop an item into the first bucket whose end >= item.end_date. Items
+ * past the last bucket return null (off-screen, e.g. dated next quarter).
+ * Overdue items (end_date < today) get an explicit 'overdue' key so the
+ * caller can decide where to surface them.
+ */
+export function assignToBucket(
+  endDate: string | null,
+  buckets: BucketDef[],
+  today: Date,
+): BucketKey | null {
+  if (!endDate) return null
+  const todayStr = formatLocalDate(today)
+  if (endDate < todayStr) return 'overdue'
+  for (const b of buckets) {
+    if (endDate <= b.end) return b.key
+  }
+  return null
+}
+
+/**
+ * Quarter classification for routing the dashboard renderer.
+ */
+export function classifyQuarter(quarter: string, today: Date): 'past' | 'current' | 'future' {
+  const qRange = getQuarterRange(quarter)
+  if (!qRange) return 'current'
+  const todayStr = formatLocalDate(today)
+  if (todayStr > qRange.end) return 'past'
+  if (todayStr < qRange.start) return 'future'
+  return 'current'
+}
+
+/**
+ * The previous/next quarter ID (e.g. '2Q2026' → '1Q2026' for back, '3Q2026' for forward).
+ */
+export function getNeighborQuarter(quarter: string, direction: 'back' | 'forward'): string | null {
+  const m = quarter.match(/^([1-4])Q(\d{4})$/)
+  if (!m) return null
+  let q = parseInt(m[1], 10)
+  let y = parseInt(m[2], 10)
+  if (direction === 'forward') {
+    q++
+    if (q > 4) { q = 1; y++ }
+  } else {
+    q--
+    if (q < 1) { q = 4; y-- }
+  }
+  return `${q}Q${y}`
+}
+
+/**
+ * True if the KR is sitting at the migration's quarter-default range
+ * (i.e. user hasn't planned tighter dates yet). Equivalent of the
+ * dashed `QN` chip in the All Spaces dashboard.
+ */
+export function isDefaultDated(startDate: string | null, endDate: string | null, quarter: string): boolean {
+  const qRange = getQuarterRange(quarter)
+  return !!qRange && startDate === qRange.start && endDate === qRange.end
+}
+
+// Local helpers used by the bucket functions above.
+function formatRange(start: string, end: string): string {
+  const s = parseDateLocal(start)
+  const e = parseDateLocal(end)
+  if (s.getFullYear() === e.getFullYear() && s.getMonth() === e.getMonth()) {
+    return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${e.getDate()}`
+  }
+  return `${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} — ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+}
+
+function minDate(a: string, b: string): string {
+  return a < b ? a : b
+}

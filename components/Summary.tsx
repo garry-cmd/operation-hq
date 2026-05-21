@@ -1,11 +1,21 @@
 'use client'
-import { useState, useEffect } from 'react'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction } from '@/lib/types'
+import { useMemo, useState } from 'react'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus } from '@/lib/types'
+import { ACTIVE_Q } from '@/lib/utils'
+import {
+  getCurrentQuarterBuckets,
+  getFutureQuarterBuckets,
+  assignToBucket,
+  classifyQuarter,
+  getNeighborQuarter,
+  isDefaultDated,
+  getQuarterRange,
+  type BucketDef,
+  type BucketKey,
+} from '@/lib/dateBuckets'
+import KRDateChip from '@/components/KRDateChip'
 
 interface Props {
-  // ALL spaces — Summary is the one screen that intentionally ignores the
-  // active-space filter on the page. Click a title to leave summary mode;
-  // click a checkbox to toggle done/complete in place.
   spaces: Space[]
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
@@ -15,483 +25,550 @@ interface Props {
   onOpenObjective: (spaceId: string, objectiveId: string) => void
   onOpenAction: (spaceId: string, action: WeeklyAction) => void
   // Checkbox-only handlers — toggle complete/done without leaving Summary.
-  // Mirrors the Focus pattern: cb toggles, rest of row navigates. KR un-done
-  // sets health_status back to 'on_track' (asymmetric — there's no prior
-  // state to recover; Roadmap's edit modal can refine if needed).
   onToggleAction: (action: WeeklyAction) => void
   onToggleKR: (kr: RoadmapItem) => void
 }
 
-// Square checkbox-style bullet shared by both KR rows and action rows.
-// Visually unifies the two — per the screenshot, the user's intuition is
-// that everything trackable looks the same. Done state uses the accent color
-// rather than a per-status palette so the page reads at a glance.
-function Checkbox({ checked }: { checked: boolean }) {
-  return (
-    <span
-      style={{
-        width: 14,
-        height: 14,
-        flexShrink: 0,
-        borderRadius: 3,
-        border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--navy-400)'}`,
-        background: checked ? 'var(--accent)' : 'transparent',
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 2, // align with first line of text
-      }}
-    >
-      {checked && (
-        <svg width="9" height="9" viewBox="0 0 9 9">
-          <path
-            d="M1.5 4.5 L3.5 6.5 L7.5 2.5"
-            stroke="var(--navy-900)"
-            strokeWidth="1.6"
-            fill="none"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      )}
-    </span>
-  )
-}
+type StatusFilter = 'all' | 'unplanned' | 'off-track'
 
-// Disclosure caret for collapse/expand on space bands. Rotates 90° rather
-// than swapping shapes — keeps the eye anchored on a single moving element.
-function Chevron({ expanded }: { expanded: boolean }) {
-  return (
-    <svg
-      width="10"
-      height="10"
-      viewBox="0 0 10 10"
-      style={{
-        flexShrink: 0,
-        transition: 'transform .15s',
-        transform: expanded ? 'none' : 'rotate(-90deg)',
-      }}
-    >
-      <path
-        d="M2 4l3 3 3-3"
-        stroke="#fff"
-        strokeWidth="1.7"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
-}
-
-// 25% gives the objective column ~95px at the smallest 380px-wide layout —
-// enough for one or two short words. KRs and Actions split the remaining
-// space evenly with `1fr` each, clamped at 130px so neither collapses to
-// unreadable widths.
-const GRID_COLS = 'minmax(120px, 25%) minmax(130px, 1fr) minmax(130px, 1fr)'
-
-// The row used to be a single <button> covering the whole hit area. After
-// splitting the click target (checkbox = toggle, title = open editor),
-// the row is a <div> with two <button>s inside. Hover stays unified — the
-// outer div paints the hover bg so the row still reads as one zone visually.
-//
-// Total horizontal padding (12 left + 4 right + 4 left + 12 right = 32) and
-// the resulting 8px visual gap between checkbox and title both match the
-// previous single-button row, so no shift in layout vs the prior version.
-const rowDivStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'stretch',
-  width: '100%',
-  transition: 'background .12s',
-}
-
-const cbButtonStyle: React.CSSProperties = {
-  flexShrink: 0,
-  padding: '5px 4px 5px 12px',
-  background: 'none',
-  border: 'none',
-  outline: 'none',
-  cursor: 'pointer',
-  display: 'flex',
-  alignItems: 'flex-start',
-  fontFamily: 'inherit',
-  WebkitTapHighlightColor: 'transparent',
-}
-
-const titleButtonStyle: React.CSSProperties = {
-  flex: 1,
-  minWidth: 0,
-  padding: '5px 12px 5px 4px',
-  background: 'none',
-  border: 'none',
-  outline: 'none',
-  cursor: 'pointer',
-  textAlign: 'left',
-  fontFamily: 'inherit',
-  WebkitTapHighlightColor: 'transparent',
-}
-
+/**
+ * Summary — the All Spaces dashboard.
+ *
+ * Renamed from the prior flat KR + action list (May 21 dated-KR rollout). The
+ * new shape is a swim lane grid: rows = spaces, columns = time buckets (This
+ * Week / Next Week / This Month / This Quarter when current; month columns
+ * when future). Past quarters render as a retrospective stat view.
+ *
+ * Quarter switcher lets you scrub forward (planning) or back (review). KRs
+ * are scoped by the KR's `quarter` tag, not by raw target_date — so a 2Q-
+ * tagged KR with an end_date in July still shows in 2Q's "This Quarter"
+ * column, matching the user's planning unit.
+ *
+ * The old onOpenAction / onToggleAction / onToggleKR callbacks are kept in
+ * the prop signature (page.tsx still passes them) but unused here — the new
+ * view doesn't touch weekly actions. Card click routes through onOpenObjective.
+ */
 export default function Summary({
   spaces,
   objectives,
   roadmapItems,
-  actions,
   onOpenObjective,
-  onOpenAction,
-  onToggleAction,
-  onToggleKR,
 }: Props) {
-  // Per-space collapse state. Persisted to localStorage so the user's last
-  // arrangement survives a reload — same pattern as theme + weekStart in
-  // page.tsx. Starts empty (everything expanded) on first paint to keep
-  // SSR-safe; the saved set hydrates on mount.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const today = useMemo(() => new Date(), [])
+  const [viewedQuarter, setViewedQuarter] = useState<string>(ACTIVE_Q)
+  const [filter, setFilter] = useState<StatusFilter>('all')
 
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem('hq-summary-collapsed')
-      if (saved) setCollapsed(new Set(JSON.parse(saved)))
-    } catch {
-      /* noop — corrupt storage shouldn't break the page */
+  const classification = classifyQuarter(viewedQuarter, today)
+
+  // Base set: non-habit KRs in viewed quarter, not parked, not abandoned.
+  // Done KRs are included so green-dot retrospect items stay visible in
+  // their bucket (e.g. "Hot Springs" still shows in This Week after Garry
+  // ticks it done on Sunday).
+  const baseKRs = useMemo(
+    () => roadmapItems.filter(kr =>
+      kr.quarter === viewedQuarter
+      && !kr.is_habit
+      && !kr.is_parked
+      && kr.status !== 'abandoned'
+    ),
+    [roadmapItems, viewedQuarter]
+  )
+
+  // Status filter narrows the set. Counts for the toolbar always come from
+  // baseKRs so the user sees the absolute numbers, not the filtered subset.
+  const visibleKRs = useMemo(() => {
+    if (filter === 'all') return baseKRs
+    if (filter === 'unplanned') return baseKRs.filter(kr => isDefaultDated(kr.start_date, kr.end_date, viewedQuarter))
+    if (filter === 'off-track') return baseKRs.filter(kr => kr.health_status === 'off_track')
+    return baseKRs
+  }, [baseKRs, filter, viewedQuarter])
+
+  const unplannedCount = useMemo(
+    () => baseKRs.filter(kr => isDefaultDated(kr.start_date, kr.end_date, viewedQuarter)).length,
+    [baseKRs, viewedQuarter]
+  )
+  const offTrackCount = useMemo(
+    () => baseKRs.filter(kr => kr.health_status === 'off_track').length,
+    [baseKRs]
+  )
+
+  const buckets: BucketDef[] = useMemo(() => {
+    if (classification === 'current') return getCurrentQuarterBuckets(today, viewedQuarter)
+    if (classification === 'future') return getFutureQuarterBuckets(viewedQuarter)
+    return []  // past quarter doesn't use buckets
+  }, [classification, today, viewedQuarter])
+
+  // Map: spaceId -> bucketKey -> KRs landing in that cell.
+  // Overdue items lump into the FIRST bucket (the leftmost visible column) so
+  // they stay in the user's eye-line. Their chip color = red regardless.
+  const grid = useMemo(() => {
+    const m: Record<string, Record<string, RoadmapItem[]>> = {}
+    for (const kr of visibleKRs) {
+      const sid = kr.space_id
+      if (!m[sid]) m[sid] = {}
+      const bk = assignToBucket(kr.end_date, buckets, today) ?? 'this-quarter'
+      // Overdue → first bucket
+      const targetKey = (bk === 'overdue' && buckets[0]) ? buckets[0].key : bk
+      if (!m[sid][targetKey]) m[sid][targetKey] = []
+      m[sid][targetKey].push(kr)
     }
-  }, [])
+    return m
+  }, [visibleKRs, buckets, today])
 
-  function toggleCollapsed(spaceId: string) {
-    setCollapsed(prev => {
-      const next = new Set(prev)
-      if (next.has(spaceId)) next.delete(spaceId)
-      else next.add(spaceId)
-      try {
-        localStorage.setItem('hq-summary-collapsed', JSON.stringify([...next]))
-      } catch {
-        /* noop */
-      }
-      return next
-    })
+  const objById = useMemo(() => {
+    const m = new Map<string, AnnualObjective>()
+    objectives.forEach(o => m.set(o.id, o))
+    return m
+  }, [objectives])
+
+  function prevQuarter() {
+    const prev = getNeighborQuarter(viewedQuarter, 'back')
+    if (prev) setViewedQuarter(prev)
   }
-
-  if (spaces.length === 0) {
-    return (
-      <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-400)', fontSize: 13 }}>
-        No spaces yet. Create one from the space switcher to get started.
-      </div>
-    )
+  function nextQuarter() {
+    const next = getNeighborQuarter(viewedQuarter, 'forward')
+    if (next) setViewedQuarter(next)
   }
-
-  const sortedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
 
   return (
-    <div
-      style={{
-        border: '1px solid var(--navy-600)',
-        borderRadius: 12,
-        overflow: 'hidden',
-        // No solid fill here — each space's wrapper paints its own tinted
-        // background, and the header row + space bands paint their own.
-        // Empty objective rows pick up the tint of their space.
-      }}
-    >
-      {/* Header row — the only place we name the columns. Sticky would be
-          nice on long pages; deferring until we see how long this gets in
-          real use, since `position: sticky` inside an overflow:hidden parent
-          is a known footgun. */}
-      <div
-        style={{
-          display: 'grid',
-          gridTemplateColumns: GRID_COLS,
-          background: 'var(--navy-600)',
-          fontSize: 11,
-          fontWeight: 700,
-          color: 'var(--navy-100)',
-          textTransform: 'uppercase',
-          letterSpacing: '1px',
-        }}
-      >
-        <div style={{ padding: '8px 12px' }}>Objective</div>
-        <div style={{ padding: '8px 12px', borderLeft: '1px solid var(--navy-500)' }}>
-          Key Results
+    <div>
+      <Toolbar
+        viewedQuarter={viewedQuarter}
+        classification={classification}
+        onPrev={prevQuarter}
+        onNext={nextQuarter}
+        totalCount={baseKRs.length}
+        unplannedCount={unplannedCount}
+        offTrackCount={offTrackCount}
+        filter={filter}
+        onFilter={setFilter}
+      />
+
+      {classification === 'past' ? (
+        <PastQuarterView
+          spaces={spaces}
+          krs={baseKRs}
+          objById={objById}
+          viewedQuarter={viewedQuarter}
+          onOpenObjective={onOpenObjective}
+        />
+      ) : (
+        <SwimLaneGrid
+          spaces={spaces}
+          objById={objById}
+          buckets={buckets}
+          grid={grid}
+          viewedQuarter={viewedQuarter}
+          onOpenObjective={onOpenObjective}
+        />
+      )}
+
+      <Legend />
+    </div>
+  )
+}
+
+// ───────────────────────── Toolbar ─────────────────────────
+
+function Toolbar({
+  viewedQuarter,
+  classification,
+  onPrev,
+  onNext,
+  totalCount,
+  unplannedCount,
+  offTrackCount,
+  filter,
+  onFilter,
+}: {
+  viewedQuarter: string
+  classification: 'past' | 'current' | 'future'
+  onPrev: () => void
+  onNext: () => void
+  totalCount: number
+  unplannedCount: number
+  offTrackCount: number
+  filter: StatusFilter
+  onFilter: (f: StatusFilter) => void
+}) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+      {/* Quarter switcher */}
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 8, padding: 4 }}>
+        <button onClick={onPrev} aria-label="Previous quarter"
+          style={{ background: 'none', border: 'none', color: 'var(--navy-300)', cursor: 'pointer', width: 26, height: 26, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, lineHeight: 1, fontFamily: 'inherit' }}>‹</button>
+        <span style={{ padding: '0 8px', fontSize: 13, fontWeight: 700, color: 'var(--nw-cream)', letterSpacing: '.04em', fontVariantNumeric: 'tabular-nums' }}>
+          {viewedQuarter}
+        </span>
+        {classification === 'current' && (
+          <span style={{ fontSize: 9, color: 'var(--accent)', background: 'var(--accent-dim)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.08em', fontWeight: 700, marginRight: 4 }}>CURRENT</span>
+        )}
+        {classification === 'past' && (
+          <span style={{ fontSize: 9, color: 'var(--nw-label-dim)', background: 'var(--navy-700)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.08em', fontWeight: 700, marginRight: 4 }}>PAST</span>
+        )}
+        {classification === 'future' && (
+          <span style={{ fontSize: 9, color: 'var(--nw-label)', background: 'rgba(212, 160, 74, 0.15)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.08em', fontWeight: 700, marginRight: 4 }}>PLAN</span>
+        )}
+        <button onClick={onNext} aria-label="Next quarter"
+          style={{ background: 'none', border: 'none', color: 'var(--navy-300)', cursor: 'pointer', width: 26, height: 26, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, lineHeight: 1, fontFamily: 'inherit' }}>›</button>
+      </div>
+
+      {/* Counts */}
+      <div style={{ fontSize: 11, color: 'var(--navy-300)', letterSpacing: '.04em' }}>
+        <strong style={{ color: 'var(--navy-100)' }}>{totalCount}</strong> active KR{totalCount !== 1 ? 's' : ''}
+        {unplannedCount > 0 && (
+          <> · <button onClick={() => onFilter('unplanned')}
+            style={{ background: 'none', border: 'none', color: 'var(--nw-label)', textDecoration: 'underline', textDecorationColor: 'var(--nw-label-dim)', textUnderlineOffset: 2, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 600, padding: 0, letterSpacing: '.04em' }}>
+            {unplannedCount} unplanned →
+          </button></>
+        )}
+        {offTrackCount > 0 && (
+          <> · <button onClick={() => onFilter('off-track')}
+            style={{ background: 'none', border: 'none', color: 'var(--nw-alarm-text)', textDecoration: 'underline', textDecorationColor: 'rgba(255, 100, 82, .4)', textUnderlineOffset: 2, cursor: 'pointer', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 600, padding: 0, letterSpacing: '.04em' }}>
+            {offTrackCount} off track →
+          </button></>
+        )}
+      </div>
+
+      {/* Filter pills */}
+      <div style={{ display: 'inline-flex', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 6, overflow: 'hidden' }}>
+        {(['all', 'unplanned', 'off-track'] as const).map(f => (
+          <button key={f} onClick={() => onFilter(f)}
+            style={{
+              background: filter === f ? 'var(--accent-dim)' : 'none',
+              border: 'none',
+              color: filter === f ? 'var(--accent)' : 'var(--navy-300)',
+              fontSize: 11, padding: '6px 10px', cursor: 'pointer', fontFamily: 'inherit',
+              fontWeight: 500, letterSpacing: '.04em', textTransform: 'capitalize',
+            }}>
+            {f === 'off-track' ? 'Off track' : f}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ───────────────────────── Swim lane grid ─────────────────────────
+
+function SwimLaneGrid({
+  spaces,
+  objById,
+  buckets,
+  grid,
+  viewedQuarter,
+  onOpenObjective,
+}: {
+  spaces: Space[]
+  objById: Map<string, AnnualObjective>
+  buckets: BucketDef[]
+  grid: Record<string, Record<string, RoadmapItem[]>>
+  viewedQuarter: string
+  onOpenObjective: (spaceId: string, objectiveId: string) => void
+}) {
+  // 150px row-header col, then 1fr per bucket column.
+  const cols = `150px repeat(${buckets.length}, 1fr)`
+
+  return (
+    <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: cols }}>
+        {/* Header row */}
+        <div style={{ ...cellBase, background: 'var(--navy-700)', borderRight: '1px solid var(--navy-600)', borderBottom: '1px solid var(--navy-600)', padding: '12px', minHeight: 'auto' }}>
+          <span style={{ fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 500 }}>Space ↓ · Time →</span>
         </div>
-        <div style={{ padding: '8px 12px', borderLeft: '1px solid var(--navy-500)' }}>
-          Open Actions
+        {buckets.map((b, i) => (
+          <div key={b.key}
+            style={{
+              ...cellBase,
+              background: 'var(--navy-700)',
+              borderRight: i === buckets.length - 1 ? 'none' : '1px solid var(--navy-600)',
+              borderBottom: '1px solid var(--navy-600)',
+              padding: '12px',
+              minHeight: 'auto',
+            }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: b.key === 'this-week' ? 'var(--accent)' : 'var(--nw-label)' }}>
+                {b.label}
+              </span>
+              <span style={{ fontSize: 10, color: 'var(--navy-300)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em' }}>
+                {b.rangeText}
+              </span>
+            </div>
+          </div>
+        ))}
+
+        {/* Data rows — one per space */}
+        {spaces.map((space, rowIdx) => {
+          const isLastRow = rowIdx === spaces.length - 1
+          const spaceKRs = grid[space.id] ?? {}
+          const spaceTotal = Object.values(spaceKRs).reduce((sum, arr) => sum + arr.length, 0)
+          return (
+            <SpaceRow
+              key={space.id}
+              space={space}
+              spaceKRs={spaceKRs}
+              spaceTotal={spaceTotal}
+              objById={objById}
+              buckets={buckets}
+              viewedQuarter={viewedQuarter}
+              isLastRow={isLastRow}
+              onOpenObjective={onOpenObjective}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function SpaceRow({
+  space,
+  spaceKRs,
+  spaceTotal,
+  objById,
+  buckets,
+  viewedQuarter,
+  isLastRow,
+  onOpenObjective,
+}: {
+  space: Space
+  spaceKRs: Record<string, RoadmapItem[]>
+  spaceTotal: number
+  objById: Map<string, AnnualObjective>
+  buckets: BucketDef[]
+  viewedQuarter: string
+  isLastRow: boolean
+  onOpenObjective: (spaceId: string, objectiveId: string) => void
+}) {
+  const offTrackInRow = Object.values(spaceKRs).flat().filter(kr => kr.health_status === 'off_track').length
+
+  return (
+    <>
+      <div style={{
+        ...cellBase,
+        background: 'var(--navy-800)',
+        borderRight: '1px solid var(--navy-600)',
+        borderBottom: isLastRow ? 'none' : '1px solid var(--navy-700)',
+        padding: '14px 12px',
+        display: 'flex', flexDirection: 'column', gap: 6,
+      }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--nw-cream)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '-.1px' }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
+          {space.name}
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em' }}>
+          {spaceTotal} dated{offTrackInRow > 0 && ` · ${offTrackInRow} off track`}
+        </div>
+      </div>
+      {buckets.map((b, i) => {
+        const items = spaceKRs[b.key] ?? []
+        const isLastCol = i === buckets.length - 1
+        return (
+          <div key={b.key}
+            style={{
+              ...cellBase,
+              borderRight: isLastCol ? 'none' : '1px solid var(--navy-700)',
+              borderBottom: isLastRow ? 'none' : '1px solid var(--navy-700)',
+              background: b.key === 'this-week' ? 'rgba(91, 141, 239, 0.03)' : undefined,
+            }}>
+            {items.length === 0 ? (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--navy-600)', fontSize: 16, fontWeight: 300 }}>—</div>
+            ) : (
+              items.map(kr => (
+                <ItemCard
+                  key={kr.id}
+                  kr={kr}
+                  objective={kr.annual_objective_id ? objById.get(kr.annual_objective_id) : undefined}
+                  viewedQuarter={viewedQuarter}
+                  onClick={() => kr.annual_objective_id && onOpenObjective(kr.space_id, kr.annual_objective_id)}
+                />
+              ))
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+// ───────────────────────── Item card ─────────────────────────
+
+function ItemCard({
+  kr,
+  objective,
+  viewedQuarter,
+  onClick,
+}: {
+  kr: RoadmapItem
+  objective: AnnualObjective | undefined
+  viewedQuarter: string
+  onClick: () => void
+}) {
+  const isOffTrack = kr.health_status === 'off_track'
+  const isDefault = isDefaultDated(kr.start_date, kr.end_date, viewedQuarter)
+  const objColor = objective?.color ?? 'var(--navy-500)'
+  const borderColor = isOffTrack ? 'var(--nw-alarm-text)' : objColor
+
+  return (
+    <div onClick={onClick}
+      style={{
+        position: 'relative',
+        padding: '7px 9px 7px 11px',
+        borderRadius: 5,
+        background: isDefault ? 'var(--navy-800)' : 'var(--navy-700)',
+        marginBottom: 5,
+        borderLeft: `2px solid ${borderColor}`,
+        cursor: 'pointer',
+        transition: 'background .1s',
+      }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-600)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = isDefault ? 'var(--navy-800)' : 'var(--navy-700)' }}
+    >
+      <StatusDot status={kr.health_status} />
+      <div style={{ marginBottom: 4 }}>
+        <KRDateChip kr={kr} viewedQuarter={viewedQuarter} size="md" />
+      </div>
+      <div style={{
+        fontSize: 12,
+        fontWeight: 600,
+        color: isDefault ? 'var(--navy-200)' : 'var(--navy-100)',
+        lineHeight: 1.3,
+        marginBottom: 2,
+        paddingRight: 12,
+      }}>
+        {kr.title}
+      </div>
+      {objective && (
+        <div style={{ fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.02em', lineHeight: 1.3 }}>
+          {objective.name}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatusDot({ status }: { status: HealthStatus }) {
+  const color = (() => {
+    switch (status) {
+      case 'on_track': return 'var(--nw-nominal-text)'
+      case 'off_track': return 'var(--nw-alarm-text)'
+      case 'blocked': return 'var(--nw-caution-text)'
+      case 'done': return 'var(--nw-nominal-text)'
+      case 'waiting': return 'var(--navy-400)'
+      default: return 'var(--navy-400)'
+    }
+  })()
+  return <span style={{ position: 'absolute', top: 8, right: 7, width: 5, height: 5, borderRadius: '50%', background: color }} />
+}
+
+// ───────────────────────── Past quarter view ─────────────────────────
+
+function PastQuarterView({
+  spaces,
+  krs,
+  objById,
+  viewedQuarter,
+  onOpenObjective,
+}: {
+  spaces: Space[]
+  krs: RoadmapItem[]
+  objById: Map<string, AnnualObjective>
+  viewedQuarter: string
+  onOpenObjective: (spaceId: string, objectiveId: string) => void
+}) {
+  const qRange = getQuarterRange(viewedQuarter)
+  const totalDone = krs.filter(k => k.health_status === 'done').length
+  const totalMissed = krs.length - totalDone
+  const hitRate = krs.length === 0 ? 0 : Math.round((totalDone / krs.length) * 100)
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+      {/* Header */}
+      <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, padding: '20px 24px', display: 'flex', alignItems: 'baseline', gap: 24, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 500, marginBottom: 4 }}>
+            {viewedQuarter} retrospective {qRange && `· ${qRange.start.slice(5)} → ${qRange.end.slice(5)}`}
+          </div>
+          <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--nw-label)', letterSpacing: '-1px', fontVariantNumeric: 'tabular-nums' }}>
+            {hitRate}%
+            <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--navy-400)', marginLeft: 6 }}>/ 100%</span>
+          </div>
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--navy-300)', display: 'flex', gap: 14, marginLeft: 'auto', letterSpacing: '.04em' }}>
+          <span><strong style={{ color: 'var(--nw-nominal-text)' }}>{totalDone}</strong> done</span>
+          <span><strong style={{ color: 'var(--nw-alarm-text)' }}>{totalMissed}</strong> not done</span>
+          <span><strong style={{ color: 'var(--navy-100)' }}>{krs.length}</strong> total</span>
         </div>
       </div>
 
-      {sortedSpaces.map(space => {
-        const spaceObjs = objectives
-          .filter(o => o.space_id === space.id && o.status !== 'abandoned')
-          .sort((a, b) => a.sort_order - b.sort_order)
-        // ALL non-parked, non-abandoned KRs (any quarter, any status — done
-        // KRs render with strikethrough, mirroring the screenshot). This is
-        // a wider net than getCurrentQuarterKRs on purpose: Summary is the
-        // one place that should show the whole working set across quarters.
-        const spaceKRs = roadmapItems
-          .filter(i => i.space_id === space.id && !i.is_parked && i.status !== 'abandoned')
-          .sort((a, b) => a.sort_order - b.sort_order)
-        const krIds = new Set(spaceKRs.map(k => k.id))
-        // All open actions across all weeks (per design call). Sorted
-        // newest-first so this-week's work tends to surface above older
-        // carries within each KR's row group.
-        // Dedupe: an action carried forward creates a NEW row each week
-        // (with carried_over=true) without removing the original — so the
-        // same logical action can appear once per week it's been carried.
-        // Collapse to one entry per (kr, title) keeping the most recent.
-        // The historical originals stay in the DB for Reflect/History;
-        // Summary just shows the live working item.
-        const dedupedActions = (() => {
-          const seen = new Map<string, WeeklyAction>()
-          for (const a of actions) {
-            if (!krIds.has(a.roadmap_item_id) || a.completed) continue
-            const key = `${a.roadmap_item_id}::${a.title}`
-            const existing = seen.get(key)
-            if (!existing || a.week_start > existing.week_start) {
-              seen.set(key, a)
-            }
-          }
-          return [...seen.values()]
-        })()
-        const spaceActions = dedupedActions
-          .sort((a, b) => b.week_start.localeCompare(a.week_start))
-
-        const isCollapsed = collapsed.has(space.id)
-        const krCount = spaceKRs.length
-        const actionCount = spaceActions.length
-
+      {/* Per-space breakdown */}
+      {spaces.map(space => {
+        const spaceKRs = krs.filter(k => k.space_id === space.id)
+        if (spaceKRs.length === 0) return null
+        const done = spaceKRs.filter(k => k.health_status === 'done').length
         return (
-          <div
-            key={space.id}
-            style={{
-              // Faint wash of the space's own color through the body rows
-              // so each space reads as its own zone — saturated band on top,
-              // ~12% tint underneath. Hex `1f` ≈ 12.2% alpha. Visible enough
-              // to color-zone in light mode, still readable in dark mode.
-              // Header row, hover, and the band itself paint over this so
-              // none of them are affected.
-              background: `${space.color}1f`,
-            }}
-          >
-            {/* Space band — clickable to collapse/expand. Saturated color
-                from the COLORS palette, white text. Counts on the right
-                stay visible whether collapsed or expanded so the band
-                always tells you what's in the section. */}
-            <button
-              onClick={() => toggleCollapsed(space.id)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                background: space.color,
-                border: 'none',
-                outline: 'none',
-                color: '#fff',
-                fontSize: 13,
-                fontWeight: 700,
-                textAlign: 'left',
-                textTransform: 'uppercase',
-                letterSpacing: '1px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                fontFamily: 'inherit',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <Chevron expanded={!isCollapsed} />
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {space.name}
+          <div key={space.id} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, padding: '14px 20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color }} />
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--nw-cream)' }}>{space.name}</span>
+              <span style={{ fontSize: 11, color: 'var(--navy-400)', marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+                {done} of {spaceKRs.length} hit
               </span>
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 500,
-                  // Slightly muted against #fff title — keeps counts a hair
-                  // quieter than the name without going to a separate color.
-                  opacity: 0.8,
-                  letterSpacing: '0.4px',
-                  textTransform: 'none',
-                  flexShrink: 0,
-                }}
-              >
-                {krCount} {krCount === 1 ? 'KR' : 'KRs'} · {actionCount} {actionCount === 1 ? 'action' : 'actions'}
-              </span>
-            </button>
-
-            {!isCollapsed && (
-              spaceObjs.length === 0 ? (
-                <div
-                  style={{
-                    padding: '14px',
-                    fontSize: 12,
-                    color: 'var(--navy-400)',
-                    fontStyle: 'italic',
-                    borderTop: '1px solid var(--navy-600)',
-                  }}
-                >
-                  No objectives in this space.
-                </div>
-              ) : (
-                spaceObjs.map(obj => {
-                const objKRs = spaceKRs.filter(k => k.annual_objective_id === obj.id)
-                const objKRIds = new Set(objKRs.map(k => k.id))
-                const objActions = spaceActions.filter(a => objKRIds.has(a.roadmap_item_id))
-
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {spaceKRs.map(kr => {
+                const obj = kr.annual_objective_id ? objById.get(kr.annual_objective_id) : undefined
+                const isDone = kr.health_status === 'done'
                 return (
-                  <div
-                    key={obj.id}
+                  <div key={kr.id} onClick={() => kr.annual_objective_id && onOpenObjective(kr.space_id, kr.annual_objective_id)}
                     style={{
-                      display: 'grid',
-                      gridTemplateColumns: GRID_COLS,
-                      borderTop: '1px solid var(--navy-600)',
+                      display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', borderRadius: 4, cursor: 'pointer',
                     }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent' }}
                   >
-                    {/* Cell 1 — objective name with a small color stripe in
-                        the objective's own color (keeps a cross-reference
-                        to OKRs/Roadmap where the same colors anchor the
-                        objective cards). */}
-                    <button
-                      onClick={() => onOpenObjective(space.id, obj.id)}
-                      style={{
-                        padding: '10px 12px',
-                        background: 'none',
-                        border: 'none',
-                        outline: 'none',
-                        borderRight: '1px solid var(--navy-600)',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: 'var(--navy-50)',
-                        lineHeight: 1.35,
-                        display: 'flex',
-                        alignItems: 'flex-start',
-                        gap: 8,
-                        fontFamily: 'inherit',
-                        WebkitTapHighlightColor: 'transparent',
-                      }}
-                      onMouseEnter={e => (e.currentTarget.style.background = 'var(--navy-600)')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}
-                    >
-                      <div
-                        style={{
-                          width: 3,
-                          alignSelf: 'stretch',
-                          borderRadius: 2,
-                          background: obj.color,
-                          flexShrink: 0,
-                        }}
-                      />
-                      <span style={{ minWidth: 0, wordBreak: 'break-word' }}>{obj.name}</span>
-                    </button>
-
-                    {/* Cell 2 — KRs only. Empty cells render blank rather
-                        than a dash; the row's natural height is set by
-                        whichever of the three cells has the most content. */}
-                    <div
-                      style={{
-                        padding: '4px 0',
-                        minWidth: 0,
-                        borderRight: '1px solid var(--navy-600)',
-                      }}
-                    >
-                      {objKRs.map(kr => {
-                        // Treat status='done' OR health_status='done' as
-                        // done. The two fields drift in the existing data
-                        // and either signal is enough for this view.
-                        const done = kr.status === 'done' || kr.health_status === 'done'
-                        return (
-                          <div
-                            key={kr.id}
-                            style={rowDivStyle}
-                            onMouseEnter={e =>
-                              (e.currentTarget.style.background = 'var(--navy-600)')
-                            }
-                            onMouseLeave={e =>
-                              (e.currentTarget.style.background = 'transparent')
-                            }
-                          >
-                            <button
-                              onClick={() => onToggleKR(kr)}
-                              style={cbButtonStyle}
-                              aria-label={done ? 'Un-mark done' : 'Mark done'}
-                            >
-                              <Checkbox checked={done} />
-                            </button>
-                            <button
-                              onClick={() => onOpenObjective(space.id, obj.id)}
-                              style={titleButtonStyle}
-                            >
-                              <span
-                                style={{
-                                  fontSize: 13,
-                                  color: done ? 'var(--navy-400)' : 'var(--navy-100)',
-                                  textDecoration: done ? 'line-through' : 'none',
-                                  lineHeight: 1.35,
-                                  // Preserve newlines if the title contains
-                                  // them (some users paste multi-line KR
-                                  // titles; the screenshot shows this style).
-                                  whiteSpace: 'pre-wrap',
-                                  wordBreak: 'break-word',
-                                  minWidth: 0,
-                                  display: 'block',
-                                }}
-                              >
-                                {kr.title}
-                              </span>
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {/* Cell 3 — open actions only. */}
-                    <div style={{ padding: '4px 0', minWidth: 0 }}>
-                      {objActions.map(a => (
-                        <div
-                          key={a.id}
-                          style={rowDivStyle}
-                          onMouseEnter={e =>
-                            (e.currentTarget.style.background = 'var(--navy-600)')
-                          }
-                          onMouseLeave={e =>
-                            (e.currentTarget.style.background = 'transparent')
-                          }
-                        >
-                          <button
-                            onClick={() => onToggleAction(a)}
-                            style={cbButtonStyle}
-                            aria-label={a.completed ? 'Un-complete action' : 'Mark action complete'}
-                          >
-                            <Checkbox checked={a.completed} />
-                          </button>
-                          <button
-                            onClick={() => onOpenAction(space.id, a)}
-                            style={titleButtonStyle}
-                          >
-                            <span
-                              style={{
-                                fontSize: 13,
-                                color: a.completed ? 'var(--navy-400)' : 'var(--navy-200)',
-                                textDecoration: a.completed ? 'line-through' : 'none',
-                                lineHeight: 1.35,
-                                whiteSpace: 'pre-wrap',
-                                wordBreak: 'break-word',
-                                minWidth: 0,
-                                display: 'block',
-                              }}
-                            >
-                              {a.title}
-                            </span>
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: isDone ? 'var(--nw-nominal-text)' : 'var(--nw-alarm-text)', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12, color: isDone ? 'var(--navy-300)' : 'var(--navy-100)', textDecoration: isDone ? 'line-through' : 'none', textDecorationColor: 'var(--navy-500)', flex: 1, minWidth: 0 }}>
+                      {kr.title}
+                    </span>
+                    {obj && <span style={{ fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.02em' }}>{obj.name}</span>}
                   </div>
                 )
-              })
-              )
-            )}
+              })}
+            </div>
           </div>
         )
       })}
     </div>
   )
+}
+
+// ───────────────────────── Legend ─────────────────────────
+
+function Legend() {
+  return (
+    <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 8, fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em', flexWrap: 'wrap' }}>
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--accent)' }} />} label="This Week — act" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'rgba(212, 160, 74, 0.2)', border: '1px solid var(--nw-label)' }} />} label="Next Week — plan" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'transparent', border: '1px dashed var(--nw-label-dim)' }} />} label="Unplanned (default)" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--nw-alarm-text)' }} />} label="Overdue / off track" />
+      <span style={{ marginLeft: 'auto', fontStyle: 'italic' }}>Habits + metrics not shown — they're ongoing</span>
+    </div>
+  )
+}
+
+function LegendItem({ swatch, label }: { swatch: React.ReactNode; label: string }) {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+      {swatch}
+      {label}
+    </span>
+  )
+}
+
+// Shared base for grid cells — anchors min-height + vertical alignment.
+const cellBase: React.CSSProperties = {
+  padding: '12px 10px',
+  minHeight: 100,
+  verticalAlign: 'top',
 }
