@@ -75,7 +75,19 @@ export interface RoadmapItem {
   metric_direction: MetricDirection | null
   start_value: number | null
   target_value: number | null
+  /**
+   * @deprecated Use end_date instead. Kept temporarily during the dates rollout;
+   * the column is still in the DB. Will be dropped after the next deploy verifies
+   * end_date is populated everywhere it needs to be.
+   */
   target_date: string | null
+  // Time window for the KR. Every non-habit KR has both dates after the
+  // 2026-05-20 migration. Habits skip dates (they're recurring, not bounded).
+  // New KRs default to the current calendar week (Mon → Sun) — the All Spaces
+  // dashboard lands them in "This Week" until you give them a tighter or
+  // looser window.
+  start_date: string | null
+  end_date: string | null
   created_at: string
 }
 

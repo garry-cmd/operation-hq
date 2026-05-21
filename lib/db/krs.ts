@@ -28,7 +28,13 @@ export type NewKRInput = {
   metric_direction?: RoadmapItem['metric_direction']
   start_value?: number | null
   target_value?: number | null
+  /** @deprecated Use end_date. Kept for backward compat; will be removed. */
   target_date?: string | null
+  // Time window. Required for non-habit KRs at the app level (DB allows null
+  // to make backfill/migration sane). Callers should set these to the current
+  // calendar week for new KRs (see lib/dateBuckets.getDefaultNewKRRange).
+  start_date?: string | null
+  end_date?: string | null
 }
 
 /** All roadmap items across all spaces and quarters, ordered by sort_order. */

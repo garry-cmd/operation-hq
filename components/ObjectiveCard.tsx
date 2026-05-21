@@ -4,6 +4,7 @@ import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
+import { getDefaultNewKRRange } from '@/lib/dateBuckets'
 
 // Notes / links / files all live on the ObjectivePanel now (commit-5 panel
 // arc). The card's footer tabs are gone — the title is the click target.
@@ -116,6 +117,11 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
     setSavingKR(true)
     try {
       const count = await krsDb.countByObjective(obj.id)
+      // Default new outcome KRs to the current calendar week (Mon → Sun). This
+      // lands them in the All Spaces "This Week" bucket so they're visible and
+      // pressure the user to either commit or push out. Habits skip dates —
+      // they're ongoing, not bounded.
+      const defaultRange = newKRIsHabit ? null : getDefaultNewKRRange()
       const created = await krsDb.create({
         space_id: obj.space_id,
         annual_objective_id: obj.id,
@@ -126,6 +132,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
         health_status: 'not_started',
         progress: 0,
         is_habit: newKRIsHabit,
+        start_date: defaultRange?.start_date ?? null,
+        end_date: defaultRange?.end_date ?? null,
       })
       setRoadmapItems(prev => [...prev, created])
       setNewKRTitle('')

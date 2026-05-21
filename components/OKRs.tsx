@@ -374,7 +374,13 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
   const [metricDirection, setMetricDirection] = useState<'up' | 'down'>(kr.metric_direction ?? 'up')
   const [startValue, setStartValue] = useState<string>(kr.start_value != null ? String(kr.start_value) : '')
   const [targetValue, setTargetValue] = useState<string>(kr.target_value != null ? String(kr.target_value) : '')
-  const [targetDate, setTargetDate] = useState<string>(kr.target_date ?? '')
+
+  // Time window. Required for non-habit KRs per the dated-KR rollout.
+  // Habits don't surface these fields (they're ongoing, not bounded). Stored
+  // as YYYY-MM-DD strings to match the DB and avoid TZ drift; empty string
+  // = unset.
+  const [startDate, setStartDate] = useState<string>(kr.start_date ?? '')
+  const [endDate, setEndDate] = useState<string>(kr.end_date ?? '')
 
   async function save() {
     if (!title.trim()) return
@@ -389,6 +395,19 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
       if (Number.isNaN(s) || Number.isNaN(t)) { toast('Start and target must be numbers.'); return }
       if (s === t) { toast('Start and target can\'t be the same value.'); return }
     }
+    // Non-habit KRs require both dates. The All Spaces dashboard relies on
+    // every non-habit KR having a window; missing dates would make it
+    // invisible there.
+    if (!kr.is_habit) {
+      if (!startDate || !endDate) {
+        toast('Start and end dates are required.')
+        return
+      }
+      if (endDate < startDate) {
+        toast('End date can\'t be before start date.')
+        return
+      }
+    }
     setSaving(true)
 
     try {
@@ -402,7 +421,10 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
         metric_direction: isMetric ? metricDirection : null,
         start_value:      isMetric ? Number(startValue) : null,
         target_value:     isMetric ? Number(targetValue) : null,
-        target_date:      isMetric ? (targetDate || null) : null,
+        // Time window. Habits stay null (their fields aren't editable here);
+        // every other KR gets the values from the inputs.
+        start_date: kr.is_habit ? null : (startDate || null),
+        end_date:   kr.is_habit ? null : (endDate || null),
       }
       // Metric and habit are mutually exclusive — if we're turning metric on,
       // force is_habit off so the KR doesn't show up in Focus bubbles.
@@ -483,6 +505,32 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
         </select>
       </div>
 
+      {/* Time window — required for non-habit KRs. Habits don't get these
+          fields; they're ongoing, not bounded by a window. The All Spaces
+          dashboard buckets KRs by end_date, so missing dates = invisible. */}
+      {!kr.is_habit && (
+        <div className="field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: 4 }}>Start date</label>
+            <input
+              className="input"
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', marginBottom: 4 }}>End date</label>
+            <input
+              className="input"
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Metric KR config — collapsed behind a toggle to keep the modal light
           for normal outcome KRs. Only shows the detail fields when on. */}
       <div className="field" style={{ borderTop: '1px solid var(--navy-600)', paddingTop: 14, marginTop: 6 }}>
@@ -523,10 +571,9 @@ function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
               <input className="input" type="number" inputMode="decimal" value={targetValue} onChange={e => setTargetValue(e.target.value)} placeholder="e.g. 190" />
             </div>
           </div>
-          <div style={{ marginTop: 10 }}>
-            <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--navy-300)', display: 'block', marginBottom: 4 }}>Target date <span style={{ color: 'var(--navy-500)', fontWeight: 400 }}>(optional)</span></label>
-            <input className="input" type="date" value={targetDate} onChange={e => setTargetDate(e.target.value)} />
-          </div>
+          {/* Target date moved up to the top-level Start/End date fields
+              shared with every non-habit KR. The "by Jun 30" displayed on
+              metric cards now reads from end_date. */}
         </div>
       )}
     </Modal>

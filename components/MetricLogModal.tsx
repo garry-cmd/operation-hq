@@ -128,7 +128,7 @@ export default function MetricLogModal({ kr, checkins, setMetricCheckins, setRoa
       {kr.start_value != null && kr.target_value != null && (
         <div style={{ fontSize: 12, color: 'var(--navy-400)', marginBottom: 14 }}>
           {kr.start_value}{unit && ` ${unit}`} → <span style={{ color: 'var(--navy-100)', fontWeight: 600 }}>{kr.target_value}{unit && ` ${unit}`}</span>
-          {kr.target_date && <span> by {new Date(kr.target_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
+          {kr.end_date && <span> by {new Date(kr.end_date + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
         </div>
       )}
 
