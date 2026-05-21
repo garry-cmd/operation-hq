@@ -2,10 +2,7 @@
 import { use, useState, useEffect, Fragment } from 'react'
 import { AnnualObjective, RoadmapItem, HealthStatus, Space } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
-import * as objectivesDb from '@/lib/db/objectives'
-import * as krsDb from '@/lib/db/krs'
 import * as shareTokensDb from '@/lib/db/shareTokens'
-import * as spacesDb from '@/lib/db/spaces'
 
 const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }> = {
   not_started: { bg: 'var(--navy-600)',  color: 'var(--navy-300)', label: 'Not started' },
@@ -30,31 +27,27 @@ export default function SharePage({ params }: { params: Promise<{ token: string 
 
   useEffect(() => {
     async function load() {
-      const tokenRow = await shareTokensDb.findActiveByToken(token).catch(err => {
-        console.error('share_tokens lookup failed:', err)
+      // Single SECURITY DEFINER RPC call: validates the token AND returns
+      // every row this page needs (objectives, items, spaces if all-scoped).
+      // Replaces the prior pattern of token-validate then three direct anon
+      // SELECTs, which no longer work post the May 20 RLS hardening pass.
+      const data = await shareTokensDb.getShareData(token, ACTIVE_Q).catch(err => {
+        console.error('get_share_data failed:', err)
         return null
       })
-      setValid(!!tokenRow)
-      if (!tokenRow) return
-      const isAll = tokenRow.space_id == null
-      setAllSpaces(isAll)
+      setValid(!!data)
+      if (!data) return
 
-      const [o, r, sp] = await Promise.all([
-        isAll
-          ? objectivesDb.listAll().catch(() => [] as AnnualObjective[])
-          : objectivesDb.listBySpace(tokenRow.space_id!).catch(() => [] as AnnualObjective[]),
-        krsDb.listByQuarter(ACTIVE_Q).catch(() => [] as RoadmapItem[]),
-        isAll
-          ? spacesDb.listAll().catch(() => [] as Space[])
-          : Promise.resolve([] as Space[]),
-      ])
-      setObjectives(o)
-      setSpaces(sp)
-      // Scope KRs to the objectives we actually loaded. In all-spaces mode the
-      // listAll above returns every objective, so this is effectively a no-op
-      // there; in single-space mode it strips KRs from other spaces.
-      const objectiveIds = new Set(o.map(obj => obj.id))
-      setItems(r.filter(item => item.annual_objective_id !== null && objectiveIds.has(item.annual_objective_id)))
+      const isAll = data.token.space_id == null
+      setAllSpaces(isAll)
+      setObjectives(data.objectives)
+      setSpaces(data.spaces)
+
+      // Defensive client-side scope: server already filters items by space
+      // when the token is single-space, but strip orphans (items pointing
+      // at objectives that weren't returned) just in case.
+      const objectiveIds = new Set(data.objectives.map(obj => obj.id))
+      setItems(data.items.filter(item => item.annual_objective_id !== null && objectiveIds.has(item.annual_objective_id)))
     }
     load()
   }, [token])

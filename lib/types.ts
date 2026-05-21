@@ -87,7 +87,6 @@ export type ActionTag = 'backlog' | 'waiting' | 'doing'
 export interface WeeklyAction {
   id: string
   roadmap_item_id: string
-  quarterly_kr_id?: string | null
   title: string
   week_start: string
   completed: boolean
@@ -101,7 +100,6 @@ export interface DailyCheckin {
   id: string
   checkin_date: string
   roadmap_item_id: string
-  quarterly_kr_id?: string | null
   status: CheckinStatus
 }
 
