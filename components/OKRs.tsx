@@ -135,8 +135,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   return (
     <div>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>My OKRs</h1>
-        <p style={{ fontSize: 12, color: 'var(--navy-300)' }}>What you're working on right now</p>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', margin: 0 }}>My OKRs</h1>
       </div>
 
       {/* KPI Dashboard */}
@@ -208,16 +207,23 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
         </div>
       )}
 
-      {/* Two-column layout: card list on the left, ObjectivePanel sticky
-          on the right when an objective is selected. Mirrors Focus.tsx's
-          push-aside pattern for ActionPanel. <main> in page.tsx widens to
-          1280 when openObjectiveId is set so this grid has the room. */}
-      <div style={{
-        display: openObjectiveId ? 'grid' : 'block',
-        gridTemplateColumns: openObjectiveId ? 'minmax(0, 1fr) 480px' : undefined,
-        gap: openObjectiveId ? 24 : undefined,
-        alignItems: 'start',
-      }}>
+      {/* Objectives section — mirrors the Key Metrics section above:
+          amber instrument h2, hairline divider above to keep the two visually
+          separate. Hidden when there are no active objectives so the empty
+          state above doesn't get crowded by a dangling header. */}
+      {objectives.some(o => o.status !== 'abandoned') && (
+      <div style={{ borderTop: '1px solid var(--navy-700)', paddingTop: 18, marginTop: 4 }}>
+        <h2 style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Objectives</h2>
+        {/* Two-column layout: card list on the left, ObjectivePanel sticky
+            on the right when an objective is selected. Mirrors Focus.tsx's
+            push-aside pattern for ActionPanel. <main> in page.tsx widens to
+            1280 when openObjectiveId is set so this grid has the room. */}
+        <div style={{
+          display: openObjectiveId ? 'grid' : 'block',
+          gridTemplateColumns: openObjectiveId ? 'minmax(0, 1fr) 480px' : undefined,
+          gap: openObjectiveId ? 24 : undefined,
+          alignItems: 'start',
+        }}>
         <div>
           {objectives
             .filter(o => o.status !== 'abandoned')
@@ -273,6 +279,8 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
           )
         })()}
       </div>
+      </div>
+      )}
 
       {/* Modals */}
       {editingKR && (
