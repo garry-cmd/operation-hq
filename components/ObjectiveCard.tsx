@@ -35,6 +35,10 @@ interface Props {
   onLogMetric: (krId: string) => void
   // Click on the objective title → ObjectivePanel opens for this objective.
   onObjectiveClick: (objectiveId: string) => void
+  // Click on the edit button in the header toolbar → parent opens
+  // EditObjectiveModal. The button used to live in OKRs.tsx as an absolutely-
+  // positioned overlay; moved into the header toolbar in the May 21 cleanup.
+  onEditObjective: (objective: AnnualObjective) => void
   // True when the panel is currently showing this objective. Surfaces as an
   // accent border on the card so the user knows where the panel content
   // came from (mirrors the action-row accent in Focus.tsx).
@@ -42,7 +46,7 @@ interface Props {
   toast: (m: string) => void
 }
 
-export default function ObjectiveCard({ obj, krs, actions, weekStart, metricCheckins, setRoadmapItems, setObjectives, setActions, onEditKR, onLogMetric, onObjectiveClick, isActive, toast }: Props) {
+export default function ObjectiveCard({ obj, krs, actions, weekStart, metricCheckins, setRoadmapItems, setObjectives, setActions, onEditKR, onLogMetric, onObjectiveClick, onEditObjective, isActive, toast }: Props) {
   // Default to expanded — objectives are the primary surface of the OKRs tab,
   // and keeping their KRs visible by tab-load avoids a click-per-objective tax.
   // No localStorage persistence; collapse state is per-mount.
@@ -58,12 +62,17 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const [hoveredKRId, setHoveredKRId] = useState<string | null>(null)
 
   const weekActions = actions.filter(a => a.week_start === weekStart)
-  // Only offTrack/blocked surface as aggregate header chips in the polished
-  // layout — the rest is implicit from the per-KR row state. Done count drives
-  // the hero progress %.
-  const offTrack = krs.filter(k => k.health_status === 'off_track').length
-  const blocked  = krs.filter(k => k.health_status === 'blocked').length
-  const doneKRs  = krs.filter(k => k.health_status === 'done').length
+  // Full health-status breakdown for the header pills (May 21 cleanup). The
+  // old design only surfaced offTrack + blocked as chips; the new pill row
+  // shows one dot-pill per non-zero status so the user can read the entire
+  // mix at a glance. not_started + backlog merge into a single "pending"
+  // count since the two have no behavioural difference in the dashboard.
+  const offTrack   = krs.filter(k => k.health_status === 'off_track').length
+  const blocked    = krs.filter(k => k.health_status === 'blocked').length
+  const doneKRs    = krs.filter(k => k.health_status === 'done').length
+  const onTrack    = krs.filter(k => k.health_status === 'on_track').length
+  const waiting    = krs.filter(k => k.health_status === 'waiting').length
+  const pending    = krs.filter(k => k.health_status === 'not_started' || k.health_status === 'backlog').length
   const progress = krs.length > 0 ? Math.round((doneKRs / krs.length) * 100) : 0
 
   // Avoid using `setObjectives` here so its prop stays unused but kept for
@@ -174,10 +183,9 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const accentColor = isActive ? 'var(--accent)' : obj.color
   const divColor = 'var(--navy-700)'
 
-  // Quarter timing for the progress strip's "N weeks remaining" marker.
-  // ACTIVE_Q format is "<n>Q<yyyy>"; quarter ends on the last day of month n*3.
+  // Quarter timing for the "N weeks remaining" pill. ACTIVE_Q format is
+  // "<n>Q<yyyy>"; quarter ends on the last day of month n*3.
   const qMatch = ACTIVE_Q.match(/(\d)Q(\d{4})/)
-  const qLabel = qMatch ? `Q${qMatch[1]}` : ACTIVE_Q
   const weeksRemaining = (() => {
     if (!qMatch) return null
     const qNum = parseInt(qMatch[1], 10)
@@ -193,90 +201,114 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
     <>
       <div style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 12, border: `1px solid var(--navy-700)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--navy-800)', transition: 'border-color .12s' }}>
 
-        {/* Objective header — Night Watch palette: amber instrument labels,
-            warm cream title, hero readout color shifts with progress (caution
-            amber → phosphor green at 100%). Compact layout: title and chevron
-            on row 1; hero + status + KRs-hit on row 2; bare progress bar. */}
-        <div style={{ padding: '12px 18px 12px', userSelect: 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5, lineHeight: 1.4 }}>
-                {qLabel} Objective
-              </div>
-              <button
-                onClick={() => onObjectiveClick(obj.id)}
-                onMouseEnter={() => setTitleHover(true)}
-                onMouseLeave={() => setTitleHover(false)}
-                style={{
-                  fontSize: 16, fontWeight: 500,
-                  color: isActive || titleHover ? 'var(--accent)' : 'var(--nw-cream)',
-                  lineHeight: 1.3,
-                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                  textAlign: 'left', fontFamily: 'inherit',
-                  display: 'block', maxWidth: '100%',
-                  letterSpacing: '-.005em',
-                  transition: 'color .12s',
-                }}>
-                {obj.name}
-              </button>
-            </div>
-            {/* Chevron — own click target for collapse/expand */}
-            <button
-              onClick={() => setCollapsed(c => !c)}
-              title={collapsed ? 'Expand' : 'Collapse'}
-              style={{
-                flexShrink: 0, marginTop: 2,
-                width: 26, height: 26, borderRadius: 6,
-                border: 'none', background: 'transparent',
-                color: 'var(--nw-label)', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                transition: 'transform .2s, background .12s',
-                transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
-              }}
-              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.04)'}
-              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-                <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </button>
-          </div>
+        {/* Objective header (May 21 chrome cleanup):
+            - Title row (no "Q2 Objective" crumb — we already know the quarter).
+            - Pills row: one dot-pill per non-zero health status (done →
+              on-track → off-track → blocked → waiting → pending), plus
+              "N wk remain" right-aligned. Replaces the old 40px hero "%/100%"
+              readout — the progress bar carries the percentage on its own.
+            - Progress bar.
+            - Bottom toolbar: edit + chevron, right-aligned, hairline divider
+              above. Moved off the top-right squat so they don't compete with
+              the title. */}
+        <div style={{ padding: '14px 18px 12px', userSelect: 'none' }}>
+          <button
+            onClick={() => onObjectiveClick(obj.id)}
+            onMouseEnter={() => setTitleHover(true)}
+            onMouseLeave={() => setTitleHover(false)}
+            style={{
+              fontSize: 16, fontWeight: 500,
+              color: isActive || titleHover ? 'var(--accent)' : 'var(--nw-cream)',
+              lineHeight: 1.3,
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              textAlign: 'left', fontFamily: 'inherit',
+              display: 'block', maxWidth: '100%',
+              letterSpacing: '-.005em',
+              transition: 'color .12s',
+            }}>
+            {obj.name}
+          </button>
 
-          {/* Hero readout row — aggregate alarm chip pulled inline so urgency
-              sits next to the % rather than buried below the bar. */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10, marginBottom: 8, gap: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 40, fontWeight: 700, letterSpacing: '-.02em', lineHeight: 1, color: progress === 100 ? 'var(--nw-nominal-text)' : 'var(--nw-hero-amber)', fontFeatureSettings: '"tnum"' }}>
-                {progress}<span style={{ fontSize: 22, letterSpacing: '-.02em' }}>%</span>
-              </span>
-              <span style={{ fontSize: 18, fontWeight: 400, color: 'var(--nw-label-dim)', letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>/ 100%</span>
-              {offTrack > 0 && (
-                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 3, background: 'var(--nw-alarm-bg)', color: 'var(--nw-alarm-text)', letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 6 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor', boxShadow: `0 0 4px var(--nw-glow-red)` }} />
-                  {offTrack} off track
-                </span>
-              )}
-              {blocked > 0 && (
-                <span style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 3, background: 'var(--nw-caution-bg)', color: 'var(--nw-caution-text)', letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ width: 5, height: 5, borderRadius: 99, background: 'currentColor' }} />
-                  {blocked} blocked
-                </span>
-              )}
-            </div>
-            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              {weeksRemaining != null && (
-                <div style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', marginBottom: 2 }}>
-                  {weeksRemaining} wk remain
-                </div>
-              )}
-              <div style={{ fontSize: 12, color: 'var(--nw-label-dim)', fontWeight: 400 }}>
-                {krs.length === 0 ? 'No key results yet' : `${doneKRs} / ${krs.length} KRs hit`}
+          {/* Pills row + weeks remain. Wraps when wide. */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 12, marginTop: 10, marginBottom: 8, flexWrap: 'wrap',
+          }}>
+            {krs.length === 0 ? (
+              <div style={{ fontSize: 11, color: 'var(--nw-label-dim)', fontStyle: 'italic' }}>
+                No key results yet
               </div>
-            </div>
+            ) : (
+              <div style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                <StatusPill count={doneKRs}  color="var(--nw-nominal-text)" label="done"       glow />
+                <StatusPill count={onTrack}  color="var(--nw-nominal-text)" label="on track"   dim />
+                <StatusPill count={offTrack} color="var(--nw-alarm-text)"   label="off track"  glow />
+                <StatusPill count={blocked}  color="var(--nw-caution-text)" label="blocked" />
+                <StatusPill count={waiting}  color="var(--nw-standby-text)" label="waiting" />
+                <StatusPill count={pending}  color="var(--nw-standby-text)" label="pending" dim />
+              </div>
+            )}
+            {weeksRemaining != null && (
+              <div style={{
+                fontSize: 10, letterSpacing: '.04em',
+                color: 'var(--nw-label-dim)',
+                fontVariantNumeric: 'tabular-nums',
+                textTransform: 'uppercase',
+                fontWeight: 500, whiteSpace: 'nowrap',
+              }}>
+                <strong style={{ color: 'var(--navy-200)', fontWeight: 700 }}>{weeksRemaining} wk</strong> remain
+              </div>
+            )}
           </div>
 
           {/* Progress bar — phosphor green with subtle glow on fill */}
           <div style={{ height: 5, background: 'var(--navy-700)', borderRadius: 99, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${Math.max(progress, krs.length > 0 ? 2 : 0)}%`, background: 'var(--nw-nominal-text)', borderRadius: 99, boxShadow: `0 0 6px var(--nw-glow-green)`, transition: 'width .4s ease' }} />
+          </div>
+
+          {/* Bottom toolbar — edit + chevron. Hairline divider sets it apart
+              from the progress bar without adding visual weight. */}
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+            gap: 4,
+            paddingTop: 8,
+            marginTop: 10,
+            borderTop: `1px solid ${divColor}`,
+          }}>
+            <button
+              onClick={() => onEditObjective(obj)}
+              title="Edit objective"
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                width: 30, height: 26, borderRadius: 5,
+                color: 'var(--nw-label-dim)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background .12s, color .12s',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'var(--nw-label)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--nw-label-dim)' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
+            <button
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? 'Expand' : 'Collapse'}
+              style={{
+                background: 'none', border: 'none', cursor: 'pointer',
+                width: 30, height: 26, borderRadius: 5,
+                color: 'var(--nw-label-dim)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background .12s, color .12s, transform .2s',
+                transform: collapsed ? 'rotate(-90deg)' : 'rotate(0deg)',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.color = 'var(--nw-label)' }}
+              onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--nw-label-dim)' }}>
+              <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </button>
           </div>
         </div>
 
@@ -461,3 +493,50 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   )
 }
 
+
+// =========================================================================
+// StatusPill — tiny dot + count + label, one per non-zero health status in
+// the objective header. Lighter than a full filled chip so 4-5 pills side
+// by side don't visually shout. Glow on the dot is reserved for the two
+// "act-on-this" states (done as celebration; off track as alarm).
+// =========================================================================
+function StatusPill({
+  count,
+  color,
+  label,
+  glow = false,
+  dim = false,
+}: {
+  count: number
+  color: string
+  label: string
+  /** Adds a soft halo to the dot — used for done (celebrate) + off-track (alarm). */
+  glow?: boolean
+  /** Reduces dot opacity — used for on-track + pending (both are "neutral
+   *  in-flight" states that shouldn't compete with done/off-track for
+   *  attention). */
+  dim?: boolean
+}) {
+  if (count === 0) return null
+  return (
+    <span style={{
+      fontSize: 11, fontWeight: 500,
+      color: 'var(--navy-200)',
+      display: 'inline-flex', alignItems: 'center', gap: 5,
+      whiteSpace: 'nowrap',
+      fontVariantNumeric: 'tabular-nums',
+      padding: '2px 6px',
+      lineHeight: 1.3,
+    }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: 99,
+        background: color,
+        opacity: dim ? 0.6 : 1,
+        boxShadow: glow ? `0 0 4px ${color}` : 'none',
+        flexShrink: 0,
+      }} />
+      <span style={{ fontWeight: 700, color: 'var(--nw-cream)' }}>{count}</span>
+      <span>{label}</span>
+    </span>
+  )
+}

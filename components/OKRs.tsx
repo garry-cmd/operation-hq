@@ -13,13 +13,8 @@ import Modal from './Modal'
 import EditKRModal from './EditKRModal'
 
 // Naval-themed SVG Icons
-const EditIcon = ({ size = 14, className = "" }: { size?: number, className?: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
-    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    <path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-  </svg>
-)
-
+// (EditIcon removed May 21 — the inline edit button now lives inside
+// ObjectiveCard's bottom toolbar with its SVG inlined there.)
 const TargetIcon = ({ size = 36, className = "" }: { size?: number, className?: string }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className}>
     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2"/>
@@ -170,7 +165,9 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                                    : tone === 'alarm'   ? 'var(--nw-alarm-text)'
                                    : 'var(--nw-standby-text)'
                 return (
-                  <div key={kr.id} style={{
+                  <div key={kr.id}
+                    title={`${aggregate.sessions}/${aggregate.expected} sessions`}
+                    style={{
                     background: 'var(--navy-800)',
                     border: '1px solid var(--navy-700)',
                     borderLeft: `3px solid ${borderAccent}`,
@@ -180,12 +177,9 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                     <p style={{ fontSize: 12, color: 'var(--nw-cream)', fontWeight: 500, margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {kr.title}
                     </p>
-                    <p style={{ fontSize: 28, fontWeight: 700, color: heroColor, margin: '0 0 3px 0', letterSpacing: '-.01em', lineHeight: 1, fontFeatureSettings: '"tnum"' }}>
+                    <p style={{ fontSize: 28, fontWeight: 700, color: heroColor, margin: 0, letterSpacing: '-.01em', lineHeight: 1, fontFeatureSettings: '"tnum"' }}>
                       {aggregate.percent}<span style={{ fontSize: 16 }}>%</span>
                     </p>
-                    <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', margin: 0 }}>
-                      {aggregate.sessions}/{aggregate.expected} sessions
-                    </div>
                   </div>
                 )
               })}
@@ -230,48 +224,23 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
             .map(obj => {
               const objKRs = activeKRs.filter(i => i.annual_objective_id === obj.id)
               return (
-                <div key={obj.id} style={{ marginBottom: 20, position: 'relative' }}>
-                  {/* Edit button positioned over ObjectiveCard. Coordinates
-                      track the compact night-watch header geometry (May 17):
-                      header padding-top 12, chevron marginTop 2 → top 14;
-                      card padding-right 18, chevron width 26 → right edge 18.
-                      Edit sits 4px to the left → right 48. */}
-                  <button
-                    onClick={() => setEditingObjective(obj)}
-                    style={{
-                      position: 'absolute',
-                      top: 14,
-                      right: 48,
-                      zIndex: 10,
-                      background: 'var(--navy-700)',
-                      border: '1px solid var(--navy-600)',
-                      color: 'var(--nw-label)',
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      padding: '4px 6px',
-                      borderRadius: 6
-                    }}
-                    title="Edit objective"
-                  >
-                    <EditIcon size={14} />
-                  </button>
-
-                  <ObjectiveCard
-                    obj={obj}
-                    krs={objKRs}
-                    actions={actions}
-                    weekStart={weekStart}
-                    metricCheckins={metricCheckins}
-                    setRoadmapItems={setRoadmapItems}
-                    setObjectives={setObjectives}
-                    setActions={setActions}
-                    onEditKR={setEditingKR}
-                    onLogMetric={onLogMetric}
-                    onObjectiveClick={setOpenObjectiveId}
-                    isActive={openObjectiveId === obj.id}
-                    toast={toast}
-                  />
-                </div>
+                <ObjectiveCard
+                  key={obj.id}
+                  obj={obj}
+                  krs={objKRs}
+                  actions={actions}
+                  weekStart={weekStart}
+                  metricCheckins={metricCheckins}
+                  setRoadmapItems={setRoadmapItems}
+                  setObjectives={setObjectives}
+                  setActions={setActions}
+                  onEditKR={setEditingKR}
+                  onLogMetric={onLogMetric}
+                  onObjectiveClick={setOpenObjectiveId}
+                  onEditObjective={setEditingObjective}
+                  isActive={openObjectiveId === obj.id}
+                  toast={toast}
+                />
               )
             })}
         </div>
@@ -543,8 +512,16 @@ function MetricKPICard({
                      : tone === 'alarm'   ? 'var(--nw-alarm-text)'
                      : 'var(--nw-standby-text)'
 
+  // Build a tooltip string from start / target so the context is still
+  // discoverable on hover without consuming a card row. Empty string means
+  // no tooltip — both bounds unset.
+  const tooltipParts: string[] = []
+  if (startNum != null) tooltipParts.push(`Start ${formatMetricValue(startNum, unit)}`)
+  if (targetNum != null) tooltipParts.push(`Target ${formatMetricValue(targetNum, unit)}`)
+  const tooltip = tooltipParts.join(' → ') || undefined
+
   return (
-    <button onClick={onTap} style={{
+    <button onClick={onTap} title={tooltip} style={{
       textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
       background: 'var(--navy-800)', border: '1px solid var(--navy-700)',
       borderLeft: `3px solid ${borderAccent}`,
@@ -579,14 +556,6 @@ function MetricKPICard({
           </span>
         )}
       </div>
-
-      {(startNum != null || targetNum != null) && (
-        <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>
-          {startNum != null && <>Start {formatMetricValue(startNum, unit)}</>}
-          {startNum != null && targetNum != null && <> → </>}
-          {targetNum != null && <>Target {formatMetricValue(targetNum, unit)}</>}
-        </div>
-      )}
     </button>
   )
 }
