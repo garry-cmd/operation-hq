@@ -88,6 +88,14 @@ export interface RoadmapItem {
   // looser window.
   start_date: string | null
   end_date: string | null
+  // Intentional quarter-level goal ("Learn 10 verbs this quarter") — distinct
+  // from an unplanned KR that hasn't been given a tighter window yet. Both
+  // carry quarter-wide dates after the migration, but only items with this
+  // flag false count as "unplanned" pressure in the All Spaces dashboard.
+  // Added 2026-05-21 (kr_is_quarter_bound migration). DB default is false;
+  // editor sets true when the user checks "Quarter-bound goal — no specific
+  // deadline" in the KR modal, which also disables the date inputs.
+  is_quarter_bound: boolean
   created_at: string
 }
 

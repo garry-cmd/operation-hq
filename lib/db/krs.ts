@@ -35,6 +35,11 @@ export type NewKRInput = {
   // calendar week for new KRs (see lib/dateBuckets.getDefaultNewKRRange).
   start_date?: string | null
   end_date?: string | null
+  // Intentional quarter-level goal. Editor surfaces this as a checkbox above
+  // the date fields; when true, dates are auto-set to the quarter range and
+  // the date inputs are disabled. DB default is false; new KRs typically omit
+  // it and inherit the default.
+  is_quarter_bound?: boolean
 }
 
 /** All roadmap items across all spaces and quarters, ordered by sort_order. */

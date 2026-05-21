@@ -15,13 +15,16 @@ import { ACTIVE_Q } from '@/lib/utils'
  * (the chip's color IS the bucket the All Spaces dashboard would place it in).
  * Habits and dateless KRs render nothing.
  *
- * Visual contract:
- *   - This week:    cobalt fill, dark text
- *   - Next week:    amber NW fill, amber text
- *   - This month:   muted navy-600 chip
- *   - This quarter: bordered, subtle
- *   - Default:      dashed border + dim amber "QN" label, no date text
- *   - Overdue:      alarm red, "+Nd" format
+ * Visual contract (May 21 — Chunk 4):
+ *   - This week:     cobalt fill, dark text
+ *   - Next week:     amber NW fill, amber text
+ *   - This quarter:  bordered, subtle
+ *   - Quarter-bound: solid navy chip with subtle border — intentional Q-level goal
+ *   - Default:       dashed border + dim amber "QN" label, no date text (unplanned)
+ *   - Overdue:       alarm red, "+Nd" format
+ *
+ * The "This Month" tier was removed in Chunk 4 along with the dashboard
+ * column; items 2–6 weeks out collapse into This Quarter visually.
  *
  * Defaults to ACTIVE_Q for quarter context; pass `viewedQuarter` when
  * rendering in a quarter-scoped context (e.g. the All Spaces dashboard
@@ -38,7 +41,9 @@ export default function KRDateChip({
       'md' = standalone-on-card density (used in swim lane cells). */
   size?: 'sm' | 'md'
 }) {
-  const info = getCountdownInfo(kr.start_date, kr.end_date, viewedQuarter)
+  // New signature (Chunk 4): pass the KR shape so getCountdownInfo can
+  // read is_quarter_bound alongside the dates.
+  const info = getCountdownInfo(kr, viewedQuarter)
   if (!info) return null
 
   const chipStyle = chipStyleForTier(info.tier)
@@ -58,7 +63,13 @@ export default function KRDateChip({
           lineHeight: 1.4,
           whiteSpace: 'nowrap',
         }}
-        title={info.dateText || 'Unplanned — still at quarter default'}
+        title={
+          info.dateText
+            ? info.dateText
+            : info.tier === 'quarter-bound'
+              ? 'Quarter-bound goal — no specific deadline'
+              : 'Unplanned — still at quarter default'
+        }
       >
         {info.label}
       </span>
@@ -82,10 +93,12 @@ function chipStyleForTier(tier: CountdownTier): React.CSSProperties {
       return { background: 'var(--accent)', color: 'var(--navy-900)' }
     case 'next-week':
       return { background: 'rgba(212, 160, 74, 0.2)', color: 'var(--nw-label)' }
-    case 'this-month':
-      return { background: 'var(--navy-600)', color: 'var(--navy-100)' }
     case 'this-quarter':
       return { background: 'transparent', color: 'var(--navy-300)', border: '1px solid var(--navy-500)', padding: '0 5px' }
+    case 'quarter-bound':
+      // Solid chip — visually distinct from the dashed unplanned variant.
+      // Reads as "intentional", not "needs planning".
+      return { background: 'var(--navy-700)', color: 'var(--navy-100)', border: '1px solid var(--navy-500)', padding: '0 5px' }
     case 'default':
       return { background: 'transparent', color: 'var(--nw-label-dim)', border: '1px dashed var(--nw-label-dim)', padding: '0 5px' }
     case 'overdue':

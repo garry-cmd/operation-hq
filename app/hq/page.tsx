@@ -615,6 +615,27 @@ export default function HQPage() {
             onOpenAction={openActionFromSummary}
             onToggleAction={toggleActionFromSummary}
             onToggleKR={toggleKRFromSummary}
+            onUpdateKR={async (id, patch) => {
+              try {
+                const updated = await krsDb.update(id, patch)
+                setRoadmapItems(prev => prev.map(kr => kr.id === id ? updated : kr))
+                setToast('Key Result updated')
+              } catch (err) {
+                console.error('updateKR (Summary) failed:', err)
+                setToast('Failed to update KR')
+              }
+            }}
+            onDeleteKR={async (id) => {
+              try {
+                await krsDb.remove(id)
+                setRoadmapItems(prev => prev.filter(kr => kr.id !== id))
+                setToast('Key Result deleted')
+              } catch (err) {
+                console.error('deleteKR (Summary) failed:', err)
+                setToast('Failed to delete KR')
+              }
+            }}
+            toast={setToast}
           />
         ) : (
           <>

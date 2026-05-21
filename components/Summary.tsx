@@ -1,62 +1,87 @@
 'use client'
 import { useMemo, useState } from 'react'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus } from '@/lib/types'
-import { ACTIVE_Q } from '@/lib/utils'
+import { ACTIVE_Q, getMonday } from '@/lib/utils'
 import {
   getCurrentQuarterBuckets,
   getFutureQuarterBuckets,
   assignToBucket,
   classifyQuarter,
   getNeighborQuarter,
-  isDefaultDated,
+  isUnplanned,
   getQuarterRange,
   type BucketDef,
-  type BucketKey,
 } from '@/lib/dateBuckets'
 import KRDateChip from '@/components/KRDateChip'
+import EditKRModal from '@/components/EditKRModal'
 
 interface Props {
   spaces: Space[]
   objectives: AnnualObjective[]
   roadmapItems: RoadmapItem[]
   actions: WeeklyAction[]
-  // Title click handlers — both jump out of summary mode by switching the
-  // active space on the page. See app/hq/page.tsx for the wired implementations.
+  // Past-quarter retrospect routes objective clicks out to the OKR tab via
+  // these handlers (KR clicks now open EditKRModal in-place, see onUpdateKR).
   onOpenObjective: (spaceId: string, objectiveId: string) => void
   onOpenAction: (spaceId: string, action: WeeklyAction) => void
-  // Checkbox-only handlers — toggle complete/done without leaving Summary.
+  // Used by the "This week's actions" strip — checkbox-only, doesn't switch
+  // space or screen. Kept in the prop signature even when the strip is empty
+  // so page.tsx can continue passing it without conditional wiring.
   onToggleAction: (action: WeeklyAction) => void
   onToggleKR: (kr: RoadmapItem) => void
+  // KR mutation — wired to krsDb.update + setRoadmapItems in page.tsx. The
+  // EditKRModal opens in-place when a KR card is clicked; save/delete flow
+  // through these props.
+  onUpdateKR: (id: string, patch: Partial<RoadmapItem>) => Promise<void>
+  onDeleteKR: (id: string) => Promise<void>
+  toast: (m: string) => void
 }
 
 type StatusFilter = 'all' | 'unplanned' | 'off-track'
+
+// Sticky header heights — tuned so the grid column row docks just under the
+// toolbar without leaving a gap. Adjust if the toolbar's vertical padding
+// changes meaningfully.
+const TOOLBAR_STICKY_TOP = 0
+const GRID_HEADER_STICKY_TOP = 60
 
 /**
  * Summary — the All Spaces dashboard.
  *
  * Renamed from the prior flat KR + action list (May 21 dated-KR rollout). The
- * new shape is a swim lane grid: rows = spaces, columns = time buckets (This
- * Week / Next Week / This Month / This Quarter when current; month columns
- * when future). Past quarters render as a retrospective stat view.
+ * shape is a swim lane grid: rows = spaces, columns = time buckets. Current
+ * quarter shows This Week / Next Week / This Quarter (3-bucket model from
+ * Chunk 4 — This Month dropped). Future quarter shows month columns. Past
+ * quarters render as a retrospective stat view.
  *
  * Quarter switcher lets you scrub forward (planning) or back (review). KRs
- * are scoped by the KR's `quarter` tag, not by raw target_date — so a 2Q-
+ * are scoped by the KR's `quarter` tag, not by raw end_date — so a 2Q-
  * tagged KR with an end_date in July still shows in 2Q's "This Quarter"
  * column, matching the user's planning unit.
  *
- * The old onOpenAction / onToggleAction / onToggleKR callbacks are kept in
- * the prop signature (page.tsx still passes them) but unused here — the new
- * view doesn't touch weekly actions. Card click routes through onOpenObjective.
+ * Chunk 4 additions:
+ *  - Sticky toolbar + sticky column-header row for groom ergonomics
+ *  - "This week's actions" strip below the grid (cross-space visibility
+ *    that the old Summary had; lost in Chunk 3, restored here)
+ *  - In-place KR edit via <EditKRModal> — click any KR card → modal opens
+ *    without leaving the dashboard
  */
 export default function Summary({
   spaces,
   objectives,
   roadmapItems,
+  actions,
   onOpenObjective,
+  onToggleAction,
+  onUpdateKR,
+  onDeleteKR,
+  toast,
 }: Props) {
   const today = useMemo(() => new Date(), [])
   const [viewedQuarter, setViewedQuarter] = useState<string>(ACTIVE_Q)
   const [filter, setFilter] = useState<StatusFilter>('all')
+  // In-place KR editor. null = closed; a RoadmapItem = open on that KR.
+  const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
 
   const classification = classifyQuarter(viewedQuarter, today)
 
@@ -78,13 +103,13 @@ export default function Summary({
   // baseKRs so the user sees the absolute numbers, not the filtered subset.
   const visibleKRs = useMemo(() => {
     if (filter === 'all') return baseKRs
-    if (filter === 'unplanned') return baseKRs.filter(kr => isDefaultDated(kr.start_date, kr.end_date, viewedQuarter))
+    if (filter === 'unplanned') return baseKRs.filter(kr => isUnplanned(kr, viewedQuarter))
     if (filter === 'off-track') return baseKRs.filter(kr => kr.health_status === 'off_track')
     return baseKRs
   }, [baseKRs, filter, viewedQuarter])
 
   const unplannedCount = useMemo(
-    () => baseKRs.filter(kr => isDefaultDated(kr.start_date, kr.end_date, viewedQuarter)).length,
+    () => baseKRs.filter(kr => isUnplanned(kr, viewedQuarter)).length,
     [baseKRs, viewedQuarter]
   )
   const offTrackCount = useMemo(
@@ -121,6 +146,31 @@ export default function Summary({
     return m
   }, [objectives])
 
+  // "This week's actions" data — only for current-quarter view. Filter to
+  // actions whose week_start matches the current calendar week, then group
+  // by space via the roadmap_item_id → space_id map. Orphan actions (whose
+  // KR has been deleted) are silently dropped.
+  const currentWeekStart = useMemo(() => getMonday(today), [today])
+  const itemToSpaceId = useMemo(() => {
+    const m = new Map<string, string>()
+    roadmapItems.forEach(item => m.set(item.id, item.space_id))
+    return m
+  }, [roadmapItems])
+  const actionsBySpace = useMemo(() => {
+    if (classification !== 'current') return []
+    const weekActions = actions.filter(a => a.week_start === currentWeekStart)
+    const bySpace = new Map<string, WeeklyAction[]>()
+    for (const a of weekActions) {
+      const sid = itemToSpaceId.get(a.roadmap_item_id)
+      if (!sid) continue
+      if (!bySpace.has(sid)) bySpace.set(sid, [])
+      bySpace.get(sid)!.push(a)
+    }
+    return spaces
+      .filter(s => bySpace.has(s.id))
+      .map(space => ({ space, actions: bySpace.get(space.id)! }))
+  }, [classification, actions, currentWeekStart, itemToSpaceId, spaces])
+
   function prevQuarter() {
     const prev = getNeighborQuarter(viewedQuarter, 'back')
     if (prev) setViewedQuarter(prev)
@@ -132,17 +182,30 @@ export default function Summary({
 
   return (
     <div>
-      <Toolbar
-        viewedQuarter={viewedQuarter}
-        classification={classification}
-        onPrev={prevQuarter}
-        onNext={nextQuarter}
-        totalCount={baseKRs.length}
-        unplannedCount={unplannedCount}
-        offTrackCount={offTrackCount}
-        filter={filter}
-        onFilter={setFilter}
-      />
+      {/* Sticky toolbar — stays visible while scrolling spaces. Background
+          masks any content sliding under it. The padding-bottom carries
+          the spacing the inner Toolbar used to provide via marginBottom. */}
+      <div style={{
+        position: 'sticky',
+        top: TOOLBAR_STICKY_TOP,
+        zIndex: 20,
+        background: 'var(--navy-900)',
+        paddingTop: 4,
+        paddingBottom: 12,
+        marginBottom: 8,
+      }}>
+        <Toolbar
+          viewedQuarter={viewedQuarter}
+          classification={classification}
+          onPrev={prevQuarter}
+          onNext={nextQuarter}
+          totalCount={baseKRs.length}
+          unplannedCount={unplannedCount}
+          offTrackCount={offTrackCount}
+          filter={filter}
+          onFilter={setFilter}
+        />
+      </div>
 
       {classification === 'past' ? (
         <PastQuarterView
@@ -159,11 +222,90 @@ export default function Summary({
           buckets={buckets}
           grid={grid}
           viewedQuarter={viewedQuarter}
-          onOpenObjective={onOpenObjective}
+          onEditKR={setEditingKR}
         />
       )}
 
+      {/* This week's actions — restores the cross-space weekly-actions
+          visibility the old Summary had (Chunk 3 lost it). Current quarter
+          only; future/past don't have meaningful "this week". */}
+      {classification === 'current' && actionsBySpace.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <h3 style={{
+            fontSize: 10, fontWeight: 500, letterSpacing: '.16em',
+            textTransform: 'uppercase', color: 'var(--nw-label)',
+            margin: '0 0 10px 2px',
+          }}>
+            This week&apos;s actions
+          </h3>
+          <div style={{
+            background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
+            borderRadius: 8, padding: '4px 0',
+          }}>
+            {actionsBySpace.map(({ space, actions: spaceActions }, i) => {
+              const doneCount = spaceActions.filter(a => a.completed).length
+              return (
+                <div key={space.id} style={{
+                  padding: '10px 14px',
+                  borderBottom: i === actionsBySpace.length - 1 ? 'none' : '1px solid var(--navy-700)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--nw-cream)', letterSpacing: '-.1px' }}>
+                      {space.name}
+                    </span>
+                    <span style={{ fontSize: 10, color: 'var(--navy-400)', marginLeft: 'auto', fontVariantNumeric: 'tabular-nums' }}>
+                      {doneCount}/{spaceActions.length}
+                    </span>
+                  </div>
+                  {spaceActions.map(a => (
+                    <label key={a.id} style={{
+                      display: 'flex', alignItems: 'flex-start', gap: 8,
+                      padding: '4px 0', cursor: 'pointer',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={a.completed}
+                        onChange={() => onToggleAction(a)}
+                        style={{ width: 14, height: 14, marginTop: 2, cursor: 'pointer', flexShrink: 0 }}
+                      />
+                      <span style={{
+                        fontSize: 12,
+                        color: a.completed ? 'var(--navy-400)' : 'var(--navy-100)',
+                        textDecoration: a.completed ? 'line-through' : 'none',
+                        textDecorationColor: 'var(--navy-500)',
+                        lineHeight: 1.4,
+                      }}>
+                        {a.title}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       <Legend />
+
+      {/* In-place KR editor — opened by clicking any KR card in the swim
+          lane grid. onSave/onDelete close on success. */}
+      {editingKR && (
+        <EditKRModal
+          kr={editingKR}
+          onClose={() => setEditingKR(null)}
+          onSave={async (patch) => {
+            await onUpdateKR(editingKR.id, patch)
+            setEditingKR(null)
+          }}
+          onDelete={async () => {
+            await onDeleteKR(editingKR.id)
+            setEditingKR(null)
+          }}
+          toast={toast}
+        />
+      )}
     </div>
   )
 }
@@ -192,7 +334,7 @@ function Toolbar({
   onFilter: (f: StatusFilter) => void
 }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
       {/* Quarter switcher */}
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 8, padding: 4 }}>
         <button onClick={onPrev} aria-label="Previous quarter"
@@ -257,23 +399,37 @@ function SwimLaneGrid({
   buckets,
   grid,
   viewedQuarter,
-  onOpenObjective,
+  onEditKR,
 }: {
   spaces: Space[]
   objById: Map<string, AnnualObjective>
   buckets: BucketDef[]
   grid: Record<string, Record<string, RoadmapItem[]>>
   viewedQuarter: string
-  onOpenObjective: (spaceId: string, objectiveId: string) => void
+  onEditKR: (kr: RoadmapItem) => void
 }) {
   // 150px row-header col, then 1fr per bucket column.
   const cols = `150px repeat(${buckets.length}, 1fr)`
 
+  // No `overflow: hidden` on the wrapper — would break sticky positioning
+  // on the column-header cells. We trade the rounded-corner clip for sticky
+  // ergonomics; the rectangular outline reads fine on a grid.
   return (
-    <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, overflow: 'hidden' }}>
+    <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)' }}>
       <div style={{ display: 'grid', gridTemplateColumns: cols }}>
-        {/* Header row */}
-        <div style={{ ...cellBase, background: 'var(--navy-700)', borderRight: '1px solid var(--navy-600)', borderBottom: '1px solid var(--navy-600)', padding: '12px', minHeight: 'auto' }}>
+        {/* Header row — each cell stickies independently so they all dock
+            together at the same offset under the toolbar. */}
+        <div style={{
+          ...cellBase,
+          background: 'var(--navy-700)',
+          borderRight: '1px solid var(--navy-600)',
+          borderBottom: '1px solid var(--navy-600)',
+          padding: '12px',
+          minHeight: 'auto',
+          position: 'sticky',
+          top: GRID_HEADER_STICKY_TOP,
+          zIndex: 10,
+        }}>
           <span style={{ fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 500 }}>Space ↓ · Time →</span>
         </div>
         {buckets.map((b, i) => (
@@ -285,6 +441,9 @@ function SwimLaneGrid({
               borderBottom: '1px solid var(--navy-600)',
               padding: '12px',
               minHeight: 'auto',
+              position: 'sticky',
+              top: GRID_HEADER_STICKY_TOP,
+              zIndex: 10,
             }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: b.key === 'this-week' ? 'var(--accent)' : 'var(--nw-label)' }}>
@@ -312,7 +471,7 @@ function SwimLaneGrid({
               buckets={buckets}
               viewedQuarter={viewedQuarter}
               isLastRow={isLastRow}
-              onOpenObjective={onOpenObjective}
+              onEditKR={onEditKR}
             />
           )
         })}
@@ -329,7 +488,7 @@ function SpaceRow({
   buckets,
   viewedQuarter,
   isLastRow,
-  onOpenObjective,
+  onEditKR,
 }: {
   space: Space
   spaceKRs: Record<string, RoadmapItem[]>
@@ -338,7 +497,7 @@ function SpaceRow({
   buckets: BucketDef[]
   viewedQuarter: string
   isLastRow: boolean
-  onOpenObjective: (spaceId: string, objectiveId: string) => void
+  onEditKR: (kr: RoadmapItem) => void
 }) {
   const offTrackInRow = Object.values(spaceKRs).flat().filter(kr => kr.health_status === 'off_track').length
 
@@ -380,7 +539,7 @@ function SpaceRow({
                   kr={kr}
                   objective={kr.annual_objective_id ? objById.get(kr.annual_objective_id) : undefined}
                   viewedQuarter={viewedQuarter}
-                  onClick={() => kr.annual_objective_id && onOpenObjective(kr.space_id, kr.annual_objective_id)}
+                  onClick={() => onEditKR(kr)}
                 />
               ))
             )}
@@ -405,7 +564,9 @@ function ItemCard({
   onClick: () => void
 }) {
   const isOffTrack = kr.health_status === 'off_track'
-  const isDefault = isDefaultDated(kr.start_date, kr.end_date, viewedQuarter)
+  // Use the renamed predicate — items the user flagged as quarter-bound are
+  // NO LONGER unplanned (the dashed visual demotion was the old conflation).
+  const isUnplannedItem = isUnplanned(kr, viewedQuarter)
   const objColor = objective?.color ?? 'var(--navy-500)'
   const borderColor = isOffTrack ? 'var(--nw-alarm-text)' : objColor
 
@@ -415,14 +576,14 @@ function ItemCard({
         position: 'relative',
         padding: '7px 9px 7px 11px',
         borderRadius: 5,
-        background: isDefault ? 'var(--navy-800)' : 'var(--navy-700)',
+        background: isUnplannedItem ? 'var(--navy-800)' : 'var(--navy-700)',
         marginBottom: 5,
         borderLeft: `2px solid ${borderColor}`,
         cursor: 'pointer',
         transition: 'background .1s',
       }}
       onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-600)' }}
-      onMouseLeave={e => { e.currentTarget.style.background = isDefault ? 'var(--navy-800)' : 'var(--navy-700)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = isUnplannedItem ? 'var(--navy-800)' : 'var(--navy-700)' }}
     >
       <StatusDot status={kr.health_status} />
       <div style={{ marginBottom: 4 }}>
@@ -431,7 +592,7 @@ function ItemCard({
       <div style={{
         fontSize: 12,
         fontWeight: 600,
-        color: isDefault ? 'var(--navy-200)' : 'var(--navy-100)',
+        color: isUnplannedItem ? 'var(--navy-200)' : 'var(--navy-100)',
         lineHeight: 1.3,
         marginBottom: 2,
         paddingRight: 12,
@@ -550,9 +711,10 @@ function Legend() {
     <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 8, fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em', flexWrap: 'wrap' }}>
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--accent)' }} />} label="This Week — act" />
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'rgba(212, 160, 74, 0.2)', border: '1px solid var(--nw-label)' }} />} label="Next Week — plan" />
-      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'transparent', border: '1px dashed var(--nw-label-dim)' }} />} label="Unplanned (default)" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--navy-700)', border: '1px solid var(--navy-500)' }} />} label="Quarter-bound" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'transparent', border: '1px dashed var(--nw-label-dim)' }} />} label="Unplanned" />
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--nw-alarm-text)' }} />} label="Overdue / off track" />
-      <span style={{ marginLeft: 'auto', fontStyle: 'italic' }}>Habits + metrics not shown — they're ongoing</span>
+      <span style={{ marginLeft: 'auto', fontStyle: 'italic' }}>Habits + metrics not shown — they&apos;re ongoing</span>
     </div>
   )
 }
