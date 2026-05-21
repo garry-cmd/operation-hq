@@ -4,7 +4,7 @@ import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q } from '@/lib/utils'
-import { getDefaultNewKRRange } from '@/lib/dateBuckets'
+import { getDefaultNewKRRange, getCountdownInfo, type CountdownTier } from '@/lib/dateBuckets'
 
 // Notes / links / files all live on the ObjectivePanel now (commit-5 panel
 // arc). The card's footer tabs are gone — the title is the click target.
@@ -335,6 +335,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                       ) : (
                         <span style={{ fontStyle: 'italic' }}>No readings yet</span>
                       )}
+                      <KRDateChip kr={kr} />
                       <button onClick={() => onLogMetric(kr.id)}
                         style={{
                           fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 99,
@@ -347,8 +348,9 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                       </button>
                     </div>
                   ) : (
-                    <div style={{ fontSize: 11, color: 'var(--nw-label-dim)' }}>
-                      {actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}
+                    <div style={{ fontSize: 11, color: 'var(--nw-label-dim)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <KRDateChip kr={kr} />
+                      <span>{actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}</span>
                     </div>
                   )}
                 </div>
@@ -456,4 +458,69 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
       </div>
     </>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// KRDateChip — countdown pill + date text shown on KR rows.
+//
+// Color tier maps 1:1 to the time bucket the KR's end_date falls in
+// (the chip's color IS the bucket the All Spaces dashboard would place it in).
+// Habits and dateless KRs render nothing.
+//
+// Visual contract:
+//   - This week:    cobalt fill, dark text
+//   - Next week:    amber NW fill, amber text
+//   - This month:   muted navy-600 chip
+//   - This quarter: bordered, subtle
+//   - Default:      dashed border + dim amber "QN" label, no date text
+//   - Overdue:      alarm red, "+Nd" format
+// ─────────────────────────────────────────────────────────────────────────
+function KRDateChip({ kr }: { kr: RoadmapItem }) {
+  const info = getCountdownInfo(kr.start_date, kr.end_date, ACTIVE_Q)
+  if (!info) return null
+
+  const chipStyle = chipStyleForTier(info.tier)
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+      <span
+        style={{
+          ...chipStyle,
+          fontSize: 10,
+          fontWeight: 700,
+          padding: '1px 6px',
+          borderRadius: 3,
+          letterSpacing: '.02em',
+          fontVariantNumeric: 'tabular-nums',
+          lineHeight: 1.4,
+          whiteSpace: 'nowrap',
+        }}
+        title={info.dateText || 'Unplanned — still at quarter default'}
+      >
+        {info.label}
+      </span>
+      {info.dateText && (
+        <span style={{ fontSize: 11, color: 'var(--navy-300)', fontVariantNumeric: 'tabular-nums' }}>
+          {info.dateText}
+        </span>
+      )}
+    </span>
+  )
+}
+
+function chipStyleForTier(tier: CountdownTier): React.CSSProperties {
+  switch (tier) {
+    case 'this-week':
+      return { background: 'var(--accent)', color: 'var(--navy-900)' }
+    case 'next-week':
+      return { background: 'rgba(212, 160, 74, 0.2)', color: 'var(--nw-label)' }
+    case 'this-month':
+      return { background: 'var(--navy-600)', color: 'var(--navy-100)' }
+    case 'this-quarter':
+      return { background: 'transparent', color: 'var(--navy-300)', border: '1px solid var(--navy-500)', padding: '0 5px' }
+    case 'default':
+      return { background: 'transparent', color: 'var(--nw-label-dim)', border: '1px dashed var(--nw-label-dim)', padding: '0 5px' }
+    case 'overdue':
+      return { background: 'var(--nw-alarm-text)', color: 'var(--navy-900)' }
+  }
 }
