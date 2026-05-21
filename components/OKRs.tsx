@@ -79,9 +79,12 @@ type Props = {
   metricCheckins: MetricCheckin[]
   toast: (m: string) => void
   onLogMetric: (krId: string) => void
+  // Display name for the active space — drives the H1. Wired from page.tsx
+  // as activeSpace.name; falls back to 'My OKRs' if a space lookup misses.
+  spaceName: string
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, setLinks, setLogs, openObjectiveId, setOpenObjectiveId, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, setLinks, setLogs, openObjectiveId, setOpenObjectiveId, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric, spaceName }: Props) {
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
   
@@ -135,7 +138,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   return (
     <div>
       <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', margin: 0 }}>My OKRs</h1>
+        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', margin: 0 }}>{spaceName}</h1>
       </div>
 
       {/* KPI Dashboard */}
