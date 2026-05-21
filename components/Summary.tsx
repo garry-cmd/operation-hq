@@ -85,11 +85,10 @@ export default function Summary({
 
   const classification = classifyQuarter(viewedQuarter, today)
 
-  // Base set: non-habit KRs in viewed quarter, not parked, not abandoned.
-  // Done KRs are included so green-dot retrospect items stay visible in
-  // their bucket (e.g. "Hot Springs" still shows in This Week after Garry
-  // ticks it done on Sunday).
-  const baseKRs = useMemo(
+  // Full set for the viewed quarter: non-habit, not parked, not abandoned.
+  // Includes done. Used by the past-quarter retrospect so the "X of Y hit"
+  // stats can be computed correctly (denominator needs the total set).
+  const allKRs = useMemo(
     () => roadmapItems.filter(kr =>
       kr.quarter === viewedQuarter
       && !kr.is_habit
@@ -99,8 +98,17 @@ export default function Summary({
     [roadmapItems, viewedQuarter]
   )
 
-  // Status filter narrows the set. Counts for the toolbar always come from
-  // baseKRs so the user sees the absolute numbers, not the filtered subset.
+  // Active set for the swim lane + toolbar counts: drops done KRs (May 22
+  // — Garry: done items leaking into This Week with red overdue chips was
+  // confusing; the chip color is driven by end_date, not status). Done KRs
+  // belong in the past-quarter retrospect, not the current dashboard.
+  const baseKRs = useMemo(
+    () => allKRs.filter(kr => kr.health_status !== 'done'),
+    [allKRs]
+  )
+
+  // Status filter narrows the active set. Counts for the toolbar always come
+  // from baseKRs so the user sees the absolute numbers, not the filtered subset.
   const visibleKRs = useMemo(() => {
     if (filter === 'all') return baseKRs
     if (filter === 'unplanned') return baseKRs.filter(kr => isUnplanned(kr, viewedQuarter))
@@ -210,7 +218,7 @@ export default function Summary({
       {classification === 'past' ? (
         <PastQuarterView
           spaces={spaces}
-          krs={baseKRs}
+          krs={allKRs}
           objById={objById}
           viewedQuarter={viewedQuarter}
           onOpenObjective={onOpenObjective}
