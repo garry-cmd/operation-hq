@@ -578,24 +578,36 @@ function SpaceRow({
   return (
     <>
       {/* Space label — sticky-left so it stays anchored as the user scrolls
-          horizontally through the weekly columns. */}
+          horizontally through the weekly columns. The inner content is also
+          sticky-top so the label stays visible while scrolling vertically
+          through a tall row (KR-dense rows can be much taller than the
+          viewport — without inner sticky-top, the label scrolls off-top
+          long before the row's content does). */}
       <div style={{
         ...cellBase,
         background: 'var(--navy-800)',
         borderRight: '1px solid var(--navy-500)',
         borderBottom: isLastRow ? 'none' : '1px solid var(--navy-700)',
-        padding: '14px 16px',
-        display: 'flex', flexDirection: 'column', gap: 6,
+        padding: 0,
         position: 'sticky',
         left: 0,
         zIndex: 4,
       }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--nw-cream)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '-.1px' }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
-          {space.name}
-        </div>
-        <div style={{ fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em' }}>
-          {spaceTotal} dated{offTrackInRow > 0 && <> · <span style={{ color: 'var(--nw-alarm-text)' }}>{offTrackInRow} off track</span></>}
+        <div style={{
+          position: 'sticky',
+          // Docks just below the grid header (GRID_HEADER_STICKY_TOP + ~header height).
+          // Approximate; tune if the header content changes meaningfully.
+          top: GRID_HEADER_STICKY_TOP + 95,
+          padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', gap: 6,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--nw-cream)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '-.1px' }}>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
+            {space.name}
+          </div>
+          <div style={{ fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em' }}>
+            {spaceTotal} dated{offTrackInRow > 0 && <> · <span style={{ color: 'var(--nw-alarm-text)' }}>{offTrackInRow} off track</span></>}
+          </div>
         </div>
       </div>
       {buckets.map((b, i) => {
