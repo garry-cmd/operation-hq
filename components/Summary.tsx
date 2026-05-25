@@ -40,11 +40,9 @@ interface Props {
 
 type StatusFilter = 'all' | 'unplanned' | 'off-track'
 
-// Sticky header heights — tuned so the grid column row docks just under the
-// toolbar without leaving a gap. Adjust if the toolbar's vertical padding
-// changes meaningfully.
+// Toolbar pins to the top of the page. The grid below uses its own inner-scroll
+// container, so cell-level sticky offsets are now wrap-relative (handled inline).
 const TOOLBAR_STICKY_TOP = 0
-const GRID_HEADER_STICKY_TOP = 60
 
 /**
  * Summary — the Overview screen (formerly "All Spaces").
@@ -453,14 +451,22 @@ function SwimLaneGrid({
   const cols = buckets.map(b => b.isQuarterBound ? `${QB_COL_WIDTH}px` : `${WEEK_COL_WIDTH}px`).join(' ')
   const gridTemplateColumns = `${SPACE_COL_WIDTH}px ${cols}`
 
-  // The outer wrapper does the horizontal scroll. `overflow: hidden` on a
-  // grid parent breaks sticky positioning, so we let the inner grid extend
-  // horizontally and let the wrapper handle the scroll.
+  // The outer wrapper is the inner-scroll container for both axes.
+  // Why not `overflow-x: auto` with the page handling vertical scroll:
+  // setting overflow on ANY axis makes the element a scroll context for
+  // BOTH axes (browsers normalize `visible` on the other axis to `auto`).
+  // Sticky-positioned descendants then pin relative to THIS wrap, not the
+  // viewport. With page-scroll, that means sticky-top headers ride along
+  // with the wrap as the page scrolls and don't stay pinned to the viewport.
+  // Fix: cap the wrap's height so the user scrolls inside it. Sticky cells
+  // then pin correctly to the wrap's visible edges (which ARE the viewport
+  // edges while the wrap is on-screen).
   return (
     <div style={{
       background: 'var(--navy-800)',
       border: '1px solid var(--navy-600)',
-      overflowX: 'auto',
+      maxHeight: 'calc(100vh - 180px)',
+      overflow: 'auto',
     }}>
       <div style={{ display: 'grid', gridTemplateColumns, minWidth: 'min-content' }}>
         {/* Top-left corner — sticky both top and left so it stays put during
@@ -473,7 +479,7 @@ function SwimLaneGrid({
           padding: '14px 16px',
           minHeight: 'auto',
           position: 'sticky',
-          top: GRID_HEADER_STICKY_TOP,
+          top: 0,
           left: 0,
           zIndex: 12,
         }}>
@@ -498,7 +504,7 @@ function SwimLaneGrid({
               padding: '14px 14px 12px',
               minHeight: 'auto',
               position: 'sticky',
-              top: GRID_HEADER_STICKY_TOP,
+              top: 0,
               zIndex: 10,
             }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
@@ -595,9 +601,10 @@ function SpaceRow({
       }}>
         <div style={{
           position: 'sticky',
-          // Docks just below the grid header (GRID_HEADER_STICKY_TOP + ~header height).
-          // Approximate; tune if the header content changes meaningfully.
-          top: GRID_HEADER_STICKY_TOP + 95,
+          // Docks just below the grid header. The header cells max out around
+          // 95-105px depending on whether the "This Week" pill renders, so
+          // 105 covers both cases.
+          top: 105,
           padding: '14px 16px',
           display: 'flex', flexDirection: 'column', gap: 6,
         }}>
