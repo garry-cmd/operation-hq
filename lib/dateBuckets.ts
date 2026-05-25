@@ -5,18 +5,21 @@
  *   - Mapping a quarter ID ('2Q2026') to its calendar date range
  *   - Default date range for a newly-created KR (current calendar week)
  *   - Countdown chip computation (label + tier + date text) shown on KR rows
- *     in the OKR tab and the All Spaces dashboard
- *   - Bucket definitions + bucket assignment for the All Spaces swim lane
+ *     in the OKR tab and the Overview swim lane
+ *   - Bucket definitions + bucket assignment for the Overview swim lane
  *
- * Three-bucket model (May 21 — Chunk 4): current quarter shows This Week,
- * Next Week, and This Quarter. The old "This Month" column was dropped —
- * items 2–3 weeks out behave the same as items 6 weeks out in practice;
- * tighter "act vs. plan vs. later" splits drove the change.
+ * Weekly-column model (May 25 — capacity-planning rewrite): current quarter
+ * shows one column per remaining calendar week, then a trailing "Quarter-
+ * bound" column for KRs flagged is_quarter_bound, multi-quarter spans
+ * (end_date past quarter end), unplanned defaults, and date-less items.
+ * Replaces the prior 3-bucket This Week / Next Week / This Quarter model,
+ * which mashed scheduled-future, quarter-intent, and backlog into one cell.
  *
- * The `is_quarter_bound` flag introduced in the same chunk separates two
- * meanings the dashed Q chip used to overload: "unplanned default" (the
- * range still sits at the migration's quarter-wide backfill, dashed) vs.
- * "intentional quarter-level goal" (user explicitly opted in, solid chip).
+ * The `is_quarter_bound` flag (Chunk 4, May 21) separates two meanings the
+ * dashed Q chip used to overload: "unplanned default" (the range still sits
+ * at the migration's quarter-wide backfill, dashed) vs. "intentional
+ * quarter-level goal" (user explicitly opted in, solid chip). Both live in
+ * the Quarter-bound column under the new weekly model.
  */
 import { getMonday, parseDateLocal } from '@/lib/utils'
 
@@ -60,18 +63,23 @@ export function getDefaultNewKRRange(today: Date = new Date()): { start_date: st
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
- * Which color/style tier the countdown chip uses. Maps 1:1 to the time
- * buckets in the All Spaces dashboard, so the chip's color IS its bucket.
+ * Which color/style tier the countdown chip uses.
  *
  * 'quarter-bound' is its own tier (solid Q chip) for items the user
  * explicitly flagged as quarter-level goals — visually distinct from
  * 'default' (dashed Q chip for items that haven't been planned yet).
+ *
+ * 'multi-quarter' marks KRs whose end_date sits past the viewed quarter's
+ * end (e.g. a year-long Net Worth goal viewed in Q2). Placed in the
+ * Quarter-bound column with a distinct accent chip so it reads as
+ * long-haul rather than spillover.
  */
 export type CountdownTier =
   | 'this-week'
   | 'next-week'
   | 'this-quarter'
   | 'quarter-bound' // intentional quarter-level goal (solid chip)
+  | 'multi-quarter' // end_date past the viewed quarter (long-haul accent chip)
   | 'default'       // unplanned — range covers whole quarter (dashed chip)
   | 'overdue'       // end_date is in the past
 
@@ -91,9 +99,10 @@ export interface CountdownInfo {
  * Order of checks:
  *   1. is_quarter_bound = true → 'quarter-bound' (solid Qn chip, no date text)
  *   2. end_date null            → null
- *   3. range exactly matches viewed quarter → 'default' (dashed Qn chip)
- *   4. overdue                  → 'overdue'
- *   5. fall into This Week / Next Week / This Quarter by end_date
+ *   3. end_date past viewed quarter → 'multi-quarter' (long-haul accent chip)
+ *   4. range exactly matches viewed quarter → 'default' (dashed Qn chip)
+ *   5. overdue                  → 'overdue'
+ *   6. fall into This Week / Next Week / This Quarter by end_date
  */
 export function getCountdownInfo(
   kr: { start_date: string | null; end_date: string | null; is_quarter_bound?: boolean },
@@ -110,11 +119,23 @@ export function getCountdownInfo(
 
   if (!kr.end_date) return null
 
+  const qRange = getQuarterRange(viewedQuarter)
+
+  // Multi-quarter: end_date past the viewed quarter's end. Show the full
+  // span and a distinct accent so it reads as long-haul rather than
+  // unplanned spillover.
+  if (qRange && kr.end_date > qRange.end) {
+    return {
+      label: '↗ Multi-Q',
+      dateText: formatDateRange(kr.start_date, kr.end_date),
+      tier: 'multi-quarter',
+    }
+  }
+
   // Default-to-quarter detection: range exactly matches the viewed quarter's
   // calendar bounds AND the user hasn't flagged it as quarter-bound. Shows
   // a quiet dashed "QN" chip with no date text — visible nudge that this KR
   // is still floating at quarter resolution.
-  const qRange = getQuarterRange(viewedQuarter)
   if (qRange && kr.start_date === qRange.start && kr.end_date === qRange.end) {
     const qDigit = viewedQuarter.match(/^(\d)Q/)?.[1] ?? '?'
     return { label: `Q${qDigit}`, dateText: '', tier: 'default' }
@@ -173,6 +194,14 @@ function addDays(dateStr: string, n: number): string {
 }
 
 /**
+ * "May 25" style — used as the weekly column header label.
+ */
+function shortMonthDay(dateStr: string): string {
+  const d = parseDateLocal(dateStr)
+  return `${d.toLocaleDateString('en-US', { month: 'short' })} ${d.getDate()}`
+}
+
+/**
  * Compact date-range formatter for chip-adjacent display.
  *   "2026-05-30" alone           → "May 30"
  *   "2026-05-21" → "2026-05-24"  → "May 21 – 24"     (same month — drop second month)
@@ -202,66 +231,74 @@ function formatDateRange(start: string | null, end: string | null): string {
 // ────────────────────────────────────────────────────────────────────────────
 
 export type BucketKey =
-  | 'this-week' | 'next-week' | 'this-quarter'   // current quarter (3-bucket model)
+  | 'this-week' | 'next-week' | 'this-quarter'   // legacy 3-bucket model (kept for fallback / past quarter)
   | 'month-1'   | 'month-2'   | 'month-3'         // future quarter
   | 'overdue'                                      // virtual prepend
+  | 'quarter-bound'                                // weekly model trailing column
+  | `week-${string}`                               // weekly model: 'week-YYYY-MM-DD' (Monday of the week)
 
 export interface BucketDef {
   key: BucketKey
-  label: string         // column header: "This Week", "Jul", etc.
-  rangeText: string     // sub-header: "May 20 — 24"
-  start: string         // YYYY-MM-DD, inclusive
-  end: string           // YYYY-MM-DD, inclusive
+  label: string         // column header: "Week of May 25", "Quarter-bound", "Jul"
+  rangeText: string     // sub-header: "May 25 — 31" or "Rest of Q2 2026"
+  start: string         // YYYY-MM-DD, inclusive. Empty for non-date-bounded buckets (quarter-bound).
+  end: string           // YYYY-MM-DD, inclusive. Empty for non-date-bounded buckets.
+  /** Marks "this week" — gets accent treatment in the header + cell. */
+  isCurrentWeek?: boolean
+  /** Marks the trailing "Quarter-bound" column — gets the warm-tinted treatment. */
+  isQuarterBound?: boolean
 }
 
 /**
- * Time buckets when viewing the CURRENT quarter. Three columns:
- *   - This Week:    today → upcoming Sunday
- *   - Next Week:    next Mon → next Sun
- *   - This Quarter: day after Next Week → end of viewed quarter (catches
- *                   default-dated items + everything 2+ weeks out)
+ * Time buckets when viewing the CURRENT quarter. One column per remaining
+ * calendar week (Mon → Sun, capped at quarter end), then a trailing
+ * Quarter-bound column for is_quarter_bound items, unplanned defaults,
+ * date-less items, and multi-quarter spans.
  *
- * The "This Month" column from Chunk 3 was dropped (May 21) — items 2–3
- * weeks out aren't behaviorally different from items 6 weeks out for the
- * grooming surface, and three buckets give a cleaner "act / plan / later".
+ * Earlier models (Chunk 3: 4 buckets; Chunk 4: 3 buckets) conflated
+ * scheduled-future, quarter-intent, and backlog into a single "rest of
+ * quarter" column. The weekly model splits these so capacity-planning
+ * actually works — the load distribution across upcoming weeks is the
+ * eye-test signal.
  *
- * Buckets are capped at quarter end so items dated in the next quarter
- * never falls into the current-quarter dashboard.
+ * Returns at minimum the Quarter-bound column even if today is past
+ * quarter end (defensive — should only happen if classification is wrong).
  */
 export function getCurrentQuarterBuckets(today: Date, quarter: string): BucketDef[] {
   const qRange = getQuarterRange(quarter)
-  const qEnd = qRange?.end ?? formatLocalDate(today)
+  const todayMonday = getMonday(today)
+  const buckets: BucketDef[] = []
 
-  const todayStr = formatLocalDate(today)
-  const thisMonday = getMonday(today)
-  const thisSunday = addDays(thisMonday, 6)
-  const nextMonday = addDays(thisMonday, 7)
-  const nextSunday = addDays(thisMonday, 13)
-  const quarterStart = addDays(nextSunday, 1)
+  if (qRange) {
+    let weekMonday = todayMonday
+    // Cap weekly columns at the week containing quarter end. If quarter end
+    // is mid-week, the last column's `end` is clipped to qRange.end so
+    // assignment math doesn't bleed into the following quarter.
+    while (weekMonday <= qRange.end) {
+      const weekSunday = addDays(weekMonday, 6)
+      const clippedEnd = minDate(weekSunday, qRange.end)
+      buckets.push({
+        key: `week-${weekMonday}`,
+        label: `Week of ${shortMonthDay(weekMonday)}`,
+        rangeText: formatRange(weekMonday, clippedEnd),
+        start: weekMonday,
+        end: clippedEnd,
+        isCurrentWeek: weekMonday === todayMonday,
+      })
+      weekMonday = addDays(weekMonday, 7)
+    }
+  }
 
-  return [
-    {
-      key: 'this-week',
-      label: 'This Week',
-      rangeText: formatRange(todayStr, thisSunday),
-      start: todayStr,
-      end: minDate(thisSunday, qEnd),
-    },
-    {
-      key: 'next-week',
-      label: 'Next Week',
-      rangeText: formatRange(nextMonday, nextSunday),
-      start: nextMonday,
-      end: minDate(nextSunday, qEnd),
-    },
-    {
-      key: 'this-quarter',
-      label: 'This Quarter',
-      rangeText: quarterStart > qEnd ? '—' : `Rest of ${quarter.replace(/^(\d)Q/, 'Q$1 ')}`,
-      start: quarterStart,
-      end: qEnd,
-    },
-  ]
+  buckets.push({
+    key: 'quarter-bound',
+    label: 'Quarter-bound',
+    rangeText: `Rest of ${quarter.replace(/^(\d)Q/, 'Q$1 ')}`,
+    start: '',
+    end: '',
+    isQuarterBound: true,
+  })
+
+  return buckets
 }
 
 /**
@@ -295,6 +332,10 @@ export function getFutureQuarterBuckets(quarter: string): BucketDef[] {
  * past the last bucket return null (off-screen, e.g. dated next quarter).
  * Overdue items (end_date < today) get an explicit 'overdue' key so the
  * caller can decide where to surface them.
+ *
+ * NOTE: This is the date-only helper. The weekly Overview uses
+ * assignKRToBucket below, which also routes is_quarter_bound, multi-quarter,
+ * date-less, and unplanned items into the trailing Quarter-bound column.
  */
 export function assignToBucket(
   endDate: string | null,
@@ -305,9 +346,47 @@ export function assignToBucket(
   const todayStr = formatLocalDate(today)
   if (endDate < todayStr) return 'overdue'
   for (const b of buckets) {
+    if (b.isQuarterBound) continue // skip the trailing non-date column
     if (endDate <= b.end) return b.key
   }
   return null
+}
+
+/**
+ * KR-aware bucket assignment for the weekly Overview model. Routes:
+ *   - is_quarter_bound = true       → 'quarter-bound'
+ *   - no end_date                   → 'quarter-bound'
+ *   - end_date past quarter end     → 'quarter-bound' (multi-quarter)
+ *   - unplanned (range matches Q)   → 'quarter-bound'
+ *   - end_date in the past          → 'overdue'
+ *   - otherwise                     → first weekly bucket whose end >= end_date
+ *
+ * If no weekly bucket matches (e.g. KR's end_date is past all weekly columns
+ * but still inside the quarter — shouldn't happen with current bucket math
+ * but guard anyway), falls through to 'quarter-bound'.
+ */
+export function assignKRToBucket(
+  kr: { start_date: string | null; end_date: string | null; is_quarter_bound?: boolean },
+  buckets: BucketDef[],
+  today: Date,
+  viewedQuarter: string,
+): BucketKey | 'overdue' {
+  if (kr.is_quarter_bound) return 'quarter-bound'
+  if (!kr.end_date) return 'quarter-bound'
+
+  const qRange = getQuarterRange(viewedQuarter)
+  if (qRange && kr.end_date > qRange.end) return 'quarter-bound' // multi-quarter
+
+  if (isUnplanned(kr, viewedQuarter)) return 'quarter-bound'
+
+  const todayStr = formatLocalDate(today)
+  if (kr.end_date < todayStr) return 'overdue'
+
+  for (const b of buckets) {
+    if (b.isQuarterBound) continue
+    if (b.end && kr.end_date <= b.end) return b.key
+  }
+  return 'quarter-bound'
 }
 
 /**

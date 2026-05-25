@@ -15,16 +15,15 @@ import { ACTIVE_Q } from '@/lib/utils'
  * (the chip's color IS the bucket the All Spaces dashboard would place it in).
  * Habits and dateless KRs render nothing.
  *
- * Visual contract (May 21 — Chunk 4):
+ * Visual contract:
  *   - This week:     cobalt fill, dark text
  *   - Next week:     amber NW fill, amber text
  *   - This quarter:  bordered, subtle
  *   - Quarter-bound: solid navy chip with subtle border — intentional Q-level goal
+ *   - Multi-quarter: cobalt accent-dim chip with "↗ Multi-Q" label — long-haul KR
+ *                    whose end_date sits past the viewed quarter's end
  *   - Default:       dashed border + dim amber "QN" label, no date text (unplanned)
  *   - Overdue:       alarm red, "+Nd" format
- *
- * The "This Month" tier was removed in Chunk 4 along with the dashboard
- * column; items 2–6 weeks out collapse into This Quarter visually.
  *
  * Defaults to ACTIVE_Q for quarter context; pass `viewedQuarter` when
  * rendering in a quarter-scoped context (e.g. the All Spaces dashboard
@@ -99,6 +98,11 @@ function chipStyleForTier(tier: CountdownTier): React.CSSProperties {
       // Solid chip — visually distinct from the dashed unplanned variant.
       // Reads as "intentional", not "needs planning".
       return { background: 'var(--navy-700)', color: 'var(--navy-100)', border: '1px solid var(--navy-500)', padding: '0 5px' }
+    case 'multi-quarter':
+      // Cobalt accent — reads as long-haul / cross-quarter rather than
+      // overdue or unplanned. The label "↗ Multi-Q" tells the eye in one
+      // glance that the end_date is outside the current quarter view.
+      return { background: 'var(--accent-dim)', color: 'var(--accent)', padding: '1px 6px', letterSpacing: '.04em', textTransform: 'uppercase' }
     case 'default':
       return { background: 'transparent', color: 'var(--nw-label-dim)', border: '1px dashed var(--nw-label-dim)', padding: '0 5px' }
     case 'overdue':

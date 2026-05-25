@@ -6,6 +6,7 @@ import {
   getCurrentQuarterBuckets,
   getFutureQuarterBuckets,
   assignToBucket,
+  assignKRToBucket,
   classifyQuarter,
   getNeighborQuarter,
   isUnplanned,
@@ -46,23 +47,27 @@ const TOOLBAR_STICKY_TOP = 0
 const GRID_HEADER_STICKY_TOP = 60
 
 /**
- * Summary — the All Spaces dashboard.
+ * Summary — the Overview screen (formerly "All Spaces").
  *
- * Renamed from the prior flat KR + action list (May 21 dated-KR rollout). The
- * shape is a swim lane grid: rows = spaces, columns = time buckets. Current
- * quarter shows This Week / Next Week / This Quarter (3-bucket model from
- * Chunk 4 — This Month dropped). Future quarter shows month columns. Past
- * quarters render as a retrospective stat view.
+ * Swim lane grid: rows = spaces, columns = time buckets. Current quarter
+ * shows one column per remaining calendar week (Mon → Sun) plus a trailing
+ * Quarter-bound column for is_quarter_bound goals, multi-quarter spans
+ * (end_date past quarter end), unplanned defaults, and date-less items.
+ * Future quarter shows month columns; past quarter renders as a
+ * retrospective stat view.
+ *
+ * The weekly column count varies — at quarter start ~13 weeks, at quarter
+ * end ~1 week. The outer container handles horizontal scroll; the space
+ * column is sticky-left and the header row is sticky-top.
  *
  * Quarter switcher lets you scrub forward (planning) or back (review). KRs
  * are scoped by the KR's `quarter` tag, not by raw end_date — so a 2Q-
- * tagged KR with an end_date in July still shows in 2Q's "This Quarter"
- * column, matching the user's planning unit.
+ * tagged KR with an end_date in July still shows in 2Q's Quarter-bound
+ * column with a "↗ Multi-Q" indicator, matching the user's planning unit.
  *
- * Chunk 4 additions:
+ * Persistent features:
  *  - Sticky toolbar + sticky column-header row for groom ergonomics
- *  - "This week's actions" strip below the grid (cross-space visibility
- *    that the old Summary had; lost in Chunk 3, restored here)
+ *  - "This week's actions" strip below the grid (cross-space weekly visibility)
  *  - In-place KR edit via <EditKRModal> — click any KR card → modal opens
  *    without leaving the dashboard
  */
@@ -132,21 +137,38 @@ export default function Summary({
   }, [classification, today, viewedQuarter])
 
   // Map: spaceId -> bucketKey -> KRs landing in that cell.
-  // Overdue items lump into the FIRST bucket (the leftmost visible column) so
-  // they stay in the user's eye-line. Their chip color = red regardless.
+  // Overdue items lump into the FIRST bucket (the leftmost weekly column,
+  // which IS "this week") so they stay in the user's eye-line. Their chip
+  // color = red regardless. The KR-aware assignKRToBucket handles
+  // quarter-bound routing (intentional Q-level goals, multi-quarter spans,
+  // unplanned defaults, date-less items) so they land in the trailing
+  // Quarter-bound column.
   const grid = useMemo(() => {
     const m: Record<string, Record<string, RoadmapItem[]>> = {}
+    if (classification !== 'current') {
+      // Future quarter uses the date-only legacy path (month buckets).
+      for (const kr of visibleKRs) {
+        const sid = kr.space_id
+        if (!m[sid]) m[sid] = {}
+        const bk = assignToBucket(kr.end_date, buckets, today) ?? buckets[0]?.key
+        if (!bk) continue
+        const targetKey = (bk === 'overdue' && buckets[0]) ? buckets[0].key : bk
+        if (!m[sid][targetKey]) m[sid][targetKey] = []
+        m[sid][targetKey].push(kr)
+      }
+      return m
+    }
+    // Current quarter — weekly model.
     for (const kr of visibleKRs) {
       const sid = kr.space_id
       if (!m[sid]) m[sid] = {}
-      const bk = assignToBucket(kr.end_date, buckets, today) ?? 'this-quarter'
-      // Overdue → first bucket
+      const bk = assignKRToBucket(kr, buckets, today, viewedQuarter)
       const targetKey = (bk === 'overdue' && buckets[0]) ? buckets[0].key : bk
       if (!m[sid][targetKey]) m[sid][targetKey] = []
       m[sid][targetKey].push(kr)
     }
     return m
-  }, [visibleKRs, buckets, today])
+  }, [visibleKRs, buckets, today, classification, viewedQuarter])
 
   const objById = useMemo(() => {
     const m = new Map<string, AnnualObjective>()
@@ -400,6 +422,15 @@ function Toolbar({
 }
 
 // ───────────────────────── Swim lane grid ─────────────────────────
+// Layout: horizontal scroll wrapper holds a CSS grid with fixed column widths.
+// Space column is sticky-left; header cells are sticky-top. Quarter-bound
+// column is fixed-wider and gets a warm tinted background to distinguish it
+// from weekly columns. Current-week column gets an accent under-border + cell
+// tint to anchor "now" in the timeline.
+
+const SPACE_COL_WIDTH = 220
+const WEEK_COL_WIDTH = 280
+const QB_COL_WIDTH = 320
 
 function SwimLaneGrid({
   spaces,
@@ -416,50 +447,85 @@ function SwimLaneGrid({
   viewedQuarter: string
   onEditKR: (kr: RoadmapItem) => void
 }) {
-  // 150px row-header col, then 1fr per bucket column.
-  const cols = `150px repeat(${buckets.length}, 1fr)`
+  // Build the gridTemplateColumns string. Weekly columns are uniform width;
+  // the trailing Quarter-bound column is wider for the multi-quarter chip +
+  // longer titles.
+  const cols = buckets.map(b => b.isQuarterBound ? `${QB_COL_WIDTH}px` : `${WEEK_COL_WIDTH}px`).join(' ')
+  const gridTemplateColumns = `${SPACE_COL_WIDTH}px ${cols}`
 
-  // No `overflow: hidden` on the wrapper — would break sticky positioning
-  // on the column-header cells. We trade the rounded-corner clip for sticky
-  // ergonomics; the rectangular outline reads fine on a grid.
+  // The outer wrapper does the horizontal scroll. `overflow: hidden` on a
+  // grid parent breaks sticky positioning, so we let the inner grid extend
+  // horizontally and let the wrapper handle the scroll.
   return (
-    <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: cols }}>
-        {/* Header row — each cell stickies independently so they all dock
-            together at the same offset under the toolbar. */}
+    <div style={{
+      background: 'var(--navy-800)',
+      border: '1px solid var(--navy-600)',
+      overflowX: 'auto',
+    }}>
+      <div style={{ display: 'grid', gridTemplateColumns, minWidth: 'min-content' }}>
+        {/* Top-left corner — sticky both top and left so it stays put during
+            either scroll direction. Highest z so it covers either neighbor. */}
         <div style={{
           ...cellBase,
           background: 'var(--navy-700)',
-          borderRight: '1px solid var(--navy-600)',
+          borderRight: '1px solid var(--navy-500)',
           borderBottom: '1px solid var(--navy-600)',
-          padding: '12px',
+          padding: '14px 16px',
           minHeight: 'auto',
           position: 'sticky',
           top: GRID_HEADER_STICKY_TOP,
-          zIndex: 10,
+          left: 0,
+          zIndex: 12,
         }}>
-          <span style={{ fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 500 }}>Space ↓ · Time →</span>
+          <span style={{ fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 500 }}>
+            Space <span style={{ color: 'var(--accent)' }}>↓</span> · Time <span style={{ color: 'var(--accent)' }}>→</span>
+          </span>
         </div>
+        {/* Column headers — sticky-top only. The Quarter-bound header gets a
+            distinct background. Current-week header gets accent text + a
+            cobalt under-bar via pseudo (rendered as an absolute span). */}
         {buckets.map((b, i) => (
           <div key={b.key}
             style={{
               ...cellBase,
-              background: 'var(--navy-700)',
+              background: b.isQuarterBound
+                ? 'linear-gradient(180deg, var(--navy-700) 0%, var(--navy-800) 100%)'
+                : b.isCurrentWeek
+                  ? 'var(--navy-700)'
+                  : 'var(--navy-800)',
               borderRight: i === buckets.length - 1 ? 'none' : '1px solid var(--navy-600)',
               borderBottom: '1px solid var(--navy-600)',
-              padding: '12px',
+              padding: '14px 14px 12px',
               minHeight: 'auto',
               position: 'sticky',
               top: GRID_HEADER_STICKY_TOP,
               zIndex: 10,
             }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: b.key === 'this-week' ? 'var(--accent)' : 'var(--nw-label)' }}>
-                {b.label}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
+              <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>
+                {b.isQuarterBound ? 'Quarter-bound' : 'Week of'}
               </span>
-              <span style={{ fontSize: 10, color: 'var(--navy-300)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em' }}>
-                {b.rangeText}
+              <span style={{ fontSize: 13, fontWeight: 700, color: b.isCurrentWeek ? 'var(--accent)' : 'var(--navy-50)', letterSpacing: '-.1px' }}>
+                {b.isQuarterBound ? b.rangeText : b.label.replace(/^Week of /, '')}
               </span>
+              <span style={{ fontSize: 10, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em' }}>
+                {b.isQuarterBound ? 'By end of quarter · no specific week' : b.rangeText}
+              </span>
+              {b.isCurrentWeek && (
+                <span style={{
+                  display: 'inline-block', alignSelf: 'flex-start',
+                  fontSize: 9, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase',
+                  color: 'var(--accent)', background: 'var(--accent-dim)',
+                  padding: '1px 6px', borderRadius: 4, marginTop: 4,
+                }}>This Week</span>
+              )}
+              {/* Accent under-bar for current-week column */}
+              {b.isCurrentWeek && (
+                <span style={{
+                  position: 'absolute', left: -14, right: -14, bottom: -13, height: 2,
+                  background: 'var(--accent)',
+                }} />
+              )}
             </div>
           </div>
         ))}
@@ -511,20 +577,25 @@ function SpaceRow({
 
   return (
     <>
+      {/* Space label — sticky-left so it stays anchored as the user scrolls
+          horizontally through the weekly columns. */}
       <div style={{
         ...cellBase,
         background: 'var(--navy-800)',
-        borderRight: '1px solid var(--navy-600)',
+        borderRight: '1px solid var(--navy-500)',
         borderBottom: isLastRow ? 'none' : '1px solid var(--navy-700)',
-        padding: '14px 12px',
+        padding: '14px 16px',
         display: 'flex', flexDirection: 'column', gap: 6,
+        position: 'sticky',
+        left: 0,
+        zIndex: 4,
       }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--nw-cream)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '-.1px' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--nw-cream)', display: 'flex', alignItems: 'center', gap: 8, letterSpacing: '-.1px' }}>
           <span style={{ width: 8, height: 8, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
           {space.name}
         </div>
         <div style={{ fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em' }}>
-          {spaceTotal} dated{offTrackInRow > 0 && ` · ${offTrackInRow} off track`}
+          {spaceTotal} dated{offTrackInRow > 0 && <> · <span style={{ color: 'var(--nw-alarm-text)' }}>{offTrackInRow} off track</span></>}
         </div>
       </div>
       {buckets.map((b, i) => {
@@ -536,7 +607,11 @@ function SpaceRow({
               ...cellBase,
               borderRight: isLastCol ? 'none' : '1px solid var(--navy-700)',
               borderBottom: isLastRow ? 'none' : '1px solid var(--navy-700)',
-              background: b.key === 'this-week' ? 'rgba(91, 141, 239, 0.03)' : undefined,
+              background: b.isQuarterBound
+                ? 'linear-gradient(180deg, var(--navy-900) 0%, rgba(40, 30, 12, 0.18) 100%)'
+                : b.isCurrentWeek
+                  ? 'rgba(74, 143, 255, 0.025)'
+                  : undefined,
             }}>
             {items.length === 0 ? (
               <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--navy-600)', fontSize: 16, fontWeight: 300 }}>—</div>
@@ -718,8 +793,9 @@ function Legend() {
   return (
     <div style={{ marginTop: 18, display: 'flex', alignItems: 'center', gap: 14, padding: '10px 16px', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 8, fontSize: 10, color: 'var(--navy-400)', letterSpacing: '.04em', flexWrap: 'wrap' }}>
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--accent)' }} />} label="This Week — act" />
-      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'rgba(212, 160, 74, 0.2)', border: '1px solid var(--nw-label)' }} />} label="Next Week — plan" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'rgba(212, 160, 74, 0.2)', border: '1px solid var(--nw-label)' }} />} label="Future week — plan" />
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--navy-700)', border: '1px solid var(--navy-500)' }} />} label="Quarter-bound" />
+      <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--accent-dim)', border: '1px solid var(--accent)' }} />} label="Multi-quarter" />
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'transparent', border: '1px dashed var(--nw-label-dim)' }} />} label="Unplanned" />
       <LegendItem swatch={<span style={{ width: 12, height: 12, borderRadius: 2, background: 'var(--nw-alarm-text)' }} />} label="Overdue / off track" />
       <span style={{ marginLeft: 'auto', fontStyle: 'italic' }}>Habits + metrics not shown — they&apos;re ongoing</span>
