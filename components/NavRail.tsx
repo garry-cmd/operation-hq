@@ -7,7 +7,7 @@
  *
  * Screens are organized into three groups by use frequency:
  *   - Daily:     Focus, Tasks, Notes   (the many-times-a-day tools)
- *   - Strategic: OKRs, Roadmap         (planning / weekly cadence)
+ *   - Strategic: OKRs, Roadmap, Overview (planning / weekly cadence)
  *   - Archive:   Reflect, Parking      (consulted, not daily)
  *
  * Mobile fallback is deliberately not implemented yet — the brief is
@@ -17,13 +17,12 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags'
+export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
 
 export interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string }
 
 interface Props {
   screen: Screen
-  isAllSpaces: boolean
   onScreenChange: (s: Screen) => void
 
   // Space switching — passed through to SpaceSwitcher unchanged.
@@ -82,6 +81,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
     items: [
       { id: 'okr', label: 'OKRs', icon: <OKRIcon /> },
       { id: 'roadmap', label: 'Roadmap', icon: <RoadmapIcon /> },
+      { id: 'overview', label: 'Overview', icon: <OverviewIcon /> },
     ],
   },
   {
@@ -262,7 +262,7 @@ export default function NavRail(props: Props) {
               {group.label}
             </div>
             {group.items.map(item => {
-              const isActive = !props.isAllSpaces && props.screen === item.id
+              const isActive = props.screen === item.id
               const b = badge(item.id)
               return (
                 <button key={item.id}
@@ -402,4 +402,16 @@ function ParkIcon() {
 }
 function TagsIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 1.5L4.5 14.5M11.5 1.5L10 14.5M1.5 5h13M1.5 11h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+}
+// 2×2 dot grid — visual continuity with the old All Spaces pill in
+// SpaceSwitcher (which used a row of small dots to represent the cross-space
+// view). Reads as "multiple spaces at once" without competing with Roadmap's
+// stacked-bar shape or OKR's target.
+function OverviewIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <circle cx="4.5" cy="4.5" r="1.6" fill="currentColor"/>
+    <circle cx="11.5" cy="4.5" r="1.6" fill="currentColor"/>
+    <circle cx="4.5" cy="11.5" r="1.6" fill="currentColor"/>
+    <circle cx="11.5" cy="11.5" r="1.6" fill="currentColor"/>
+  </svg>
 }

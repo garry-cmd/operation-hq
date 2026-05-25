@@ -13,3 +13,4 @@ next-env.d.ts
 .vercel
 .env*.local
 >>>>>>> aaf6a74 (Focus: inline + Add action row per KR group)
+.env*

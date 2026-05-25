@@ -30,14 +30,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'tags'
-
-// MUST match the value in components/SpaceSwitcher.tsx. When the activeSpaceId
-// equals this sentinel, page.tsx routes to Summary (cross-space view) instead
-// of any of the regular tabs. The NavRail stays visible — screen clicks pivot
-// back into the last-used real space, and FastCapture targets that space too.
-// (See goToScreen + fastCaptureSpaceId below.)
-const ALL_SPACES_ID = '__all__'
+type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'tags'
 
 interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string }
 
@@ -84,12 +77,6 @@ export default function HQPage() {
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
-  // Most-recently-used real (non-sentinel) space. Tracked separately from
-  // activeSpaceId so the bottom nav and FastCapture have a target when the
-  // user is in All Spaces mode — clicking a nav tab from All Spaces switches
-  // back into this space, and FastCapture writes here. Persisted so the
-  // value survives a reload that lands directly on All Spaces.
-  const [lastRealSpaceId, setLastRealSpaceId] = useState('')
   const [closingWizard, setClosingWizard] = useState<string | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
   // Currently-open action panel on the Focus tab. Lifted to page level so
@@ -179,12 +166,6 @@ export default function HQPage() {
   function switchSpace(spaceId: string) {
     setActiveSpaceId(spaceId)
     localStorage.setItem('hq-active-space', spaceId)
-    // Track last-real so All Spaces mode has a fallback for nav clicks and
-    // FastCapture. The sentinel itself never becomes the "last real" target.
-    if (spaceId !== ALL_SPACES_ID) {
-      setLastRealSpaceId(spaceId)
-      localStorage.setItem('hq-last-real-space-id', spaceId)
-    }
   }
 
   function toggleTheme() {
@@ -255,25 +236,9 @@ export default function HQPage() {
       setTagsByTask(new Map())
     }
     // Set active space from localStorage or default to first.
-    // The '__all__' sentinel isn't in `sp`, so handle it explicitly so
-    // that "All Spaces" survives a reload like any real space.
     const savedSpaceId = localStorage.getItem('hq-active-space')
-    let validId: string
-    if (savedSpaceId === ALL_SPACES_ID) {
-      validId = ALL_SPACES_ID
-    } else {
-      validId = sp.find(s => s.id === savedSpaceId)?.id ?? sp[0]?.id ?? ''
-    }
+    const validId = sp.find(s => s.id === savedSpaceId)?.id ?? sp[0]?.id ?? ''
     setActiveSpaceId(validId)
-    // Hydrate last-real-space id. Falls back to the active id (when it's a
-    // real space) and finally to the first space — so clicking a nav tab
-    // from All Spaces always has somewhere to land, even on first run.
-    const savedLastReal = localStorage.getItem('hq-last-real-space-id')
-    const validLastReal =
-      sp.find(s => s.id === savedLastReal)?.id
-      ?? (validId !== ALL_SPACES_ID ? validId : sp[0]?.id)
-      ?? ''
-    setLastRealSpaceId(validLastReal)
     setLoading(false)
   }, [])
 
@@ -288,7 +253,6 @@ export default function HQPage() {
   // immediately prior week; deeper gaps can be closed manually from Focus.
   useEffect(() => {
     if (loading || !activeSpaceId || forceCheckDoneRef.current) return
-    if (activeSpaceId === ALL_SPACES_ID) return // no single space to scope to
     if (closingWizard) return // already open (rare, but don't clobber)
     forceCheckDoneRef.current = true
 
@@ -367,12 +331,12 @@ export default function HQPage() {
 
   const initials = user.email?.slice(0, 2).toUpperCase() ?? 'HQ'
   const parkedCount = roadmapItems.filter(i => i.is_parked).length
-  const isAllSpaces = activeSpaceId === ALL_SPACES_ID
 
-  // Click handlers fired from Summary. Both flip out of all-spaces mode by
-  // committing the target real space, then route into the right tab and
-  // pop the corresponding panel — reusing the openObjectiveId / openActionId
-  // plumbing that OKRs and Focus already wire up for in-space clicks.
+  // Click handlers fired from Summary. Both commit the target real space, then
+  // route into the right tab and pop the corresponding panel — reusing the
+  // openObjectiveId / openActionId plumbing that OKRs and Focus already wire
+  // up for in-space clicks. setScreen implicitly leaves the Overview view
+  // by switching to a per-space tab.
   function openObjectiveFromSummary(spaceId: string, objectiveId: string) {
     switchSpace(spaceId)
     setScreen('okr')
@@ -392,8 +356,8 @@ export default function HQPage() {
   }
 
   // Checkbox handlers fired from Summary. Toggle in place; do NOT switch
-  // space or screen. Keeps the user in the All Spaces overview while they
-  // tick things off.
+  // space or screen. Keeps the user on the Overview while they tick things
+  // off.
   async function toggleActionFromSummary(action: WeeklyAction) {
     try {
       const updated = await actionsDb.update(action.id, { completed: !action.completed })
@@ -421,9 +385,8 @@ export default function HQPage() {
   }
 
   // Space-scoped data — everything filters from the active space's objectives.
-  // When in All Spaces mode these are all empty (no real space matches the
-  // sentinel id), but Summary takes the un-scoped lists directly so it
-  // doesn't matter. The space-scoped slices below stay safe to compute.
+  // activeSpaceId always holds a real space; the Overview screen consumes the
+  // un-scoped lists directly through Summary and doesn't read these slices.
   const activeSpace = spaces.find(s => s.id === activeSpaceId)
   const spaceObjectives = objectives.filter(o => o.space_id === activeSpaceId)
   const spaceObjectiveIds = new Set(spaceObjectives.map(o => o.id))
@@ -444,43 +407,24 @@ export default function HQPage() {
   // first match is fine.
   const draftReview = spaceReviews.find(r => r.closed_at == null) ?? null
 
-  // Nav click handler. From a real space, this is just setScreen. From All
-  // Spaces, it pivots into the last-used real space first (per-screen tabs
-  // assume a single space, so there's no useful "All Spaces Focus" view).
-  // Fallback to first space if for some reason there's no last-real id.
+  // Nav click handler. Just setScreen, plus a focus-week snap.
   //
   // Focus snap: if weekStart is in the past, advance it to today's Monday.
   // Past weeks are read-only territory for the Reflect tab; Focus from the
-  // bottom nav should land on "now," not wherever the user last walked
-  // backward to with Focus's own ‹ button (which persisted to localStorage).
-  // Forward weekStart values (e.g. pre-planned next week) are left alone.
-  // Other entry points to Focus that intentionally target a specific week —
+  // nav should land on "now," not wherever the user last walked backward to
+  // with Focus's own ‹ button (which persisted to localStorage). Forward
+  // weekStart values (e.g. pre-planned next week) are left alone. Other
+  // entry points to Focus that intentionally target a specific week —
   // openActionFromSummary, the close-week wizard's commitFinish — set
   // weekStart directly without going through goToScreen, so they're
   // unaffected by this snap.
   function goToScreen(target: Screen) {
-    if (isAllSpaces) {
-      const fallbackId = lastRealSpaceId || spaces[0]?.id || ''
-      if (fallbackId) switchSpace(fallbackId)
-    }
     if (target === 'focus') {
       const today = getMonday()
       if (weekStart < today) setWeekStart(() => today)
     }
     setScreen(target)
   }
-
-  // FastCapture target — uses the active space normally, falls back to the
-  // last-used real space when in All Spaces. Empty string means "nothing to
-  // target" (only possible for fresh users with zero spaces); in that case
-  // the FastCapture FAB is suppressed entirely.
-  const fastCaptureSpaceId = isAllSpaces ? lastRealSpaceId : activeSpaceId
-  const fastCaptureObjectives = isAllSpaces
-    ? objectives.filter(o => o.space_id === lastRealSpaceId)
-    : spaceObjectives
-  const fastCaptureRoadmapItems = isAllSpaces
-    ? roadmapItems.filter(i => i.space_id === lastRealSpaceId)
-    : spaceRoadmapItems
 
   // Active-screen detection is now owned by NavRail; the bottom nav and its
   // NAV/navActive scaffolding were removed when the rail landed.
@@ -489,7 +433,6 @@ export default function HQPage() {
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--navy-900)' }}>
       <NavRail
         screen={screen}
-        isAllSpaces={isAllSpaces}
         onScreenChange={goToScreen}
         spaces={spaces}
         activeSpaceId={activeSpaceId}
@@ -564,7 +507,7 @@ export default function HQPage() {
       {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}
-      {screen === 'tasks' && !isAllSpaces && !loading ? (
+      {screen === 'tasks' && !loading ? (
         <Tasks
           spaces={spaces}
           activeSpaceId={activeSpaceId}
@@ -581,7 +524,7 @@ export default function HQPage() {
           onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
           toast={setToast}
         />
-      ) : screen === 'notes' && !isAllSpaces && !loading ? (
+      ) : screen === 'notes' && !loading ? (
         <Notes
           spaces={spaces}
           activeSpaceId={activeSpaceId}
@@ -590,7 +533,7 @@ export default function HQPage() {
           onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
           toast={setToast}
         />
-      ) : screen === 'tags' && !isAllSpaces && !loading ? (
+      ) : screen === 'tags' && !loading ? (
         <Tags
           spaces={spaces}
           initialTag={tagsInitialTag}
@@ -599,13 +542,13 @@ export default function HQPage() {
           toast={setToast}
         />
       ) : (
-      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: isAllSpaces || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'overview' || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
             Loading…
           </div>
-        ) : isAllSpaces ? (
+        ) : screen === 'overview' ? (
           <Summary
             spaces={spaces}
             objectives={objectives}
@@ -671,15 +614,15 @@ export default function HQPage() {
       )}
       </div>
 
-      {/* FastCapture — also visible in All Spaces, where it targets the
-          last-used real space. Only suppressed if there's no real space at
-          all (no-op edge case for fresh users with zero spaces). */}
-      {fastCaptureSpaceId && (
+      {/* FastCapture — visible on every screen including Overview. Targets
+          the currently active real space; suppressed only if there's no real
+          space at all (no-op edge case for fresh users with zero spaces). */}
+      {activeSpaceId && (
       <FastCapture
-        objectives={fastCaptureObjectives}
-        roadmapItems={fastCaptureRoadmapItems}
+        objectives={spaceObjectives}
+        roadmapItems={spaceRoadmapItems}
         weekStart={weekStart}
-        activeSpaceId={fastCaptureSpaceId}
+        activeSpaceId={activeSpaceId}
         setObjectives={setObjectives}
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}
