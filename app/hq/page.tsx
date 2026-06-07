@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, Notebook, Note } from '@/lib/types'
 import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
@@ -13,6 +13,9 @@ import * as spacesDb from '@/lib/db/spaces'
 import * as shareTokensDb from '@/lib/db/shareTokens'
 import * as tasksDb from '@/lib/db/tasks'
 import * as taskListsDb from '@/lib/db/taskLists'
+import * as notebooksDb from '@/lib/db/notebooks'
+import * as notesDb from '@/lib/db/notes'
+import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
@@ -32,7 +35,7 @@ import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'tags'
 
-interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string }
+interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string; noteId?: string }
 
 export default function HQPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -74,6 +77,11 @@ export default function HQPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [taskLists, setTaskLists] = useState<TaskList[]>([])
   const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
+  // Notes state (Jun 2026). Lifted from Notes.tsx so global search can match
+  // note titles and body text. Same pattern as the Tasks lift (May 18).
+  const [notebooks, setNotebooks] = useState<Notebook[]>([])
+  const [notes, setNotes] = useState<Note[]>([])
+  const [tagsByNote, setTagsByNote] = useState<Map<string, string[]>>(new Map())
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
@@ -191,7 +199,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, nb, nt] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -205,6 +213,8 @@ export default function HQPage() {
       shareTokensDb.findActiveByLabel('Melissa').catch(fallback('share_tokens', null)),
       tasksDb.listAll().catch(fallback('tasks', [] as Task[])),
       taskListsDb.listAll().catch(fallback('task_lists', [] as TaskList[])),
+      notebooksDb.listAll().catch(fallback('notebooks', [] as Notebook[])),
+      notesDb.listAll().catch(fallback('notes', [] as Note[])),
     ])
     setObjectives(o)
     setRoadmapItems(r)
@@ -219,6 +229,8 @@ export default function HQPage() {
     if (st) setShareToken(st.token)
     setTasks(tk)
     setTaskLists(tl)
+    setNotebooks(nb)
+    setNotes(nt)
     // Tags follow tasks — a second query keyed by the loaded task ids. If
     // it fails we silently fall back to empty (tag-driven UI degrades to
     // "no tags," which is preferable to blocking task load).
@@ -234,6 +246,20 @@ export default function HQPage() {
     } catch (err) {
       console.error('loadAll: task_tags failed:', err)
       setTagsByTask(new Map())
+    }
+    // Note tags — same pattern as task_tags above.
+    try {
+      const noteTagRows = await notesDb.listTagsForNotes(nt.map(n => n.id))
+      const map = new Map<string, string[]>()
+      for (const row of noteTagRows) {
+        const arr = map.get(row.note_id) ?? []
+        arr.push(row.tag)
+        map.set(row.note_id, arr)
+      }
+      setTagsByNote(map)
+    } catch (err) {
+      console.error('loadAll: note_tags failed:', err)
+      setTagsByNote(new Map())
     }
     // Set active space from localStorage or default to first.
     const savedSpaceId = localStorage.getItem('hq-active-space')
@@ -308,7 +334,17 @@ export default function HQPage() {
     const doneTaskMatches = tasks.filter(t =>  t.completed_at && t.title.toLowerCase().includes(q))
     for (const t of openTaskMatches) results.push({ label: t.title, sub: 'Task', screen: 'tasks', taskId: t.id })
     for (const t of doneTaskMatches) results.push({ label: t.title, sub: 'Task · done', screen: 'tasks', taskId: t.id })
-    return results.slice(0, 8)
+    // Notes (Jun 2026). Match title first, then body text. Carries noteId
+    // for deep-link via notesInitialId — Notes.tsx routes to the note's
+    // container and selects it.
+    for (const n of notes) {
+      const titleMatch = n.title.toLowerCase().includes(q)
+      const bodyMatch = !titleMatch && extractNoteText(n.body).toLowerCase().includes(q)
+      if (titleMatch || bodyMatch) {
+        results.push({ label: n.title || 'Untitled', sub: bodyMatch ? 'Note · body match' : 'Note', screen: 'notes', noteId: n.id })
+      }
+    }
+    return results.slice(0, 10)
   })()
 
   function copyShareLink() {
@@ -457,9 +493,12 @@ export default function HQPage() {
         searchResults={searchResults}
         onPickResult={(r) => {
           // Deep-link by sub-type. Tasks land via tasksInitialId so
-          // Tasks.tsx auto-selects the row. Everything else just routes.
+          // Tasks.tsx auto-selects the row. Notes via notesInitialId.
           if (r.screen === 'tasks' && r.taskId) {
             setTasksInitialId(r.taskId)
+          }
+          if (r.screen === 'notes' && r.noteId) {
+            setNotesInitialId(r.noteId)
           }
           goToScreen(r.screen)
         }}
@@ -528,6 +567,12 @@ export default function HQPage() {
         <Notes
           spaces={spaces}
           activeSpaceId={activeSpaceId}
+          notebooks={notebooks}
+          setNotebooks={setNotebooks}
+          notes={notes}
+          setNotes={setNotes}
+          tagsByNote={tagsByNote}
+          setTagsByNote={setTagsByNote}
           initialNoteId={notesInitialId}
           onConsumeInitialNoteId={() => setNotesInitialId(null)}
           onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}

@@ -17,6 +17,7 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Space, Notebook, Note, NoteTag, NoteBody } from '@/lib/types'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
+import { extractNoteText } from '@/lib/noteText'
 import { useIsMobile } from '@/lib/useIsMobile'
 import { useEditor, EditorContent, Editor } from '@tiptap/react'
 import type { Content } from '@tiptap/react'
@@ -28,6 +29,13 @@ import Placeholder from '@tiptap/extension-placeholder'
 interface Props {
   spaces: Space[]
   activeSpaceId: string
+  // Lifted state (Jun 2026) — page.tsx owns the data, Notes owns the UI.
+  notebooks: Notebook[]
+  setNotebooks: React.Dispatch<React.SetStateAction<Notebook[]>>
+  notes: Note[]
+  setNotes: React.Dispatch<React.SetStateAction<Note[]>>
+  tagsByNote: Map<string, string[]>
+  setTagsByNote: React.Dispatch<React.SetStateAction<Map<string, string[]>>>
   /** Note to focus when entering — set by cross-app jump from Tags. */
   initialNoteId?: string | null
   /** Called once the initial selection has been consumed. */
@@ -52,11 +60,7 @@ type Scope =
 
 const EMPTY_DOC: NoteBody = { type: 'doc', content: [{ type: 'paragraph' }] }
 
-export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeInitialNoteId, onJumpToTag, toast }: Props) {
-  const [notebooks, setNotebooks] = useState<Notebook[]>([])
-  const [notes, setNotes] = useState<Note[]>([])
-  const [tagsByNote, setTagsByNote] = useState<Map<string, string[]>>(new Map())
-  const [loading, setLoading] = useState(true)
+export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, notes, setNotes, tagsByNote, setTagsByNote, initialNoteId, onConsumeInitialNoteId, onJumpToTag, toast }: Props) {
   const [scope, setScope] = useState<Scope>({ kind: 'inbox' })
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   // Left-pane UI state
@@ -75,43 +79,10 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
   const [mobileListOpen, setMobileListOpen] = useState(false)
 
-  // ── Load everything on mount ─────────────────────────────────────
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const [nbRows, nRows] = await Promise.all([
-          notebooksDb.listAll(),
-          notesDb.listAll(),
-        ])
-        if (cancelled) return
-        setNotebooks(nbRows)
-        setNotes(nRows)
-        const tagRows = await notesDb.listTagsForNotes(nRows.map(n => n.id))
-        if (cancelled) return
-        const map = new Map<string, string[]>()
-        for (const row of tagRows) {
-          const arr = map.get(row.note_id) ?? []
-          arr.push(row.tag)
-          map.set(row.note_id, arr)
-        }
-        setTagsByNote(map)
-      } catch (e) {
-        console.error('notes load failed', e)
-        toast('Failed to load notes')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [toast])
-
   // Cross-app jump: when Tags hands us an initialNoteId, find the note,
   // switch scope to its container, and select it.
   useEffect(() => {
     if (!initialNoteId) return
-    if (loading) return
     const target = notes.find(n => n.id === initialNoteId)
     if (target) {
       if (target.notebook_id) setScope({ kind: 'notebook', notebookId: target.notebook_id })
@@ -120,7 +91,7 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
       setSelectedNoteId(target.id)
     }
     onConsumeInitialNoteId?.()
-  }, [initialNoteId, loading, notes, onConsumeInitialNoteId])
+  }, [initialNoteId, notes, onConsumeInitialNoteId])
 
   // Derived: notebooks grouped by space, and by parent for nesting.
   const notebooksBySpace = useMemo(() => {
@@ -365,14 +336,6 @@ export default function Notes({ spaces, activeSpaceId, initialNoteId, onConsumeI
       if (next.has(notebookId)) next.delete(notebookId); else next.add(notebookId)
       return next
     })
-  }
-
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--navy-400)', fontSize: 13 }}>
-        <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
-      </div>
-    )
   }
 
   return (
@@ -881,7 +844,7 @@ function SubNotebookInputPortal({ value, setValue, onCommit, onCancel }: {
 function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
   note: Note; tags: string[]; selected: boolean; onClick: () => void; onTagClick?: (tag: string) => void
 }) {
-  const preview = useMemo(() => extractText(note.body).slice(0, 140), [note.body])
+  const preview = useMemo(() => extractNoteText(note.body).slice(0, 140), [note.body])
   return (
     <button onClick={onClick}
       style={{
@@ -1127,20 +1090,6 @@ function Toolbar({ editor }: { editor: Editor | null }) {
 }
 
 // ── Helpers ────────────────────────────────────────────────────────
-
-/** Walk a TipTap doc and concatenate text nodes for previews. */
-function extractText(body: NoteBody | null): string {
-  if (!body || typeof body !== 'object') return ''
-  const out: string[] = []
-  function walk(n: unknown) {
-    if (!n || typeof n !== 'object') return
-    const node = n as Record<string, unknown>
-    if (typeof node.text === 'string') out.push(node.text)
-    if (Array.isArray(node.content)) for (const c of node.content) walk(c)
-  }
-  walk(body)
-  return out.join(' ').replace(/\s+/g, ' ').trim()
-}
 
 function formatRelative(iso: string): string {
   const d = new Date(iso)

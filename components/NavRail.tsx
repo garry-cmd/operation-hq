@@ -19,7 +19,7 @@ import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
 export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
 
-export interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string }
+export interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string; noteId?: string }
 
 interface Props {
   screen: Screen
