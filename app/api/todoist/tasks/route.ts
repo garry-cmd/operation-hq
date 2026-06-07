@@ -11,10 +11,9 @@ export async function GET() {
 
   try {
     const res = await fetch(
-      'https://api.todoist.com/rest/v2/tasks?filter=' + encodeURIComponent('today | overdue'),
+      'https://api.todoist.com/api/v1/tasks',
       {
         headers: { Authorization: `Bearer ${token}` },
-        // Don't let Next.js cache this indefinitely — Todoist data changes often
         cache: 'no-store',
       }
     )
@@ -26,7 +25,12 @@ export async function GET() {
         { status: 502 }
       )
     }
-    const tasks = await res.json()
+    const allTasks = await res.json()
+    // Filter to today + overdue (server-side, since we can't use the filter param reliably)
+    const today = new Date().toISOString().slice(0, 10)
+    const tasks = allTasks.filter((t: { due?: { date?: string } | null }) =>
+      t.due?.date && t.due.date <= today
+    )
     return NextResponse.json(tasks, {
       headers: { 'Cache-Control': 'private, max-age=60' },
     })
