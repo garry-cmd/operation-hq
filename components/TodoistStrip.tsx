@@ -14,7 +14,6 @@ interface TodoistTask {
   labels: string[]
   priority: number
   due: { date: string; string: string; is_recurring: boolean } | null
-  url: string
 }
 
 export default function TodoistStrip() {
@@ -39,14 +38,18 @@ export default function TodoistStrip() {
   // Nothing to show — hide entirely
   if (!loaded || tasks.length === 0) return null
 
-  const today = new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
-  // Overdue first, then today; within each group sort alphabetically
-  const overdue = tasks.filter(t => t.due && t.due.date < today)
-  const todayTasks = tasks.filter(t => !t.due || t.due.date >= today)
+  // Overdue first, then today; normalize datetime strings to date-only for comparison
+  const dateOf = (d: string) => d.includes('T') ? d.split('T')[0] : d
+  const overdue = tasks.filter(t => t.due && dateOf(t.due.date) < today)
+  const todayTasks = tasks.filter(t => !t.due || dateOf(t.due.date) >= today)
 
   function daysOverdue(dateStr: string): string {
-    const d = Math.floor((Date.now() - new Date(dateStr + 'T12:00:00').getTime()) / 86400000)
+    // due.date can be "2026-06-05" or "2026-06-05T09:00:00" — handle both
+    const dateOnly = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr
+    const d = Math.floor((Date.now() - new Date(dateOnly + 'T12:00:00').getTime()) / 86400000)
     if (d <= 0) return 'today'
     if (d === 1) return '1d over'
     return `${d}d over`
@@ -120,7 +123,7 @@ export default function TodoistStrip() {
 
             {/* Due pill */}
             {task.due && (() => {
-              const isOver = task.due!.date < today
+              const isOver = dateOf(task.due!.date) < today
               return (
                 <span style={{
                   fontSize: 10, fontWeight: 700, padding: '1px 8px',
@@ -135,7 +138,7 @@ export default function TodoistStrip() {
 
             {/* External link */}
             <a
-              href={task.url}
+              href={`https://app.todoist.com/app/task/${task.id}`}
               target="_blank"
               rel="noopener noreferrer"
               title="Open in Todoist"
