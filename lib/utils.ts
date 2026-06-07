@@ -76,3 +76,17 @@ export function formatDate(dateStr: string): string {
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })
 }
+
+/**
+ * Format a minute count as a compact human label: 45 -> "45m", 60 -> "1h",
+ * 90 -> "1h 30m". Returns '' for null/0 so callers can skip rendering.
+ * Used by the Focus action-row duration badge and the ActionPanel picker.
+ */
+export function formatMinutes(mins: number | null | undefined): string {
+  if (!mins || mins <= 0) return ''
+  const h = Math.floor(mins / 60)
+  const m = mins % 60
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
+}

@@ -21,6 +21,7 @@ export type NewActionInput = {
   completed?: boolean
   carried_over?: boolean
   is_recurring?: boolean
+  estimated_minutes?: number | null
 }
 
 /** All actions across all weeks, ordered by created_at. */

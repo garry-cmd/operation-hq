@@ -113,6 +113,10 @@ export interface WeeklyAction {
   carried_over: boolean
   is_recurring: boolean
   tag: ActionTag | null
+  // Estimated work duration in minutes. NULL = unestimated. Feeds the
+  // big-rock -> Todoist -> Google Calendar time-blocking flow (a synced
+  // calendar block needs a duration). Added 2026-06-07.
+  estimated_minutes: number | null
   created_at: string
 }
 

@@ -249,8 +249,8 @@ export default function CloseWeekWizard({
         const carrying = closing.filter(a => !a.is_recurring && !a.completed && !dup(a))
 
         const inserts = [
-          ...recurring.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: nextWeek, is_recurring: true,  carried_over: false, completed: false })),
-          ...carrying.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: nextWeek, is_recurring: false, carried_over: true,  completed: false })),
+          ...recurring.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: nextWeek, is_recurring: true,  carried_over: false, completed: false, estimated_minutes: a.estimated_minutes })),
+          ...carrying.map(a => ({ roadmap_item_id: a.roadmap_item_id, title: a.title, week_start: nextWeek, is_recurring: false, carried_over: true,  completed: false, estimated_minutes: a.estimated_minutes })),
         ]
         if (inserts.length > 0) {
           try {

@@ -21,6 +21,7 @@ import { useState } from 'react'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog } from '@/lib/types'
 import * as actionsDb from '@/lib/db/actions'
 import * as extrasDb from '@/lib/db/objectiveExtras'
+import { formatMinutes } from '@/lib/utils'
 import MarkdownBody from './MarkdownBody'
 
 // Mirrors Focus.tsx's TAG_STYLE — kept in sync manually for now since
@@ -111,6 +112,18 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
     } catch (err) {
       console.error('toggleRecurring failed:', err)
       toast('Failed to update recurring.')
+    }
+  }
+
+  // Estimated duration in minutes. Clicking the active preset clears it (null).
+  // Feeds the Todoist -> Google Calendar time-block duration downstream.
+  async function setDuration(mins: number | null) {
+    try {
+      const updated = await actionsDb.update(action.id, { estimated_minutes: mins })
+      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
+    } catch (err) {
+      console.error('setDuration failed:', err)
+      toast('Failed to update duration.')
     }
   }
 
@@ -248,6 +261,23 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <TagPickerPill active={action.is_recurring} onClick={toggleRecurring}
             bg="var(--accent-dim)" color="var(--accent)" label="↻ weekly" outlineColor="var(--accent)" />
+        </div>
+
+        {/* Estimated duration — preset minute buckets. Click the active one to
+            clear. Drives the calendar time-block length downstream. */}
+        <div style={{ marginTop: 10 }}>
+          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 6 }}>
+            Estimated duration
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[15, 30, 45, 60, 90, 120].map(mins => (
+              <TagPickerPill key={mins}
+                active={action.estimated_minutes === mins}
+                onClick={() => setDuration(action.estimated_minutes === mins ? null : mins)}
+                bg="var(--accent-dim)" color="var(--accent)" label={formatMinutes(mins)}
+                outlineColor="var(--accent)" />
+            ))}
+          </div>
         </div>
       </div>
 

@@ -3,7 +3,7 @@ import { Fragment, useState } from 'react'
 import * as actionsDb from '@/lib/db/actions'
 import * as checkinsDb from '@/lib/db/checkins'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog, HabitCheckin } from '@/lib/types'
-import { ACTIVE_Q, addWeeks, formatWeek, parseDateLocal } from '@/lib/utils'
+import { ACTIVE_Q, addWeeks, formatWeek, formatMinutes, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
 
@@ -454,6 +454,7 @@ export default function Focus({
                           {action.tag && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: TAG_STYLE[action.tag].bg, color: TAG_STYLE[action.tag].color, flexShrink: 0 }}>{TAG_STYLE[action.tag].label}</span>}
                           {action.carried_over && <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', flexShrink: 0 }}>carried</span>}
                           {action.is_recurring && <span title="Repeats weekly" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3 }}>↻ weekly</span>}
+                          {action.estimated_minutes != null && <span title="Estimated duration" style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 99, background: 'var(--slate-bg)', color: 'var(--slate-text)', flexShrink: 0 }}>{formatMinutes(action.estimated_minutes)}</span>}
                         </div>
                       </div>
                     ))}
