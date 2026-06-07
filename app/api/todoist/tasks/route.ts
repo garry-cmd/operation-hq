@@ -25,11 +25,16 @@ export async function GET() {
       )
     }
     const data = await res.json()
-    // v1 API returns { results: [...] } (paginated), not a flat array like v2 did
-    const allTasks: Array<{ due?: { date?: string } | null }> = Array.isArray(data) ? data : (data.results ?? [])
-    // Filter to today + overdue
+    // DEBUG: expose the raw response shape
+    const isArr = Array.isArray(data)
+    const keys = isArr ? 'top-level-array' : Object.keys(data)
+    const allTasks = isArr ? data : (data.results ?? data.items ?? data.tasks ?? [])
     const today = new Date().toISOString().slice(0, 10)
-    const tasks = allTasks.filter(t => t.due?.date && t.due.date <= today)
+    const tasks = allTasks.filter((t: Record<string, unknown>) => {
+      const due = t.due as Record<string, unknown> | null | undefined
+      return due && typeof due.date === 'string' && due.date <= today
+    })
+    return NextResponse.json({ _keys: keys, _total: allTasks.length, _filtered: tasks.length, _sample: allTasks[0] ?? null, tasks }, {
     return NextResponse.json(tasks, {
       headers: { 'Cache-Control': 'private, max-age=60' },
     })
