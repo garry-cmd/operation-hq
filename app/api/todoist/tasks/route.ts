@@ -35,7 +35,6 @@ export async function GET() {
       return due && typeof due.date === 'string' && due.date <= today
     })
     return NextResponse.json({ _keys: keys, _total: allTasks.length, _filtered: tasks.length, _sample: allTasks[0] ?? null, tasks }, {
-    return NextResponse.json(tasks, {
       headers: { 'Cache-Control': 'private, max-age=60' },
     })
   } catch (err) {
