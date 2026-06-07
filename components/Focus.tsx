@@ -26,6 +26,7 @@ const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }>
 
 import PlanWeek from './PlanWeek'
 import ActionPanel from './ActionPanel'
+import TodoistStrip from './TodoistStrip'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -525,6 +526,9 @@ export default function Focus({
             </div>
           )}
         </div>
+
+        {/* Todoist: today + overdue tasks — operational layer below strategic actions */}
+        <TodoistStrip />
 
       </div>
     </>
