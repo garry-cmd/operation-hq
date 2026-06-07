@@ -24,12 +24,12 @@ export async function GET() {
         { status: 502 }
       )
     }
-    const allTasks = await res.json()
-    // Filter to today + overdue (server-side, since we can't use the filter param reliably)
+    const data = await res.json()
+    // v1 API returns { results: [...] } (paginated), not a flat array like v2 did
+    const allTasks: Array<{ due?: { date?: string } | null }> = Array.isArray(data) ? data : (data.results ?? [])
+    // Filter to today + overdue
     const today = new Date().toISOString().slice(0, 10)
-    const tasks = allTasks.filter((t: { due?: { date?: string } | null }) =>
-      t.due?.date && t.due.date <= today
-    )
+    const tasks = allTasks.filter(t => t.due?.date && t.due.date <= today)
     return NextResponse.json(tasks, {
       headers: { 'Cache-Control': 'private, max-age=60' },
     })
