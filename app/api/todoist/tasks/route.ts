@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const token = process.env.TODOIST_API_TOKEN
   if (!token) {
@@ -12,10 +14,7 @@ export async function GET() {
   try {
     const res = await fetch(
       'https://api.todoist.com/api/v1/tasks',
-      {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      }
+      { headers: { Authorization: `Bearer ${token}` } }
     )
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -35,9 +34,10 @@ export async function GET() {
       headers: { 'Cache-Control': 'private, max-age=60' },
     })
   } catch (err) {
-    console.error('Todoist fetch failed:', err)
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error('Todoist fetch failed:', msg)
     return NextResponse.json(
-      { error: 'Failed to reach Todoist' },
+      { error: 'Failed to reach Todoist', detail: msg },
       { status: 502 }
     )
   }
