@@ -1,9 +1,9 @@
 'use client'
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
-import { ACTIVE_Q, COLORS } from '@/lib/utils'
+import { ACTIVE_Q, COLORS, parseDateLocal } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
 import { recentCheckins, sparklineTrend } from '@/lib/metricUtils'
 import { getQuarterRange } from '@/lib/dateBuckets'
@@ -528,16 +528,17 @@ function MetricKPICard({
   // Last 12 checkins, descending. Used for current + delta only.
   const latest12Desc = recentCheckins(checkins, kr.id, 12)
 
-  // Quarter-scoped chronological series for the sparkline — weekly check-ins
-  // whose week_start falls inside the active quarter, oldest → newest. Scaled
-  // to its own min/max (not anchored to target) so the *movement* is legible;
-  // a far-off target would flatten the line. Needs ≥2 points to draw.
+  // Quarter-scoped readings — weekly check-ins whose week_start falls inside
+  // the active quarter, oldest → newest. Drives both the sparkline (values,
+  // scaled to own min/max so movement is legible) and the flip-side list.
   const qRange = getQuarterRange(ACTIVE_Q)
-  const quarterSeries = checkins
+  const qReadingsAsc = checkins
     .filter(c => c.roadmap_item_id === kr.id && (!qRange || (c.week_start >= qRange.start && c.week_start <= qRange.end)))
+    .map(c => ({ week_start: c.week_start, value: Number(c.value) }))
+    .filter(r => !Number.isNaN(r.value))
     .sort((a, b) => a.week_start.localeCompare(b.week_start))
-    .map(c => Number(c.value))
-    .filter(v => !Number.isNaN(v))
+  const quarterSeries = qReadingsAsc.map(r => r.value)
+  const readingsDesc = [...qReadingsAsc].reverse()
 
   const current = latest12Desc[0]?.value != null ? Number(latest12Desc[0].value) : null
   const previous = latest12Desc[1]?.value != null ? Number(latest12Desc[1].value) : null
@@ -575,47 +576,117 @@ function MetricKPICard({
   if (targetNum != null) tooltipParts.push(`Target ${formatMetricValue(targetNum, unit)}`)
   const tooltip = tooltipParts.join(' → ') || undefined
 
-  return (
-    <button onClick={onTap} title={tooltip} style={{
-      textAlign: 'left', fontFamily: 'inherit', cursor: 'pointer',
-      background: 'var(--navy-800)', border: '1px solid var(--navy-700)',
-      borderLeft: `3px solid ${borderAccent}`,
-      borderRadius: 8,
-      padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8,
-      width: '100%',
-    }}>
-      <div style={{ fontSize: 12, color: 'var(--nw-cream)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
-        {kr.title}
-      </div>
+  const [flipped, setFlipped] = useState(false)
+  const faceBase: CSSProperties = {
+    position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
+    background: 'var(--navy-800)', border: '1px solid var(--navy-700)',
+    borderLeft: `3px solid ${borderAccent}`, borderRadius: 8, display: 'flex', flexDirection: 'column',
+  }
+  const fmtRowVal = (v: number) => `${isPrefixCurrency(unit) ? unit.trim() : ''}${formatMetricNumber(v)}`
+  const fmtShortDate = (d: string) => {
+    const dt = parseDateLocal(d)
+    return `${dt.toLocaleDateString('en-US', { month: 'short' })} ${dt.getDate()}`
+  }
 
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-        {current != null ? (
-          <>
-            <span style={{ fontSize: 28, fontWeight: 700, color: heroColor, lineHeight: 1, letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>
-              {isPrefixCurrency(unit) && unit.trim()}{formatMetricNumber(current)}
-            </span>
-            {isMeaningfulUnit(unit) && !isPrefixCurrency(unit) && <span style={{ fontSize: 13, color: 'var(--nw-label-dim)' }}>{unit.trim()}</span>}
-            {delta != null && (
-              <span style={{
-                fontSize: 11, fontWeight: 700, marginLeft: 4,
-                color: deltaIsGood == null ? 'var(--nw-label-dim)' : (deltaIsGood ? 'var(--nw-nominal-text)' : 'var(--nw-alarm-text)'),
-              }}>
-                {delta > 0 ? '↑ +' : delta < 0 ? '↓ ' : ''}
-                {formatMetricNumber(Number(delta.toFixed(2)))}
+  return (
+    <div style={{ perspective: 1200 }}>
+      <div
+        onClick={() => setFlipped(f => !f)}
+        style={{
+          position: 'relative', height: 168, cursor: 'pointer',
+          transformStyle: 'preserve-3d', transition: 'transform .5s cubic-bezier(.4,0,.2,1)',
+          transform: flipped ? 'rotateY(180deg)' : 'none',
+        }}>
+
+        {/* ── FRONT ── */}
+        <div title={tooltip} style={{ ...faceBase, padding: '14px 16px', gap: 8 }}>
+          <div style={{ fontSize: 12, color: 'var(--nw-cream)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: 500 }}>
+            {kr.title}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
+            {current != null ? (
+              <>
+                <span style={{ fontSize: 28, fontWeight: 700, color: heroColor, lineHeight: 1, letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>
+                  {isPrefixCurrency(unit) && unit.trim()}{formatMetricNumber(current)}
+                </span>
+                {isMeaningfulUnit(unit) && !isPrefixCurrency(unit) && <span style={{ fontSize: 13, color: 'var(--nw-label-dim)' }}>{unit.trim()}</span>}
+                {delta != null && (
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, marginLeft: 4,
+                    color: deltaIsGood == null ? 'var(--nw-label-dim)' : (deltaIsGood ? 'var(--nw-nominal-text)' : 'var(--nw-alarm-text)'),
+                  }}>
+                    {delta > 0 ? '↑ +' : delta < 0 ? '↓ ' : ''}
+                    {formatMetricNumber(Number(delta.toFixed(2)))}
+                  </span>
+                )}
+              </>
+            ) : (
+              <span style={{ fontSize: 14, fontStyle: 'italic', color: 'var(--nw-label-dim)' }}>
+                No readings yet
               </span>
             )}
-          </>
-        ) : (
-          <span style={{ fontSize: 14, fontStyle: 'italic', color: 'var(--nw-label-dim)' }}>
-            No readings yet
-          </span>
-        )}
-      </div>
+          </div>
 
-      {quarterSeries.length >= 2 && (
-        <MetricSparkline id={kr.id} values={quarterSeries} direction={kr.metric_direction} />
-      )}
-    </button>
+          {quarterSeries.length >= 2 && (
+            <MetricSparkline id={kr.id} values={quarterSeries} direction={kr.metric_direction} />
+          )}
+
+          <div style={{ position: 'absolute', right: 12, bottom: 9, display: 'flex', alignItems: 'center', gap: 4, fontSize: 9.5, fontWeight: 600, letterSpacing: '.04em', textTransform: 'uppercase', color: 'var(--navy-400)' }}>
+            ⟲ readings
+          </div>
+        </div>
+
+        {/* ── BACK ── */}
+        <div style={{ ...faceBase, transform: 'rotateY(180deg)', padding: '11px 12px 10px', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 9.5, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Readings</span>
+            <span style={{ fontSize: 9.5, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>
+              {qReadingsAsc.length === 0 ? 'none yet' : `${qReadingsAsc.length} this quarter`}
+            </span>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', margin: '2px -4px 0', padding: '0 4px' }}>
+            {readingsDesc.length === 0 ? (
+              <div style={{ fontSize: 12, fontStyle: 'italic', color: 'var(--nw-label-dim)', paddingTop: 8 }}>
+                No readings logged yet.
+              </div>
+            ) : readingsDesc.map((r, i) => {
+              const older = readingsDesc[i + 1]
+              const d = older ? r.value - older.value : null
+              const tone = d == null || Math.abs(d) < 1e-9 ? 'flat'
+                         : ((d > 0) === (kr.metric_direction === 'up') ? 'good' : 'bad')
+              const dColor = tone === 'good' ? 'var(--nw-nominal-text)' : tone === 'bad' ? 'var(--nw-alarm-text)' : 'var(--navy-400)'
+              return (
+                <div key={r.week_start} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '3px 0', borderBottom: i === readingsDesc.length - 1 ? 'none' : '1px solid var(--navy-700)' }}>
+                  <span style={{ fontSize: 11, color: 'var(--navy-300)', fontVariantNumeric: 'tabular-nums' }}>{fmtShortDate(r.week_start)}</span>
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--nw-cream)', fontVariantNumeric: 'tabular-nums' }}>{fmtRowVal(r.value)}</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: dColor, fontVariantNumeric: 'tabular-nums', minWidth: 30, textAlign: 'right' }}>
+                      {d == null ? 'start' : `${d > 0 ? '↑' : '↓'}${formatMetricNumber(Math.abs(Number(d.toFixed(2))))}`}
+                    </span>
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 6, borderTop: '1px solid var(--navy-700)' }}>
+            <button
+              onClick={e => { e.stopPropagation(); onTap() }}
+              style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: 'var(--accent)', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>
+              + Log
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); setFlipped(false) }}
+              style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+              ↩ back
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </div>
   )
 }
 
