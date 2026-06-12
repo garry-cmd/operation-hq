@@ -5,7 +5,8 @@ import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habitUtils'
-import { recentCheckins } from '@/lib/metricUtils'
+import { recentCheckins, sparklineTrend } from '@/lib/metricUtils'
+import { getQuarterRange } from '@/lib/dateBuckets'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
 import ObjectiveCard from './ObjectiveCard'
 import ObjectivePanel from './ObjectivePanel'
@@ -527,6 +528,17 @@ function MetricKPICard({
   // Last 12 checkins, descending. Used for current + delta only.
   const latest12Desc = recentCheckins(checkins, kr.id, 12)
 
+  // Quarter-scoped chronological series for the sparkline — weekly check-ins
+  // whose week_start falls inside the active quarter, oldest → newest. Scaled
+  // to its own min/max (not anchored to target) so the *movement* is legible;
+  // a far-off target would flatten the line. Needs ≥2 points to draw.
+  const qRange = getQuarterRange(ACTIVE_Q)
+  const quarterSeries = checkins
+    .filter(c => c.roadmap_item_id === kr.id && (!qRange || (c.week_start >= qRange.start && c.week_start <= qRange.end)))
+    .sort((a, b) => a.week_start.localeCompare(b.week_start))
+    .map(c => Number(c.value))
+    .filter(v => !Number.isNaN(v))
+
   const current = latest12Desc[0]?.value != null ? Number(latest12Desc[0].value) : null
   const previous = latest12Desc[1]?.value != null ? Number(latest12Desc[1].value) : null
   const delta = current != null && previous != null ? current - previous : null
@@ -599,7 +611,55 @@ function MetricKPICard({
           </span>
         )}
       </div>
+
+      {quarterSeries.length >= 2 && (
+        <MetricSparkline id={kr.id} values={quarterSeries} direction={kr.metric_direction} />
+      )}
     </button>
+  )
+}
+
+// MetricSparkline — quarter-trend line for a metric KPI card. Scaled to the
+// series' own min/max so movement is visible; line + soft area fill, colored
+// by whether the trend moves toward the KR's target (green) or away (red).
+// Stretches to card width via preserveAspectRatio="none" with non-scaling
+// strokes so the line stays crisp at any width. No end dot — a stretched
+// circle distorts into an ellipse, and the trailing line end reads fine.
+function MetricSparkline({ id, values, direction }: {
+  id: string
+  values: number[]
+  direction: 'up' | 'down' | null
+}) {
+  const W = 100, H = 26, PAD = 3
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = max - min || 1
+  const n = values.length
+  const xAt = (i: number) => (i / (n - 1)) * W
+  const yAt = (v: number) => H - PAD - ((v - min) / span) * (H - PAD * 2)
+  const pts = values.map((v, i) => `${xAt(i).toFixed(2)},${yAt(v).toFixed(2)}`)
+  const line = `M ${pts.join(' L ')}`
+  const area = `${line} L ${W.toFixed(2)},${H} L 0,${H} Z`
+
+  const trend = sparklineTrend(values, direction)
+  const color = trend === 'improving' ? 'var(--nw-nominal-text)'
+              : trend === 'declining' ? 'var(--nw-alarm-text)'
+              : 'var(--nw-standby-text)'
+  const gradId = `spark-${id}`
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" width="100%" height={H}
+      style={{ display: 'block', marginTop: 2 }} aria-hidden="true">
+      <defs>
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={area} fill={`url(#${gradId})`} stroke="none" />
+      <path d={line} fill="none" stroke={color} strokeWidth="1.5"
+        strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
   )
 }
 
