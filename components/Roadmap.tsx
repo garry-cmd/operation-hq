@@ -3,7 +3,8 @@ import { useState } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
-import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ } from '@/lib/utils'
+import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ, parseDateLocal } from '@/lib/utils'
+import { formatDateRange } from '@/lib/dateBuckets'
 import Modal from './Modal'
 
 type Props = {
@@ -138,6 +139,22 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                     <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-50)', flex: 1, textTransform: 'uppercase', letterSpacing: '.5px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {obj.name}
                     </div>
+                    {(() => {
+                      const text = formatDateRange(obj.start_date, obj.end_date)
+                      if (!text) return null
+                      const today = new Date(); today.setHours(0, 0, 0, 0)
+                      const overdue = !!(obj.end_date && parseDateLocal(obj.end_date) < today)
+                      return (
+                        <div style={{
+                          fontSize: 10.5, fontWeight: 600, flexShrink: 0,
+                          color: overdue ? 'var(--nw-alarm-text)' : hex2rgba(obj.color, 0.8),
+                          fontVariantNumeric: 'tabular-nums',
+                          letterSpacing: '.02em', whiteSpace: 'nowrap',
+                        }}>
+                          {text}{overdue && ' · overdue'}
+                        </div>
+                      )
+                    })()}
                     <button onClick={() => setModal({ type: 'edit_obj', obj })}
                       style={{ fontSize: 11, color: hex2rgba(obj.color, 0.7), background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', flexShrink: 0 }}>
                       Edit
@@ -345,14 +362,22 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon }
 }) {
   const [name, setName] = useState(obj?.name ?? '')
   const [color, setColor] = useState(obj?.color ?? COLORS[objectives.length % COLORS.length])
+  const [startDate, setStartDate] = useState<string>(obj?.start_date ?? '')
+  const [endDate, setEndDate] = useState<string>(obj?.end_date ?? '')
   const [saving, setSaving] = useState(false)
 
+  const dateError = !!(startDate && endDate && endDate < startDate)
+
   async function save() {
-    if (!name.trim()) return
+    if (!name.trim() || dateError) return
     setSaving(true)
     try {
       if (obj) {
-        const updated = await objectivesDb.update(obj.id, { name, color })
+        const updated = await objectivesDb.update(obj.id, {
+          name, color,
+          start_date: startDate || null,
+          end_date: endDate || null,
+        })
         onSave(updated)
       } else {
         const created = await objectivesDb.create({
@@ -361,6 +386,8 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon }
           sort_order: objectives.length,
           status: 'active',
           space_id: activeSpaceId,
+          start_date: startDate || null,
+          end_date: endDate || null,
         })
         onSave(created)
       }
@@ -381,7 +408,7 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon }
             {obj.status === 'abandoned' ? 'Restore' : 'Abandon'}
           </button>
         )}
-        <button className="btn-primary" onClick={save} disabled={saving || !name.trim()}>
+        <button className="btn-primary" onClick={save} disabled={saving || !name.trim() || dateError}>
           {saving ? 'Saving…' : 'Save'}
         </button>
       </>}>
@@ -398,6 +425,24 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon }
               style={{ width: 32, height: 32, borderRadius: '50%', background: c, border: color === c ? '3px solid var(--navy-50)' : '2px solid transparent', cursor: 'pointer', outline: color === c ? '2px solid ' + c : 'none', outlineOffset: 2 }} />
           ))}
         </div>
+      </div>
+      <div className="field">
+        <label>Time window <span style={{ color: 'var(--nw-label-dim)', fontWeight: 400 }}>(optional)</span></label>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'var(--nw-label-dim)' }}>Start</label>
+            <input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'var(--nw-label-dim)' }}>End</label>
+            <input className="input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+          </div>
+        </div>
+        {dateError && (
+          <div style={{ marginTop: 6, fontSize: 11, color: 'var(--nw-alarm-text)' }}>
+            End date can’t be before start date.
+          </div>
+        )}
       </div>
     </Modal>
   )

@@ -21,6 +21,8 @@ export type NewObjectiveInput = {
   status: AnnualObjective['status']
   space_id: string
   notes?: string
+  start_date?: string | null
+  end_date?: string | null
 }
 
 /** All objectives across all spaces, ordered by sort_order. */

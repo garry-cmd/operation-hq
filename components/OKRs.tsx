@@ -350,17 +350,25 @@ function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
   const [name, setName] = useState(objective.name)
   const [color, setColor] = useState(objective.color)
   const [status, setStatus] = useState(objective.status)
+  const [startDate, setStartDate] = useState<string>(objective.start_date ?? '')
+  const [endDate, setEndDate] = useState<string>(objective.end_date ?? '')
   const [saving, setSaving] = useState(false)
 
   async function save() {
     if (!name.trim()) return
+    if (startDate && endDate && endDate < startDate) {
+      toast('End date can\'t be before start date.')
+      return
+    }
     setSaving(true)
     
     try {
       const updatedObjective = {
         name: name.trim(),
         color: color,
-        status: status
+        status: status,
+        start_date: startDate || null,
+        end_date: endDate || null,
       }
       
       await onSave(updatedObjective)
@@ -425,6 +433,30 @@ function EditObjectiveModal({ objective, onClose, onSave, onDelete, toast }: {
               }} 
             />
           ))}
+        </div>
+      </div>
+
+      <div className="field">
+        <label>Time window <span style={{ color: 'var(--nw-label-dim)', fontWeight: 400 }}>(optional)</span></label>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'var(--nw-label-dim)' }}>Start</label>
+            <input
+              className="input"
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'var(--nw-label-dim)' }}>End</label>
+            <input
+              className="input"
+              type="date"
+              value={endDate}
+              onChange={e => setEndDate(e.target.value)}
+            />
+          </div>
         </div>
       </div>
 

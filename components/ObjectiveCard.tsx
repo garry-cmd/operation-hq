@@ -3,8 +3,8 @@ import React, { useState } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus, MetricCheckin } from '@/lib/types'
-import { ACTIVE_Q } from '@/lib/utils'
-import { getDefaultNewKRRange } from '@/lib/dateBuckets'
+import { ACTIVE_Q, parseDateLocal } from '@/lib/utils'
+import { getDefaultNewKRRange, formatDateRange } from '@/lib/dateBuckets'
 import KRDateChip from '@/components/KRDateChip'
 
 // Notes / links / files all live on the ObjectivePanel now (commit-5 panel
@@ -198,6 +198,16 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
     return Math.max(0, Math.ceil(ms / (7 * 24 * 60 * 60 * 1000)))
   })()
 
+  // Objective's own time window (distinct from the quarter-derived weeks-remain
+  // above). Quiet range line under the title; alarm-red once end_date passes.
+  // Dateless objectives render nothing here.
+  const objDateText = formatDateRange(obj.start_date, obj.end_date)
+  const objOverdue = (() => {
+    if (!obj.end_date) return false
+    const today = new Date(); today.setHours(0, 0, 0, 0)
+    return parseDateLocal(obj.end_date) < today
+  })()
+
   return (
     <>
       <div style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 12, border: `1px solid var(--navy-700)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--navy-800)', transition: 'border-color .12s' }}>
@@ -211,23 +221,40 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
         <div style={{ padding: '14px 18px 12px', userSelect: 'none' }}>
 
           {/* Row 1 — title + weeks remain */}
-          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
-            <button
-              onClick={() => onObjectiveClick(obj.id)}
-              onMouseEnter={() => setTitleHover(true)}
-              onMouseLeave={() => setTitleHover(false)}
-              style={{
-                flex: 1, minWidth: 0,
-                fontSize: 16, fontWeight: 500,
-                color: isActive || titleHover ? 'var(--accent)' : 'var(--nw-cream)',
-                lineHeight: 1.3,
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                textAlign: 'left', fontFamily: 'inherit',
-                letterSpacing: '-.005em',
-                transition: 'color .12s',
-              }}>
-              {obj.name}
-            </button>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <button
+                onClick={() => onObjectiveClick(obj.id)}
+                onMouseEnter={() => setTitleHover(true)}
+                onMouseLeave={() => setTitleHover(false)}
+                style={{
+                  width: '100%', minWidth: 0,
+                  fontSize: 16, fontWeight: 500,
+                  color: isActive || titleHover ? 'var(--accent)' : 'var(--nw-cream)',
+                  lineHeight: 1.3,
+                  background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                  textAlign: 'left', fontFamily: 'inherit',
+                  letterSpacing: '-.005em',
+                  transition: 'color .12s',
+                }}>
+                {obj.name}
+              </button>
+              {objDateText && (
+                <div style={{
+                  marginTop: 4,
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  fontSize: 11, fontWeight: 500,
+                  color: objOverdue ? 'var(--nw-alarm-text)' : 'var(--navy-300)',
+                  fontVariantNumeric: 'tabular-nums',
+                }}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0, opacity: .85 }}>
+                    <rect x="3" y="4" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="2" />
+                    <path d="M3 9h18M8 2v4M16 2v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  {objDateText}{objOverdue && ' · overdue'}
+                </div>
+              )}
+            </div>
             {weeksRemaining != null && (
               <div style={{
                 fontSize: 10, letterSpacing: '.04em',
@@ -235,7 +262,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                 fontVariantNumeric: 'tabular-nums',
                 textTransform: 'uppercase',
                 fontWeight: 500, whiteSpace: 'nowrap',
-                flexShrink: 0,
+                flexShrink: 0, marginTop: 3,
               }}>
                 <strong style={{ color: 'var(--navy-200)', fontWeight: 700 }}>{weeksRemaining} wk</strong> remain
               </div>

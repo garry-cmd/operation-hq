@@ -20,6 +20,12 @@ export interface AnnualObjective {
   status: 'active' | 'abandoned'
   notes: string
   space_id: string
+  // Optional time window for the objective. Unlike KRs (every non-habit KR is
+  // dated), objectives may stay dateless — an annual objective is often just
+  // "this year". Set via either objective modal; rendered as a quiet range on
+  // the OKR card face and the Roadmap group header. Both null = no window shown.
+  start_date: string | null
+  end_date: string | null
   created_at: string
 }
 

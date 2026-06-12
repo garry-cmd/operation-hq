@@ -208,7 +208,7 @@ function shortMonthDay(dateStr: string): string {
  *   "2026-05-30" → "2026-06-02"  → "May 30 – Jun 2"  (different months)
  *   Different years              → adds the year
  */
-function formatDateRange(start: string | null, end: string | null): string {
+export function formatDateRange(start: string | null, end: string | null): string {
   if (!end) return ''
   const e = parseDateLocal(end)
   const monthShort = (d: Date) => d.toLocaleDateString('en-US', { month: 'short' })
