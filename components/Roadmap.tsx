@@ -6,6 +6,7 @@ import { AnnualObjective, RoadmapItem } from '@/lib/types'
 import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ, parseDateLocal } from '@/lib/utils'
 import { formatDateRange } from '@/lib/dateBuckets'
 import Modal from './Modal'
+import EditKRModal from './EditKRModal'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -272,20 +273,24 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
       )}
 
       {modal?.type === 'edit_kr' && modal.item.annual_objective_id && (
-        <KRModal
-          item={modal.item}
-          objId={modal.item.annual_objective_id}
-          defaultQuarter={modal.item.quarter}
-          objectives={objectives}
+        <EditKRModal
+          kr={modal.item}
           quarters={ROLLING}
           onClose={() => setModal(null)}
-          onSave={item => {
-            setRoadmapItems(prev => prev.map(x => x.id === item.id ? item : x))
-            setModal(null)
-            toast('Key result updated.')
+          onSave={async (patch) => {
+            try {
+              const updated = await krsDb.update(modal.item.id, patch)
+              setRoadmapItems(prev => prev.map(x => x.id === updated.id ? updated : x))
+              setModal(null)
+              toast('Key result updated.')
+            } catch (err) {
+              console.error('updateKR error:', err)
+              toast('Failed to update KR')
+            }
           }}
           onDelete={() => deleteKR(modal.item.id)}
           onPark={() => { parkKR(modal.item); setModal(null) }}
+          toast={toast}
         />
       )}
     </div>

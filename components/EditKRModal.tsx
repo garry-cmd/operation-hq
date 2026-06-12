@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import type { RoadmapItem } from '@/lib/types'
 import { getQuarterRange } from '@/lib/dateBuckets'
+import { formatQ, ACTIVE_Q } from '@/lib/utils'
 import Modal from './Modal'
 
 /**
@@ -21,15 +22,23 @@ import Modal from './Modal'
  *    same state, so saving silently lost those options). The kept dropdown
  *    has the complete option set.
  */
-export default function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
+export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, quarters, toast }: {
   kr: RoadmapItem
   onClose: () => void
   onSave: (kr: Partial<RoadmapItem>) => void
   onDelete: () => void
+  // Optional roadmap-context extras. When `quarters` is passed, a Quarter
+  // selector renders and the chosen quarter (+ derived status) is written in
+  // the save patch — lets the Roadmap move a KR between quarters without drag.
+  // When `onPark` is passed, a "Park it" button renders in the footer. OKRs /
+  // Summary call sites omit both, so their behavior is unchanged.
+  onPark?: () => void
+  quarters?: string[]
   toast: (m: string) => void
 }) {
   const [title, setTitle] = useState(kr.title)
   const [healthStatus, setHealthStatus] = useState(kr.health_status)
+  const [quarter, setQuarter] = useState<string | null>(kr.quarter)
   const [saving, setSaving] = useState(false)
 
   // Metric fields. All stored as strings so inputs stay controlled even when
@@ -55,8 +64,8 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
 
   function toggleQuarterBound(checked: boolean) {
     setIsQuarterBound(checked)
-    if (checked && kr.quarter) {
-      const qRange = getQuarterRange(kr.quarter)
+    if (checked && quarter) {
+      const qRange = getQuarterRange(quarter)
       if (qRange) {
         setStartDate(qRange.start)
         setEndDate(qRange.end)
@@ -117,6 +126,14 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
         updatedKR.is_habit = false
       }
 
+      // Roadmap context: persist the (possibly changed) quarter and derive the
+      // scheduling status the same way the roadmap's add flow does — active
+      // when it's the current quarter, planned otherwise.
+      if (quarters) {
+        updatedKR.quarter = quarter
+        updatedKR.status = quarter === ACTIVE_Q ? 'active' : 'planned'
+      }
+
       await onSave(updatedKR)
     } catch (error) {
       console.error('Failed to update KR:', error)
@@ -128,7 +145,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
 
   // Show the quarter-bound checkbox only when the KR has a quarter to bind
   // to (and isn't a habit, which has no dates at all).
-  const showQuarterBoundToggle = !kr.is_habit && !!kr.quarter
+  const showQuarterBoundToggle = !kr.is_habit && !!quarter
 
   return (
     <Modal
@@ -141,6 +158,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           >
             Delete
           </button>
+          {onPark && <button className="btn" onClick={onPark}>Park it</button>}
           <button className="btn" onClick={onClose}>Cancel</button>
           <button
             className="btn-primary"
@@ -162,6 +180,24 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, toast }: {
           placeholder="e.g. Lose 20 lbs"
         />
       </div>
+
+      {/* Quarter selector — roadmap context only. Moving a KR between quarters
+          here is the explicit (non-drag) alternative to dragging the chip. */}
+      {quarters && (
+        <div className="field">
+          <label>Quarter</label>
+          <select
+            className="input"
+            value={quarter ?? ''}
+            onChange={e => setQuarter(e.target.value || null)}
+          >
+            <option value="">Unscheduled</option>
+            {quarters.map(q => (
+              <option key={q} value={q}>{formatQ(q)}{q === ACTIVE_Q ? ' ⚡ Active' : ''}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Status — single dropdown with the complete option set. The Chunk 1
           editor had two dropdowns bound to the same state with partial option
