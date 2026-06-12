@@ -302,6 +302,10 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
 }) {
   const isActive = quarter === ACTIVE_Q
   const isDone = item.health_status === 'done'
+  // The KR's own time window, surfaced on the chip so dates no longer have to
+  // be hand-typed into the title. Neutral (no overdue-red): on a quarter grid
+  // every past item would otherwise light up. Habits / dateless KRs → ''.
+  const krDateText = formatDateRange(item.start_date, item.end_date)
   return (
     <div
       draggable
@@ -318,7 +322,17 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
         display: 'flex', alignItems: 'center', gap: 4,
       }}>
       {isActive && <span style={{ marginRight: 2, flexShrink: 0 }}>⚡</span>}
-      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isDone ? 'line-through' : 'none' }}>{item.title}</span>
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isDone ? 'line-through' : 'none' }}>{item.title}</span>
+        {krDateText && (
+          <span style={{
+            fontSize: 9.5, fontWeight: 500,
+            color: isActive ? hex2rgba(objColor, 0.9) : 'var(--navy-300)',
+            fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em',
+            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>{krDateText}</span>
+        )}
+      </div>
       <button
         onClick={onEdit}
         onMouseDown={e => e.stopPropagation()}
