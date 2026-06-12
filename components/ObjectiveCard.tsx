@@ -184,28 +184,21 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const accentColor = isActive ? 'var(--accent)' : obj.color
   const divColor = 'var(--navy-700)'
 
-  // Quarter timing for the "N weeks remaining" pill. ACTIVE_Q format is
-  // "<n>Q<yyyy>"; quarter ends on the last day of month n*3.
-  const qMatch = ACTIVE_Q.match(/(\d)Q(\d{4})/)
-  const weeksRemaining = (() => {
-    if (!qMatch) return null
-    const qNum = parseInt(qMatch[1], 10)
-    const qYear = parseInt(qMatch[2], 10)
-    // new Date(year, month, 0) = last day of (month-1). qNum*3 gives the
-    // month-after-quarter-end (1-indexed), so day=0 of that = quarter close.
-    const qEnd = new Date(qYear, qNum * 3, 0)
-    const ms = qEnd.getTime() - Date.now()
-    return Math.max(0, Math.ceil(ms / (7 * 24 * 60 * 60 * 1000)))
-  })()
-
-  // Objective's own time window (distinct from the quarter-derived weeks-remain
-  // above). Quiet range line under the title; alarm-red once end_date passes.
-  // Dateless objectives render nothing here.
+  // Objective's own time window. Quiet range line under the title; alarm-red
+  // once end_date passes. Dateless objectives render nothing here.
   const objDateText = formatDateRange(obj.start_date, obj.end_date)
-  const objOverdue = (() => {
-    if (!obj.end_date) return false
-    const today = new Date(); today.setHours(0, 0, 0, 0)
-    return parseDateLocal(obj.end_date) < today
+  const objEnd = obj.end_date ? parseDateLocal(obj.end_date) : null
+  const objToday = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d })()
+  const objOverdue = objEnd != null && objEnd < objToday
+
+  // Weeks remaining until the objective's end_date (was quarter-close before
+  // objectives carried their own dates). Null when the objective is dateless
+  // or already overdue — the date line carries "· overdue" in that case, so a
+  // "0 wk" pill would just be noise.
+  const weeksRemaining = (() => {
+    if (!objEnd || objOverdue) return null
+    const ms = objEnd.getTime() - objToday.getTime()
+    return Math.max(0, Math.ceil(ms / (7 * 24 * 60 * 60 * 1000)))
   })()
 
   return (
