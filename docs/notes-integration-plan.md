@@ -1,13 +1,71 @@
 # Notes Module — Planning Doc
-*Drafted: May 14, 2026 · Status: decisions locked, awaiting build · Updated: May 14, 2026 (evening)*
+*Drafted: May 14, 2026 · Updated: Jun 19, 2026 · Status: **Tiers 1–3 substantially shipped — near Evernote parity***
+
+---
+
+## Status (Jun 19, 2026) — near Evernote parity
+
+The module is now a genuine Evernote replacement in daily use. Beyond the original
+Tier 1 + unified Inbox (see May 18 status below), the Jun 19 sessions shipped the
+rich-content and power-user surface. Full detail in `operation-hq-session-2026-06-19.md`
+(Session 2). Summary of what is now **live in production**:
+
+- **Rich content:** inline images (paste/drop/toolbar), file attachments (50 MB,
+  download chips), dividers, and **robust tables** with resizing + per-cell background
+  colors + bullets/checkboxes inside cells. Media stored in a private `note-media`
+  Supabase bucket; bodies persist only the storage **path**, never a URL.
+- **Tier 2 (shipped):** **pinned notes** (float to top, 📌), **internal `[[ ]]` links**
+  (render-time decoration, resolve by title within space → anywhere, toast on miss).
+- **Tier 3 (shipped early):** full-text search (Cmd+K, prior), **Markdown export**,
+  **version history** (`note_versions` table, throttled snapshots, reversible restore).
+- **Power-user:** **focus mode** (hide NavRail + both panes, widen editor to 1100px),
+  **quick-file Move** (relocate a note's space/notebook from the editor header),
+  **storage GC** (purge a note's media on delete).
+- **Nesting:** sub-notebooks now allowed to depth 3.
+
+**Still deferred (deliberate):** OCR (heavy external pipeline), web clipper (separate
+browser-extension product), and the **full visual redesign** (`hq-notes-redesign.html`,
+Jun 6 — a strategic whole-app aesthetic call, not a feature-batch item). Residual:
+image node-level storage GC (deleting an image mid-edit doesn't GC that one file until
+the note is deleted).
+
+**Migrations (Jun 19):** `create_note_media_private_bucket`,
+`widen_note_media_for_attachments`, `create_note_versions`.
+
+**New modules:** `lib/db/noteMedia.ts`, `lib/db/noteVersions.ts`,
+`lib/notes/imageWithPath.ts`, `lib/notes/fileAttachment.ts`,
+`lib/notes/tableWithColor.ts`, `lib/notes/internalLinks.ts`, `lib/notes/noteMarkdown.ts`.
+
+
+## Status (May 18)
+
+**Tier 1 SHIPPED.** Everything in the original Tier 1 scope is live in production:
+- Schema (`notebooks`, `notes`, `note_tags`) — migrated and active
+- TipTap editor with StarterKit + TaskList + Placeholder
+- Three-pane layout (notebook tree | note list | editor)
+- Notebooks nested under spaces (depth capped at 2)
+- Title + body, autosave on debounced change
+- Create / rename / delete on notebooks and notes
+- Mobile fallback: tree + list collapse to togglable dropdowns above the editor (May 18)
+
+**Unified Inbox SHIPPED (May 18).** Departure from the original plan worth flagging:
+- `notes.space_id` made nullable via the `notes_space_id_nullable` migration
+- Per-space "Inbox" rows removed entirely from the sidebar
+- New SMART VIEWS section at top: unified Inbox (📥) + All notes (∞)
+- New SPACES section header with amber NW label, mirroring Tasks layout
+- Clicking a space row shows all notes in that space (incl. nested notebooks)
+- Default scope on entry = unified Inbox (was per-space inbox of active space)
+- Sidebar shape now mirrors Tasks for cross-product consistency
+
+**Tier 2 still pending.** See "Roadmap" below for what's next.
 
 ---
 
 ## TL;DR
 
-A real notes module — Evernote-style, three-pane (notebooks · note list · editor) — is a **multi-session project**. The hard parts are picking the editor library, settling the schema, and deciding what (if anything) to do about `objective_logs`. Once those are nailed, Tier 1 is ~2 evenings.
+Tier 1 is shipped and in daily use as of May 18. Tier 1 took ~2-3 sessions all in. The unified Inbox refactor (originally Tier 3) was pulled forward and shipped May 18 because the per-space Inbox UX was friction. Tier 2 is the natural next: pinned notes, internal `[[ ]]` links, deeper nesting.
 
-Tier list below mirrors the calendar plan. Start small, validate, grow.
+The original tier list below describes what was planned; in practice the unified-Inbox UX work jumped ahead of pinned/internal-links because it removed daily friction.
 
 ---
 
@@ -96,20 +154,6 @@ The `pinned_at` column ships with the initial migration so we don't need a secon
 
 ### Slash commands → backlog
 TipTap's `/heading`, `/checkbox`, etc. command palette is deferred. The standard toolbar (or just keyboard markdown shortcuts that TipTap supports natively, like `#` for heading) is enough for v1.
-
-### Nesting → 2 levels, Stack → Notebook
-Evernote model. A top-level notebook with children is conceptually a **Stack** (a grouping); a leaf notebook holds notes. UI caps depth at 2 — no sub-sub-notebooks. Schema stays a single `notebooks` table with `parent_notebook_id` self-FK; the cap is enforced in UI (no "+ New notebook" affordance on already-nested notebooks).
-
-Both stacks and leaf notebooks can hold notes (loose model). If we want to enforce "stacks are pure containers" later, add a trigger or CHECK constraint then.
-
-### Tag UI → both
-Tag chips appear inline on each note (in the middle pane and in the editor header), AND a Tags section in the left pane mirrors the Tasks sidebar. Same global tag namespace shared with Tasks.
-
-### Editor toolbar → fixed
-Small fixed toolbar at the top of the editor: heading, bold, italic, lists, checklist, code, quote, link. No floating bubble menu (yet). Keyboard markdown shortcuts that TipTap supports natively (`#`, `*`, `-`) still work.
-
-### "Loose notes" → "Inbox"
-Notes with no notebook live in an "Inbox" row under each space, matching the Tasks vocabulary.
 
 ---
 
@@ -213,7 +257,16 @@ CREATE POLICY note_tags_owner_all ON note_tags FOR ALL TO authenticated USING (t
 
 ## Open questions
 
-All resolved. See "Decisions baked in" above.
+All resolved May 14, evening. See "Decisions baked in" above for:
+- Tags share namespace with Tasks ✓
+- Loose notes allowed ✓
+- Empty title → "Untitled" only ✓
+- Pinned schema in Tier 1, UI in Tier 2 ✓
+- Slash commands → backlog ✓
+
+Two remaining open questions are UI-level (resolved in the Tier 1 mockup pass, not before):
+- **Notebook nesting depth in UI** — schema allows arbitrary; decide on 2 vs 3 visible levels when mocking the tree.
+- **Where does the tag UI live in Notes?** — does Notes get its own tag sidebar (mirroring Tasks), or do tags only show on each note as inline chips? Settle when mocking the three-pane.
 
 ---
 
