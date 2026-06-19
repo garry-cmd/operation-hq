@@ -2,10 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  SearchEntry, SearchKind, RankedHit, rankEntries, highlightSegments, makeSnippet, Segment,
+  SearchEntry, SearchKind, RankedHit, rankEntries, parseQuery, highlightSegments, makeSnippet, Segment,
 } from '@/lib/search'
 
 const CHIPS: (SearchKind | 'All')[] = ['All', 'Objective', 'Key Result', 'Action', 'Task', 'Note']
+
+const RECENTS_KEY = 'hq-search-recents'
+function loadRecents(): string[] {
+  try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || '[]') } catch { return [] }
+}
+function pushRecent(id: string) {
+  try {
+    const next = [id, ...loadRecents().filter(x => x !== id)].slice(0, 8)
+    localStorage.setItem(RECENTS_KEY, JSON.stringify(next))
+  } catch { /* storage unavailable — recents just won't persist */ }
+}
 
 function Hi({ segs }: { segs: Segment[] }) {
   return (
@@ -75,15 +86,31 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<SearchKind | 'All'>('All')
   const [sel, setSel] = useState(0)
+  const [recents, setRecents] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
+  const entriesById = useMemo(() => new Map(entries.map(e => [e.id, e])), [entries])
+  const parsed = useMemo(() => parseQuery(query), [query])
   const hits = useMemo(() => rankEntries(entries, query, filter, 12), [entries, query, filter])
 
-  // Reset on each open; focus the field.
+  // On an empty query, show recently-opened items as quick jumps. Resolve ids
+  // against the live index so deleted items silently drop out.
+  const recentHits: RankedHit[] = useMemo(() => {
+    if (query.trim()) return []
+    return recents
+      .map(id => entriesById.get(id))
+      .filter((e): e is SearchEntry => !!e)
+      .map(e => ({ entry: e, score: 0, hitField: 'title' as const, tokens: [] }))
+  }, [recents, query, entriesById])
+
+  const showingRecents = !query.trim() && recentHits.length > 0
+  const list = query.trim() ? hits : recentHits
+
+  // Reset on each open; focus the field; refresh recents.
   useEffect(() => {
     if (open) {
-      setQuery(''); setFilter('All'); setSel(0)
+      setQuery(''); setFilter('All'); setSel(0); setRecents(loadRecents())
       const t = setTimeout(() => inputRef.current?.focus(), 0)
       return () => clearTimeout(t)
     }
@@ -95,24 +122,27 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
   useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => (hits.length ? (s + 1) % hits.length : 0)) }
-      else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => (hits.length ? (s - 1 + hits.length) % hits.length : 0)) }
-      else if (e.key === 'Enter') { e.preventDefault(); const h = hits[sel]; if (h) { onPick(h.entry); onClose() } }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => (list.length ? (s + 1) % list.length : 0)) }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => (list.length ? (s - 1 + list.length) % list.length : 0)) }
+      else if (e.key === 'Enter') { e.preventDefault(); const h = list[sel]; if (h) { pickEntry(h.entry) } }
       else if (e.key === 'Escape') { e.preventDefault(); onClose() }
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [open, hits, sel, onPick, onClose])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, list, sel, onPick, onClose])
 
   // Keep the selected row in view.
   useEffect(() => {
     const el = listRef.current?.querySelector('[data-sel="true"]') as HTMLElement | null
     el?.scrollIntoView({ block: 'nearest' })
-  }, [sel, hits])
+  }, [sel, list])
 
   if (!open) return null
 
-  const pick = (e: SearchEntry) => { onPick(e); onClose() }
+  const pickEntry = (e: SearchEntry) => { pushRecent(e.id); onPick(e); onClose() }
+  // The chip to highlight: a `type:` operator wins over the manual filter.
+  const activeKind: SearchKind | 'All' = parsed.kind ?? filter
 
   return (
     <div
@@ -144,16 +174,16 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search everything…  (try: rick · #billing · onboard stellar)"
+            placeholder="Search everything…  (try: rick · #stellar · task: · in:keeply)"
             style={{ flex: 1, border: 'none', outline: 'none', background: 'none', color: 'var(--navy-50)', fontSize: 17, fontWeight: 500, fontFamily: 'inherit' }}
           />
           <span style={{ fontSize: 10.5, color: 'var(--navy-400)', background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 5, padding: '2px 7px' }}>esc</span>
         </div>
 
-        {/* type filter chips */}
-        <div style={{ display: 'flex', gap: 6, padding: '10px 16px', borderBottom: '1px solid var(--navy-600)', flexWrap: 'wrap' }}>
+        {/* type filter chips + active scope */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px', borderBottom: '1px solid var(--navy-600)', flexWrap: 'wrap' }}>
           {CHIPS.map(c => {
-            const on = c === filter
+            const on = c === activeKind
             return (
               <button
                 key={c}
@@ -168,26 +198,37 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
               >{c === 'All' ? 'All' : c + 's'}</button>
             )
           })}
+          {parsed.inSpace && (
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: '4px 10px', borderRadius: 99, marginLeft: 'auto',
+              background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)',
+            }}>in: {parsed.inSpace}</span>
+          )}
         </div>
 
         {/* results */}
         <div ref={listRef} style={{ overflowY: 'auto', padding: 6 }}>
-          {query.trim().length === 0 ? (
+          {showingRecents && (
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--nw-label)', padding: '8px 12px 5px' }}>
+              Recent
+            </div>
+          )}
+          {!query.trim() && recentHits.length === 0 ? (
             <div style={{ padding: '34px 18px', textAlign: 'center', color: 'var(--navy-400)', fontSize: 13.5 }}>
               Search objectives, KRs, actions, tasks, notes, notebooks — and tags.
             </div>
-          ) : hits.length === 0 ? (
+          ) : query.trim() && list.length === 0 ? (
             <div style={{ padding: '34px 18px', textAlign: 'center', color: 'var(--navy-400)', fontSize: 13.5 }}>
               No matches for “{query.trim()}”. Try fewer or different words.
             </div>
           ) : (
-            hits.map((h, i) => (
+            list.map((h, i) => (
               <ResultRow
                 key={h.entry.id}
                 hit={h}
                 selected={i === sel}
                 onHover={() => setSel(i)}
-                onClick={() => pick(h.entry)}
+                onClick={() => pickEntry(h.entry)}
               />
             ))
           )}
@@ -199,7 +240,7 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
           <span><Kbd>↵</Kbd>open</span>
           <span><Kbd>#</Kbd>tags</span>
           <span style={{ flex: 1 }} />
-          <span>{hits.length ? `${hits.length} result${hits.length > 1 ? 's' : ''}` : ''}</span>
+          <span>{query.trim() && list.length ? `${list.length} result${list.length > 1 ? 's' : ''}` : ''}</span>
         </div>
       </div>
     </div>

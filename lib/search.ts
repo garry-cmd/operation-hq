@@ -62,9 +62,33 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
+// Bounded Levenshtein — returns true if a and b are within `max` edits.
+// Early-exits once a row's best possible distance exceeds max, so it's cheap
+// for the typo-tolerance check (only ever called when exact tiers miss).
+function withinEdits(a: string, b: string, max: number): boolean {
+  const al = a.length, bl = b.length
+  if (Math.abs(al - bl) > max) return false
+  let prev = new Array(bl + 1)
+  for (let j = 0; j <= bl; j++) prev[j] = j
+  for (let i = 1; i <= al; i++) {
+    const cur = [i]
+    let best = i
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1
+      const v = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost)
+      cur[j] = v
+      if (v < best) best = v
+    }
+    if (best > max) return false
+    prev = cur
+  }
+  return prev[bl] <= max
+}
+
 // Score one token against one field. Tiers: exact > prefix > word-boundary >
-// substring. (Fuzzy/typo tolerance is a deliberate Tier-3 follow-up — kept out
-// so a clean substring hit never loses to a fuzzy one.)
+// substring > fuzzy. Fuzzy is word-level edit-distance typo tolerance, gated to
+// tokens of length ≥ 3 and scored well below a clean substring so a real hit
+// never loses to a fuzzy one ("stellr" finds Stellar, but "stellar" still wins).
 function tokenFieldScore(field: string | undefined, tok: string): number {
   if (!field) return 0
   const f = field.toLowerCase()
@@ -72,6 +96,12 @@ function tokenFieldScore(field: string | undefined, tok: string): number {
   if (f.startsWith(tok)) return 620
   if (new RegExp('\\b' + escapeRe(tok)).test(f)) return 420
   if (f.includes(tok)) return 240
+  if (tok.length >= 3) {
+    const thr = tok.length <= 4 ? 1 : 2
+    for (const w of f.split(/[^a-z0-9]+/)) {
+      if (w.length >= 3 && withinEdits(w, tok, thr)) return 90
+    }
+  }
   return 0
 }
 
@@ -84,11 +114,44 @@ function entryFields(e: SearchEntry): Record<string, string | undefined> {
   }
 }
 
-export function tokenize(query: string): { tokens: string[]; tagOnly: boolean } {
-  let q = query.trim()
+// Map a `type:` operator keyword to a SearchKind.
+const KIND_OPS: Record<string, SearchKind> = {
+  task: 'Task', tasks: 'Task', note: 'Note', notes: 'Note',
+  kr: 'Key Result', krs: 'Key Result', obj: 'Objective', objective: 'Objective',
+  objectives: 'Objective', action: 'Action', actions: 'Action',
+  reflect: 'Reflect', notebook: 'Notebook', space: 'Space',
+}
+
+export interface ParsedQuery {
+  tokens: string[]
+  tagOnly: boolean
+  kind?: SearchKind
+  inSpace?: string
+}
+
+// Parse scoping operators non-destructively (the raw text stays in the box):
+//   #tag            → restrict to tagged items
+//   in:<space>      → restrict to a space by name
+//   task:/note:/... → restrict to a kind  (e.g. "task: rick")
+// Everything else is a content token used for matching.
+export function parseQuery(query: string): ParsedQuery {
   let tagOnly = false
-  if (q.startsWith('#')) { tagOnly = true; q = q.slice(1).trim() }
-  return { tokens: q.toLowerCase().split(/\s+/).filter(Boolean), tagOnly }
+  let kind: SearchKind | undefined
+  let inSpace: string | undefined
+  const tokens: string[] = []
+  for (const w of query.trim().split(/\s+/).filter(Boolean)) {
+    const lw = w.toLowerCase()
+    if (lw.startsWith('#')) { tagOnly = true; const rest = lw.slice(1); if (rest) tokens.push(rest); continue }
+    const colon = lw.indexOf(':')
+    if (colon > 0) {
+      const key = lw.slice(0, colon)
+      const val = lw.slice(colon + 1)
+      if (key === 'in') { if (val) inSpace = val; continue }
+      if (KIND_OPS[key]) { kind = KIND_OPS[key]; if (val) tokens.push(val); continue }
+    }
+    tokens.push(lw)
+  }
+  return { tokens, tagOnly, kind, inSpace }
 }
 
 function scoreEntry(e: SearchEntry, tokens: string[]): RankedHit | null {
@@ -119,17 +182,38 @@ export function rankEntries(
   kindFilter?: SearchKind | 'All',
   limit = 12,
 ): RankedHit[] {
-  const { tokens, tagOnly } = tokenize(query)
-  if (!tokens.length) return []
+  const { tokens, tagOnly, kind, inSpace } = parseQuery(query)
+  const effKind = kind ?? (kindFilter && kindFilter !== 'All' ? kindFilter : undefined)
+
+  // Nothing typed and no scope → no results (the palette shows recents instead).
+  if (!tokens.length && !tagOnly && !inSpace && !effKind) return []
+
+  const inScope = (e: SearchEntry) => {
+    if (effKind && e.kind !== effKind) return false
+    if (inSpace && !(e.spaceName ?? '').toLowerCase().includes(inSpace)) return false
+    if (tagOnly) {
+      if (!e.tags || !e.tags.length) return false
+      if (tokens.length && !e.tags.some(t => tokens.some(tok => t.toLowerCase().includes(tok)))) return false
+    }
+    return true
+  }
+
   let hits: RankedHit[] = []
-  for (const e of entries) {
-    const h = scoreEntry(e, tokens)
-    if (h) hits.push(h)
+  if (!tokens.length) {
+    // Scope-only query (e.g. "in:stellar", "task:", "#"): list everything in
+    // scope, ranked by kind + recency.
+    for (const e of entries) {
+      if (!inScope(e)) continue
+      hits.push({ entry: e, score: (KIND_BOOST[e.kind] ?? 0) + (e.rec ?? 0) - (e.done ? 40 : 0), hitField: 'title', tokens: [] })
+    }
+  } else {
+    for (const e of entries) {
+      if (!inScope(e)) continue
+      const h = scoreEntry(e, tokens)
+      if (h) hits.push(h)
+    }
   }
-  if (tagOnly) {
-    hits = hits.filter(h => h.entry.tags && h.entry.tags.some(t => tokens.some(tok => t.toLowerCase().includes(tok))))
-  }
-  if (kindFilter && kindFilter !== 'All') hits = hits.filter(h => h.entry.kind === kindFilter)
+
   hits.sort((a, b) => b.score - a.score || KIND_ORDER.indexOf(a.entry.kind) - KIND_ORDER.indexOf(b.entry.kind))
   return hits.slice(0, limit)
 }
