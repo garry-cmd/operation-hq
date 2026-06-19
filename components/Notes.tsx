@@ -13,7 +13,7 @@
  * the space level ("Inbox") or inside a notebook. Tag namespace is
  * shared with Tasks — same string set, separate join table.
  */
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
+import { useEffect, useState, useMemo, useCallback, useRef, useReducer } from 'react'
 import { Space, Notebook, Note, NoteTag, NoteBody } from '@/lib/types'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
@@ -1030,6 +1030,17 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     },
   })
   editorRef.current = editor
+
+  // TipTap v3 doesn't re-render React on selection changes, so contextual UI
+  // (the table toolbar) wouldn't appear/disappear as the cursor moves in and
+  // out of a table. Bump a counter on selectionUpdate to force the re-render.
+  const [, bumpSelection] = useReducer((x: number) => x + 1, 0)
+  useEffect(() => {
+    if (!editor) return
+    const onSel = () => bumpSelection()
+    editor.on('selectionUpdate', onSel)
+    return () => { editor.off('selectionUpdate', onSel) }
+  }, [editor])
 
   // Flush on unmount (note switch)
   useEffect(() => {
