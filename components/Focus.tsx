@@ -2,7 +2,7 @@
 import { Fragment, useState } from 'react'
 import * as actionsDb from '@/lib/db/actions'
 import * as checkinsDb from '@/lib/db/checkins'
-import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog, HabitCheckin } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, ActionTag, ObjectiveLog, HabitCheckin, Task } from '@/lib/types'
 import { ACTIVE_Q, addWeeks, formatWeek, formatMinutes, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, getToday, formatDate } from '@/lib/habitUtils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
@@ -26,7 +26,7 @@ const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }>
 
 import PlanWeek from './PlanWeek'
 import ActionPanel from './ActionPanel'
-import TodoistStrip from './TodoistStrip'
+import FocusTasks from './FocusTasks'
 
 type Props = {
   objectives: AnnualObjective[]
@@ -46,8 +46,10 @@ type Props = {
   setLogs: (fn: (p: ObjectiveLog[]) => ObjectiveLog[]) => void
   openActionId: string | null
   setOpenActionId: (id: string | null) => void
-  // Active space display name — used to scope the Todoist strip by label.
-  spaceName: string
+  // Native space tasks (this space) for the Focus today/overdue surface.
+  tasks: Task[]
+  setTasks: (fn: (prev: Task[]) => Task[]) => void
+  onOpenTask: (id: string) => void
 }
 
 export default function Focus({
@@ -55,7 +57,7 @@ export default function Focus({
   habitCheckins, setHabitCheckins,
   weekStart, setWeekStart, toast, onRequestCloseWeek,
   logs, setLogs, openActionId, setOpenActionId,
-  spaceName,
+  tasks, setTasks, onOpenTask,
 }: Props) {
   const [planning, setPlanning] = useState(false)
   // Inline-add state for the per-KR "+ Add action" row.
@@ -531,8 +533,8 @@ export default function Focus({
           )}
         </div>
 
-        {/* Todoist: today + overdue tasks — operational layer below strategic actions */}
-        <TodoistStrip spaceName={spaceName} />
+        {/* Native space tasks: today + overdue — operational layer below strategic actions */}
+        <FocusTasks tasks={tasks} roadmapItems={roadmapItems} setTasks={setTasks} onOpenTask={onOpenTask} toast={toast} />
 
       </div>
     </>
