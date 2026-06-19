@@ -185,6 +185,13 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
     [notes, selectedNoteId],
   )
 
+  // Focus mode's only exit lives in the editor header. If the selection ever
+  // clears while focused (e.g. deleting the open note), the editor unmounts
+  // and you'd be stranded with no NavRail and no panes — so drop out of focus.
+  useEffect(() => {
+    if (!selectedNote && fullscreen) { setFullscreen(false); onFocusChange?.(false) }
+  }, [selectedNote, fullscreen, onFocusChange])
+
   // Heading for the middle pane.
   const middleHeading = useMemo(() => {
     if (scope.kind === 'inbox') return 'Inbox'
@@ -580,7 +587,7 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
             onToggleFullscreen={() => setFullscreen(v => { const nv = !v; onFocusChange?.(nv); return nv })}
             onPatch={patch => onUpdateNote(selectedNote.id, patch)}
             onSetTags={tags => onSetNoteTags(selectedNote.id, tags)}
-            onDelete={() => { if (confirm('Delete this note?')) onDeleteNote(selectedNote.id) }}
+            onDelete={() => { if (confirm('Delete this note?')) { onDeleteNote(selectedNote.id); setFullscreen(false); onFocusChange?.(false) } }}
           />
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--navy-400)', fontSize: 13 }}>
