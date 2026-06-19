@@ -25,6 +25,27 @@ export async function uploadNoteImage(noteId: string, file: File): Promise<{ pat
 }
 
 /**
+ * Upload an arbitrary file (PDF, doc, zip, …) for a note. Returns the storage
+ * path plus the display metadata we persist on the attachment node so the chip
+ * can render without a round-trip. The original filename is kept for display;
+ * the storage key itself is uuid-based to avoid collisions and odd characters.
+ */
+export async function uploadNoteFile(
+  noteId: string,
+  file: File,
+): Promise<{ path: string; name: string; size: number; mime: string }> {
+  const ext =
+    (file.name.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin'
+  const path = `${noteId}/${crypto.randomUUID()}.${ext}`
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+    contentType: file.type || 'application/octet-stream',
+    upsert: false,
+  })
+  if (error) throw error
+  return { path, name: file.name || `file.${ext}`, size: file.size, mime: file.type || '' }
+}
+
+/**
  * Resolve a stored storage path to a short-lived signed URL for display.
  * The bucket is private and owner-locked; URLs are transient and never
  * written back into note bodies.

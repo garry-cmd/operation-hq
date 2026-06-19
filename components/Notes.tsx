@@ -26,7 +26,8 @@ import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Placeholder from '@tiptap/extension-placeholder'
 import { ImageWithPath } from '@/lib/notes/imageWithPath'
-import { uploadNoteImage } from '@/lib/db/noteMedia'
+import { FileAttachment } from '@/lib/notes/fileAttachment'
+import { uploadNoteImage, uploadNoteFile } from '@/lib/db/noteMedia'
 
 interface Props {
   spaces: Space[]
@@ -917,11 +918,14 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
   }, [onPatch])
 
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'error'>('idle')
+  const [uploadErr, setUploadErr] = useState('Upload failed')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const attachInputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<Editor | null>(null)
   const errTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const flashUploadError = useCallback(() => {
+  const flashUploadError = useCallback((msg = 'Upload failed') => {
+    setUploadErr(msg)
     setUploadState('error')
     if (errTimerRef.current) clearTimeout(errTimerRef.current)
     errTimerRef.current = setTimeout(() => setUploadState('idle'), 3000)
@@ -932,7 +936,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
   const insertImageFiles = useCallback(async (files: File[] | FileList, at?: number) => {
     const imgs = Array.from(files).filter(f => f.type.startsWith('image/'))
     if (imgs.length === 0) return
-    if (imgs.some(f => f.size > 10 * 1024 * 1024)) { flashUploadError(); return }
+    if (imgs.some(f => f.size > 10 * 1024 * 1024)) { flashUploadError('Image too large — max 10 MB'); return }
     setUploadState('uploading')
     try {
       for (const file of imgs) {
@@ -950,6 +954,29 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     }
   }, [note.id, flashUploadError])
 
+  // Upload arbitrary file(s) → insert as fileAttachment chip node(s).
+  const insertAttachmentFiles = useCallback(async (files: File[] | FileList, at?: number) => {
+    const list = Array.from(files)
+    if (list.length === 0) return
+    if (list.some(f => f.size > 50 * 1024 * 1024)) { flashUploadError('File too large — max 50 MB'); return }
+    setUploadState('uploading')
+    try {
+      for (const file of list) {
+        const { path, name, size, mime } = await uploadNoteFile(note.id, file)
+        const ed = editorRef.current
+        if (!ed) continue
+        const attrs = { path, name, size, mime }
+        const chain = ed.chain().focus()
+        if (at != null) chain.insertContentAt(at, { type: 'fileAttachment', attrs })
+        else chain.insertContent({ type: 'fileAttachment', attrs })
+        chain.run()
+      }
+      setUploadState('idle')
+    } catch {
+      flashUploadError()
+    }
+  }, [note.id, flashUploadError])
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -958,6 +985,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: 'Write something…' }),
       ImageWithPath,
+      FileAttachment,
     ],
     content: (note.body ?? EMPTY_DOC) as Content,
     onUpdate: ({ editor }) => {
@@ -970,20 +998,26 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
         class: 'notes-editor',
       },
       handlePaste: (_view, event) => {
-        const files = event.clipboardData?.files
-        const imgs = files ? Array.from(files).filter(f => f.type.startsWith('image/')) : []
-        if (imgs.length === 0) return false
+        const all = event.clipboardData?.files
+        const list = all ? Array.from(all) : []
+        if (list.length === 0) return false
+        const imgs = list.filter(f => f.type.startsWith('image/'))
+        const others = list.filter(f => !f.type.startsWith('image/'))
         event.preventDefault()
-        void insertImageFiles(imgs)
+        if (imgs.length) void insertImageFiles(imgs)
+        if (others.length) void insertAttachmentFiles(others)
         return true
       },
       handleDrop: (view, event) => {
-        const files = event.dataTransfer?.files
-        const imgs = files ? Array.from(files).filter(f => f.type.startsWith('image/')) : []
-        if (imgs.length === 0) return false
+        const all = event.dataTransfer?.files
+        const list = all ? Array.from(all) : []
+        if (list.length === 0) return false
+        const imgs = list.filter(f => f.type.startsWith('image/'))
+        const others = list.filter(f => !f.type.startsWith('image/'))
         event.preventDefault()
         const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
-        void insertImageFiles(imgs, coords?.pos)
+        if (imgs.length) void insertImageFiles(imgs, coords?.pos)
+        if (others.length) void insertAttachmentFiles(others, coords?.pos)
         return true
       },
     },
@@ -1049,8 +1083,8 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
               style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 11.5, fontFamily: 'inherit', outline: 'none', width: 80 }} />
           </div>
           <div style={{ fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {uploadState === 'uploading' ? 'Uploading image…'
-              : uploadState === 'error' ? '⚠ Upload failed — image only, max 10 MB'
+            {uploadState === 'uploading' ? 'Uploading…'
+              : uploadState === 'error' ? '⚠ ' + uploadErr
               : saveState === 'saving' ? 'Saving…'
               : saveState === 'saved' ? '✓ Saved' : ''}
             <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
@@ -1071,7 +1105,11 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       </div>
 
       {/* Toolbar */}
-      <Toolbar editor={editor} onPickImage={() => fileInputRef.current?.click()} />
+      <Toolbar
+        editor={editor}
+        onPickImage={() => fileInputRef.current?.click()}
+        onPickFile={() => attachInputRef.current?.click()}
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -1081,6 +1119,17 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
         onChange={e => {
           const files = e.target.files
           if (files && files.length) void insertImageFiles(files)
+          e.target.value = ''
+        }}
+      />
+      <input
+        ref={attachInputRef}
+        type="file"
+        multiple
+        style={{ display: 'none' }}
+        onChange={e => {
+          const files = e.target.files
+          if (files && files.length) void insertAttachmentFiles(files)
           e.target.value = ''
         }}
       />
@@ -1126,6 +1175,62 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
           outline: 2px solid var(--accent);
           outline-offset: 1px;
         }
+        .notes-editor .note-file-chip {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin: 12px 0;
+          padding: 9px 12px;
+          border: 1px solid var(--navy-700);
+          border-radius: 8px;
+          background: var(--navy-800);
+          max-width: 420px;
+          user-select: none;
+        }
+        .notes-editor .note-file-chip.ProseMirror-selectednode {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
+        .notes-editor .note-file-badge {
+          flex: 0 0 auto;
+          font-size: 9.5px;
+          font-weight: 700;
+          letter-spacing: 0.04em;
+          color: var(--accent);
+          background: var(--accent-dim);
+          border-radius: 4px;
+          padding: 4px 6px;
+          min-width: 34px;
+          text-align: center;
+        }
+        .notes-editor .note-file-name {
+          flex: 1 1 auto;
+          font-size: 13px;
+          color: var(--navy-50);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .notes-editor .note-file-size {
+          flex: 0 0 auto;
+          font-size: 11px;
+          color: var(--navy-400);
+        }
+        .notes-editor .note-file-open {
+          flex: 0 0 auto;
+          display: inline-flex;
+          align-items: center;
+          background: none;
+          border: none;
+          color: var(--navy-300);
+          cursor: pointer;
+          padding: 2px;
+          border-radius: 4px;
+        }
+        .notes-editor .note-file-open:hover {
+          color: var(--accent);
+          background: var(--navy-700);
+        }
         .notes-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
         .notes-editor ul[data-type="taskList"] li { display: flex; gap: 8px; align-items: flex-start; }
         .notes-editor ul[data-type="taskList"] li > label { margin-top: 4px; }
@@ -1142,7 +1247,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
   )
 }
 
-function Toolbar({ editor, onPickImage }: { editor: Editor | null; onPickImage: () => void }) {
+function Toolbar({ editor, onPickImage, onPickFile }: { editor: Editor | null; onPickImage: () => void; onPickFile: () => void }) {
   if (!editor) return <div style={{ height: 36 }} />
   const btn = (active: boolean, onClick: () => void, label: string, title: string) => (
     <button onClick={onClick} title={title}
@@ -1178,6 +1283,12 @@ function Toolbar({ editor, onPickImage }: { editor: Editor | null; onPickImage: 
         onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+      </button>
+      <button onClick={onPickFile} title="Attach file"
+        style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
       </button>
     </div>
   )
