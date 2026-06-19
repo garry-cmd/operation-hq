@@ -258,12 +258,14 @@ export interface NewTaskListInput {
   sort_order?: number
 }
 
-// A section is a header inside a List (Todoist-style). Tasks in a List can be
-// grouped under sections; deleting a section orphans its tasks to "no section"
-// (they stay in the List, just ungrouped).
+// A section is a header inside a List or a Space (Todoist-style). Tasks in that
+// container can be grouped under sections; deleting a section orphans its tasks
+// to "no section" (they stay in the container, just ungrouped). Exactly one of
+// list_id / space_id is set.
 export interface TaskSection {
   id: string
-  list_id: string
+  list_id: string | null
+  space_id: string | null
   name: string
   sort_order: number
   created_at: string
@@ -271,7 +273,8 @@ export interface TaskSection {
 }
 
 export interface NewTaskSectionInput {
-  list_id: string
+  list_id?: string | null
+  space_id?: string | null
   name: string
   sort_order?: number
 }

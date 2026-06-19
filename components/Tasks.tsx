@@ -282,16 +282,32 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     ].filter(s => s.tasks.length > 0)
   }, [filtered, today])
 
-  // When scope is a List, tasks group by user-defined section instead of due
-  // bucket. Ungrouped tasks come first (headerless unless real sections exist),
-  // then sections in sort_order. Orphaned/foreign section_ids fall to ungrouped.
-  const listSectionGroups = useMemo(() => {
-    if (scope.kind !== 'list') return [] as { section: TaskSection | null; tasks: Task[] }[]
-    const listId = scope.listId
-    const mySections = sections
-      .filter(s => s.list_id === listId)
+  // The container (List or Space) the current scope represents, if any.
+  const scopeContainer = useMemo<{ kind: 'list' | 'space'; id: string } | null>(() => {
+    if (scope.kind === 'list') return { kind: 'list', id: scope.listId }
+    if (scope.kind === 'space') return { kind: 'space', id: scope.spaceId }
+    return null
+  }, [scope])
+
+  // Sections belonging to the current scope's container, in order.
+  const scopeSections = useMemo(() => {
+    if (!scopeContainer) return [] as TaskSection[]
+    return sections
+      .filter(s => scopeContainer.kind === 'list' ? s.list_id === scopeContainer.id : s.space_id === scopeContainer.id)
       .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
-    const validIds = new Set(mySections.map(s => s.id))
+  }, [sections, scopeContainer])
+
+  // When to group by section instead of due bucket: always for a List; for a
+  // Space only once it has at least one section (so OKR spaces keep their
+  // Today/This week view until you opt in by adding a section).
+  const useSectionView = scope.kind === 'list' || (scope.kind === 'space' && scopeSections.length > 0)
+
+  // Group filtered tasks by section. Ungrouped first (headerless unless real
+  // sections exist), then sections in order. Orphaned section_ids fall to
+  // ungrouped.
+  const containerSectionGroups = useMemo(() => {
+    if (!useSectionView) return [] as { section: TaskSection | null; tasks: Task[] }[]
+    const validIds = new Set(scopeSections.map(s => s.id))
     const byId = new Map<string, Task[]>()
     const ungrouped: Task[] = []
     for (const t of filtered) {
@@ -304,9 +320,9 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       }
     }
     const groups: { section: TaskSection | null; tasks: Task[] }[] = [{ section: null, tasks: ungrouped }]
-    for (const s of mySections) groups.push({ section: s, tasks: byId.get(s.id) ?? [] })
+    for (const s of scopeSections) groups.push({ section: s, tasks: byId.get(s.id) ?? [] })
     return groups
-  }, [scope, sections, filtered])
+  }, [useSectionView, scopeSections, filtered])
 
   const selected = useMemo(
     () => selectedId ? tasks.find(t => t.id === selectedId) ?? null : null,
@@ -516,13 +532,16 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
   }, [scope, toast])
 
   const onAddSection = useCallback(async (name: string) => {
-    if (scope.kind !== 'list') return
+    if (!scopeContainer) return
     const clean = name.trim()
     if (!clean) return
-    const listId = scope.listId
     try {
-      const count = sections.filter(s => s.list_id === listId).length
-      const created = await taskSectionsDb.create({ list_id: listId, name: clean, sort_order: count })
+      const count = scopeSections.length
+      const created = await taskSectionsDb.create(
+        scopeContainer.kind === 'list'
+          ? { list_id: scopeContainer.id, name: clean, sort_order: count }
+          : { space_id: scopeContainer.id, name: clean, sort_order: count }
+      )
       setSections(prev => [...prev, created])
       setNewSectionDraft('')
       setNewSectionOpen(false)
@@ -530,7 +549,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       console.error('create section failed', e)
       toast('Could not create section')
     }
-  }, [scope, sections, setSections, toast])
+  }, [scopeContainer, scopeSections, setSections, toast])
 
   const onRenameSection = useCallback(async (id: string, name: string) => {
     const clean = name.trim()
@@ -557,11 +576,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
   }, [setSections, setTasks, toast])
 
   const onMoveSection = useCallback(async (id: string, dir: -1 | 1) => {
-    if (scope.kind !== 'list') return
-    const listId = scope.listId
-    const ordered = sections
-      .filter(s => s.list_id === listId)
-      .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
+    const ordered = scopeSections
     const idx = ordered.findIndex(s => s.id === id)
     const swapIdx = idx + dir
     if (idx < 0 || swapIdx < 0 || swapIdx >= ordered.length) return
@@ -576,7 +591,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       console.error('reorder section failed', e)
       toast('Could not reorder section')
     }
-  }, [scope, sections, setSections, toast])
+  }, [scopeSections, setSections, toast])
 
   const toggleSectionCollapse = (id: string) => setCollapsedSections(prev => {
     const next = new Set(prev)
@@ -633,6 +648,31 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       </div>
     )
   }
+
+  // "+ Add section" control — shown in the section view and as an opt-in footer
+  // in the space due-bucket view. Targets the current scope's container.
+  const addSectionControl = (
+    <div style={{ marginTop: 16 }}>
+      {newSectionOpen ? (
+        <input autoFocus value={newSectionDraft}
+          onChange={e => setNewSectionDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onAddSection(newSectionDraft)
+            if (e.key === 'Escape') { setNewSectionOpen(false); setNewSectionDraft('') }
+          }}
+          onBlur={() => { if (newSectionDraft.trim()) onAddSection(newSectionDraft); else setNewSectionOpen(false) }}
+          placeholder="Section name…"
+          style={{ width: '100%', padding: '8px 12px', background: 'var(--navy-800)', border: '1px solid var(--accent)', borderRadius: 8, color: 'var(--navy-100)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none' }} />
+      ) : (
+        <button onClick={() => { setNewSectionOpen(true); setNewSectionDraft('') }}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: '1px dashed var(--navy-600)', borderRadius: 8, color: 'var(--navy-400)', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)'; e.currentTarget.style.borderColor = 'var(--navy-500)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)'; e.currentTarget.style.borderColor = 'var(--navy-600)' }}>
+          <span style={{ color: 'var(--accent)', fontWeight: 700 }}>+</span> Add section
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <div style={{
@@ -782,17 +822,17 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
           {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
         </header>
 
-        {scope.kind === 'list' ? (
-          // ── List scope: group by user-defined section ──
+        {useSectionView ? (
+          // ── Section view (List always; Space once it has sections) ──
           <>
             {filtered.length === 0 && (
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
-                Nothing here yet. Add a task below, or a section to organize this list.
+                Nothing here yet. Add a task below, or a section to organize this {scope.kind === 'space' ? 'space' : 'list'}.
               </div>
             )}
-            {listSectionGroups.map((group, gi) => {
+            {containerSectionGroups.map((group, gi) => {
               const s = group.section
-              const hasRealSections = listSectionGroups.length > 1
+              const hasRealSections = containerSectionGroups.length > 1
               // Ungrouped group: render rows headerless unless real sections coexist.
               if (s === null) {
                 if (group.tasks.length === 0) return null
@@ -809,7 +849,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
               }
               const collapsed = collapsedSections.has(s.id)
               const isFirst = gi === 1
-              const isLast = gi === listSectionGroups.length - 1
+              const isLast = gi === containerSectionGroups.length - 1
               const renaming = renamingSectionId === s.id
               return (
                 <section key={s.id} style={{ marginTop: 20 }}>
@@ -864,26 +904,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
               )
             })}
             {/* + Add section */}
-            <div style={{ marginTop: 16 }}>
-              {newSectionOpen ? (
-                <input autoFocus value={newSectionDraft}
-                  onChange={e => setNewSectionDraft(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') onAddSection(newSectionDraft)
-                    if (e.key === 'Escape') { setNewSectionOpen(false); setNewSectionDraft('') }
-                  }}
-                  onBlur={() => { if (newSectionDraft.trim()) onAddSection(newSectionDraft); else setNewSectionOpen(false) }}
-                  placeholder="Section name…"
-                  style={{ width: '100%', padding: '8px 12px', background: 'var(--navy-800)', border: '1px solid var(--accent)', borderRadius: 8, color: 'var(--navy-100)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none' }} />
-              ) : (
-                <button onClick={() => { setNewSectionOpen(true); setNewSectionDraft('') }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: '1px dashed var(--navy-600)', borderRadius: 8, color: 'var(--navy-400)', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', width: '100%', textAlign: 'left' }}
-                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)'; e.currentTarget.style.borderColor = 'var(--navy-500)' }}
-                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)'; e.currentTarget.style.borderColor = 'var(--navy-600)' }}>
-                  <span style={{ color: 'var(--accent)', fontWeight: 700 }}>+</span> Add section
-                </button>
-              )}
-            </div>
+            {addSectionControl}
           </>
         ) : (
           // ── Smart / Space / Tag scope: group by due bucket ──
@@ -923,6 +944,8 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
               </section>
               )
             })}
+            {/* Space can opt into section grouping by adding its first section */}
+            {scope.kind === 'space' && addSectionControl}
           </>
         )}
 
@@ -1280,6 +1303,10 @@ function DetailPanel({ task, tags, spaces, lists, sections, objectives, roadmapI
     : 'One-shot'
 
   const list = lists.find(l => l.id === task.list_id)
+  // Sections belonging to this task's container (List or Space), in order.
+  const containerSections = sections
+    .filter(s => task.list_id ? s.list_id === task.list_id : task.space_id ? s.space_id === task.space_id : false)
+    .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
   const linkedKR = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
   const isSubtask = !!task.parent_task_id
   // KR link is only valid on space-scoped tasks (tasks_list_no_kr_link CHECK).
@@ -1538,16 +1565,13 @@ function DetailPanel({ task, tags, spaces, lists, sections, objectives, roadmapI
         </select>
       </Field>
 
-      {list && (
+      {(containerSections.length > 0 || task.section_id) && (
         <Field label="Section">
           <select value={task.section_id ?? ''}
             onChange={e => onPatch({ section_id: e.target.value || null })}
             style={selectStyle}>
             <option value="">— No section —</option>
-            {sections
-              .filter(s => s.list_id === task.list_id)
-              .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
-              .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {containerSections.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
       )}
