@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, Notebook, Note } from '@/lib/types'
 import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
@@ -28,6 +28,8 @@ import Tags from '@/components/Tags'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import NavRail from '@/components/NavRail'
+import CommandPalette from '@/components/CommandPalette'
+import type { SearchEntry } from '@/lib/search'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
 import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
@@ -35,7 +37,6 @@ import type { User } from '@supabase/supabase-js'
 
 type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'tags'
 
-interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string; noteId?: string }
 
 export default function HQPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
@@ -52,7 +53,7 @@ export default function HQPage() {
   const [legacyWeekStart, setLegacyWeekStart] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [paletteOpen, setPaletteOpen] = useState(false)
 
   // Mobile fallback (May 17): the NavRail collapses into a hamburger-triggered
   // slide-in drawer below 900px. Drawer state lives at the page level so the
@@ -317,41 +318,118 @@ export default function HQPage() {
     setClosingWizard(lastMonday)
   }, [loading, activeSpaceId, reviews, actions, habitCheckins, objectives, roadmapItems, closingWizard])
 
-  // Search
-  const searchResults: SearchResult[] = searchQuery.trim().length < 2 ? [] : (() => {
-    const q = searchQuery.toLowerCase()
-    const results: SearchResult[] = []
-    objectives.forEach(o => { if (o.name.toLowerCase().includes(q)) results.push({ label: o.name, sub: 'Objective', screen: 'roadmap' }) })
-    roadmapItems.filter(i => !i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Key Result', screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap' }) })
-    // "Action this week" results: with per-space weekStart, an action is
-    // "this week" relative to its OWN space's active week, not the active
-    // space's. Actions don't carry space_id directly — derive it from
-    // roadmap_items via roadmap_item_id.
-    const today = getMonday()
+  // Search index — a flat list of every searchable thing, rebuilt only when
+  // its source state changes. The command palette ranks this in-memory.
+  const searchEntries: SearchEntry[] = useMemo(() => {
+    const spaceById = new Map(spaces.map(s => [s.id, s]))
+    const spaceMeta = (id: string | null | undefined) => {
+      const s = id ? spaceById.get(id) : undefined
+      return { spaceName: s?.name, spaceColor: s?.color }
+    }
     const spaceForKR = new Map(roadmapItems.map(i => [i.id, i.space_id]))
+    const notebookName = new Map(notebooks.map(n => [n.id, n.name]))
+    const today = getMonday()
     const weekStartFor = (spaceId: string | undefined) =>
       (spaceId && weekStartBySpace[spaceId]) || legacyWeekStart || today
-    actions.filter(a => a.week_start === weekStartFor(spaceForKR.get(a.roadmap_item_id))).forEach(a => { if (a.title.toLowerCase().includes(q)) results.push({ label: a.title, sub: 'Action this week', screen: 'focus' }) })
-    roadmapItems.filter(i => i.is_parked).forEach(i => { if (i.title.toLowerCase().includes(q)) results.push({ label: i.title, sub: 'Parking Lot', screen: 'park' }) })
-    // Tasks (May 18). Match open tasks first, then closed. Carries the task id
-    // so onPickResult can deep-link via tasksInitialId — Tasks.tsx reads that
-    // prop and switches scope + selects the row.
-    const openTaskMatches = tasks.filter(t => !t.completed_at && t.title.toLowerCase().includes(q))
-    const doneTaskMatches = tasks.filter(t =>  t.completed_at && t.title.toLowerCase().includes(q))
-    for (const t of openTaskMatches) results.push({ label: t.title, sub: 'Task', screen: 'tasks', taskId: t.id })
-    for (const t of doneTaskMatches) results.push({ label: t.title, sub: 'Task · done', screen: 'tasks', taskId: t.id })
-    // Notes (Jun 2026). Match title first, then body text. Carries noteId
-    // for deep-link via notesInitialId — Notes.tsx routes to the note's
-    // container and selects it.
+    const recency = (iso?: string | null) => {
+      if (!iso) return 0
+      const days = (Date.now() - new Date(iso).getTime()) / 86400000
+      return days < 0 ? 8 : Math.max(0, 8 - days / 12) // ~8 fresh, fading over ~3mo
+    }
+
+    const out: SearchEntry[] = []
+
+    for (const o of objectives) {
+      out.push({
+        id: `obj:${o.id}`, kind: 'Objective', icon: '◎', title: o.name,
+        ...spaceMeta(o.space_id), rec: recency(o.created_at),
+        route: { screen: 'okr', spaceId: o.space_id, objectiveId: o.id },
+      })
+    }
+
+    for (const i of roadmapItems) {
+      const parked = i.is_parked
+      out.push({
+        id: `kr:${i.id}`, kind: 'Key Result', icon: '◇', title: i.title,
+        ...spaceMeta(i.space_id), hint: parked ? 'parked' : undefined,
+        rec: recency(i.created_at),
+        route: parked
+          ? { screen: 'park', spaceId: i.space_id }
+          : { screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap', spaceId: i.space_id },
+      })
+    }
+
+    for (const a of actions) {
+      const sid = spaceForKR.get(a.roadmap_item_id)
+      const thisWeek = a.week_start === weekStartFor(sid)
+      out.push({
+        id: `act:${a.id}`, kind: 'Action', icon: '▸', title: a.title,
+        ...spaceMeta(sid), hint: thisWeek ? 'this week' : undefined,
+        done: a.completed, rec: thisWeek ? 8 : 2,
+        route: { screen: 'focus', spaceId: sid, weekStart: a.week_start, actionId: a.id },
+      })
+    }
+
+    for (const t of tasks) {
+      out.push({
+        id: `task:${t.id}`, kind: 'Task', icon: '☑', title: t.title,
+        body: t.description ?? undefined, tags: tagsByTask.get(t.id),
+        ...spaceMeta(t.space_id), done: !!t.completed_at, rec: recency(t.updated_at),
+        route: { screen: 'tasks', taskId: t.id },
+      })
+    }
+
     for (const n of notes) {
-      const titleMatch = n.title.toLowerCase().includes(q)
-      const bodyMatch = !titleMatch && extractNoteText(n.body).toLowerCase().includes(q)
-      if (titleMatch || bodyMatch) {
-        results.push({ label: n.title || 'Untitled', sub: bodyMatch ? 'Note · body match' : 'Note', screen: 'notes', noteId: n.id })
+      out.push({
+        id: `note:${n.id}`, kind: 'Note', icon: '▤', title: n.title || 'Untitled',
+        body: extractNoteText(n.body), tags: tagsByNote.get(n.id),
+        container: n.notebook_id ? notebookName.get(n.notebook_id) : undefined,
+        ...spaceMeta(n.space_id), rec: recency(n.updated_at),
+        route: { screen: 'notes', noteId: n.id },
+      })
+    }
+
+    for (const r of reviews) {
+      const text = [r.win, r.slipped, r.adjust_notes].filter(Boolean).join(' ')
+      if (!text) continue
+      out.push({
+        id: `refl:${r.id}`, kind: 'Reflect', icon: '✶',
+        title: `Reflection · ${formatWeek(r.week_start)}`, body: text,
+        ...spaceMeta(r.space_id),
+        route: { screen: 'reflect', spaceId: r.space_id, weekStart: r.week_start },
+      })
+    }
+
+    for (const nb of notebooks) {
+      out.push({
+        id: `nb:${nb.id}`, kind: 'Notebook', icon: '❑', title: nb.name,
+        ...spaceMeta(nb.space_id),
+        route: { screen: 'notes', spaceId: nb.space_id },
+      })
+    }
+
+    for (const s of spaces) {
+      out.push({
+        id: `space:${s.id}`, kind: 'Space', icon: '⬡', title: s.name,
+        spaceColor: s.color,
+        route: { screen: 'okr', spaceId: s.id },
+      })
+    }
+
+    return out
+  }, [objectives, roadmapItems, actions, tasks, notes, reviews, notebooks, spaces, tagsByTask, tagsByNote, weekStartBySpace, legacyWeekStart])
+
+  // ⌘K / Ctrl-K opens the command palette from anywhere in the app.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
       }
     }
-    return results.slice(0, 10)
-  })()
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
 
   function copyShareLink() {
     if (!shareToken) {
@@ -397,9 +475,30 @@ export default function HQPage() {
     setOpenObjectiveId(null)
   }
 
-  // Checkbox handlers fired from Summary. Toggle in place; do NOT switch
-  // space or screen. Keeps the user on the Overview while they tick things
-  // off.
+  // Route a command-palette pick. Reuses the same space-switch + panel-open
+  // plumbing as the Summary jumps. Space-scoped screens (okr/focus/roadmap/
+  // park/reflect) need the target's space committed first, or the screen would
+  // render the wrong space's data.
+  function handleSearchPick(entry: SearchEntry) {
+    const r = entry.route
+    if (r.spaceId) switchSpace(r.spaceId)
+    if (r.taskId) setTasksInitialId(r.taskId)
+    if (r.noteId) setNotesInitialId(r.noteId)
+    if (r.objectiveId) { setOpenObjectiveId(r.objectiveId); setOpenActionId(null) }
+    if (r.actionId) {
+      // Actions on past/future weeks need their week committed so Focus surfaces
+      // them. Use the explicit-space variant — activeSpaceId hasn't propagated
+      // from switchSpace yet.
+      if (r.spaceId && r.weekStart) setWeekStartForSpace(r.spaceId, () => r.weekStart!)
+      setOpenActionId(r.actionId); setOpenObjectiveId(null)
+    }
+    if (r.screen === 'reflect' && r.spaceId && r.weekStart) {
+      setWeekStartForSpace(r.spaceId, () => r.weekStart!)
+    }
+    goToScreen(r.screen as Screen)
+    if (isMobile) setDrawerOpen(false)
+  }
+
   async function toggleActionFromSummary(action: WeeklyAction) {
     try {
       const updated = await actionsDb.update(action.id, { completed: !action.completed })
@@ -495,20 +594,7 @@ export default function HQPage() {
         })()}
         parkedCount={parkedCount}
         reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}
-        searchQuery={searchQuery}
-        setSearchQuery={setSearchQuery}
-        searchResults={searchResults}
-        onPickResult={(r) => {
-          // Deep-link by sub-type. Tasks land via tasksInitialId so
-          // Tasks.tsx auto-selects the row. Notes via notesInitialId.
-          if (r.screen === 'tasks' && r.taskId) {
-            setTasksInitialId(r.taskId)
-          }
-          if (r.screen === 'notes' && r.noteId) {
-            setNotesInitialId(r.noteId)
-          }
-          goToScreen(r.screen)
-        }}
+        onOpenSearch={() => setPaletteOpen(true)}
         initials={initials}
         email={user?.email ?? ''}
         theme={theme}
@@ -726,6 +812,13 @@ export default function HQPage() {
       })()}
 
       {toast && <Toast msg={toast} onDone={() => setToast(null)} />}
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        entries={searchEntries}
+        onPick={handleSearchPick}
+      />
 
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }

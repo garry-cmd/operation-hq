@@ -19,8 +19,6 @@ import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
 export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
 
-export interface SearchResult { label: string; sub: string; screen: Screen; taskId?: string; noteId?: string }
-
 interface Props {
   screen: Screen
   onScreenChange: (s: Screen) => void
@@ -40,15 +38,9 @@ interface Props {
   parkedCount?: number
   reviewsCount?: number
 
-  // Search — query and results are computed in page.tsx (it owns the
-  // searchable data); the rail just renders the input and the result list.
-  searchQuery: string
-  setSearchQuery: (q: string) => void
-  searchResults: SearchResult[]
-  // Called when a search result is chosen. The rail used to just call
-  // onScreenChange(r.screen) which lost any per-result deep-link payload
-  // (e.g. r.taskId for global Tasks search). Now page.tsx owns the routing.
-  onPickResult?: (r: SearchResult) => void
+  // Search — the rail renders a trigger that opens the command palette
+  // (owned by page.tsx, which holds the searchable data).
+  onOpenSearch: () => void
 
   // Footer / user menu.
   initials: string
@@ -100,27 +92,9 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
 ]
 
 export default function NavRail(props: Props) {
-  const searchRef = useRef<HTMLInputElement>(null)
+
   const avatarRef = useRef<HTMLDivElement>(null)
   const [avatarOpen, setAvatarOpen] = useState(false)
-  const [searchFocused, setSearchFocused] = useState(false)
-
-  // Global Cmd/Ctrl+K → focus the search input. Doesn't fire when the user
-  // is already typing into another input (so it doesn't fight normal text
-  // entry inside the app).
-  useEffect(() => {
-    function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        const target = e.target as HTMLElement | null
-        const inField = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
-        if (inField) return
-        e.preventDefault()
-        searchRef.current?.focus()
-      }
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [])
 
   // Close avatar menu on outside click — mirrors the old top-bar behavior.
   useEffect(() => {
@@ -184,71 +158,29 @@ export default function NavRail(props: Props) {
           </div>
         )}
 
-        {/* Search */}
-        <div style={{ position: 'relative' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            background: 'var(--navy-800)',
-            border: `1px solid ${searchFocused ? 'var(--accent)' : 'var(--navy-500)'}`,
-            borderRadius: 8, padding: '6px 10px',
-            transition: 'border-color .15s',
-          }}>
-            <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}>
-              <circle cx="5.5" cy="5.5" r="4" stroke="var(--navy-400)" strokeWidth="1.4"/>
-              <path d="M9 9l2.5 2.5" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round"/>
-            </svg>
-            <input ref={searchRef}
-              value={props.searchQuery}
-              onChange={e => props.setSearchQuery(e.target.value)}
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
-              placeholder="Search…"
-              style={{
-                flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none',
-                fontSize: 12.5, color: 'var(--navy-100)', fontFamily: 'inherit',
-              }} />
-            {!props.searchQuery && (
-              <kbd style={{
-                fontSize: 10, padding: '1px 5px', background: 'var(--navy-700)',
-                border: '1px solid var(--navy-500)', borderRadius: 3, color: 'var(--navy-400)',
-                fontFamily: 'monospace', flexShrink: 0,
-              }}>⌘K</kbd>
-            )}
-            {props.searchQuery && (
-              <button onClick={() => props.setSearchQuery('')}
-                style={{ color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}>
-                ×
-              </button>
-            )}
-          </div>
-          {searchFocused && props.searchResults.length > 0 && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, right: 0, marginTop: 4,
-              background: 'var(--navy-700)', border: '1px solid var(--navy-500)',
-              borderRadius: 10, overflow: 'hidden', zIndex: 50, maxHeight: 320, overflowY: 'auto',
-            }}>
-              {props.searchResults.map((r, i) => (
-                <button key={i}
-                  onMouseDown={() => {
-                    if (props.onPickResult) props.onPickResult(r)
-                    else props.onScreenChange(r.screen)
-                    props.setSearchQuery(''); setSearchFocused(false)
-                    if (props.isMobile) props.onClose?.()
-                  }}
-                  style={{
-                    width: '100%', padding: '9px 12px', display: 'flex', flexDirection: 'column', gap: 2,
-                    background: 'none', border: 'none', borderBottom: '1px solid var(--navy-600)',
-                    cursor: 'pointer', textAlign: 'left',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--navy-600)')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                  <span style={{ fontSize: 12, color: 'var(--navy-50)', fontWeight: 500 }}>{r.label}</span>
-                  <span style={{ fontSize: 10, color: 'var(--navy-400)' }}>{r.sub}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        {/* Search — opens the command palette */}
+        <button
+          onClick={() => props.onOpenSearch()}
+          style={{
+            width: '100%', display: 'flex', alignItems: 'center', gap: 7,
+            background: 'var(--navy-800)', border: '1px solid var(--navy-500)',
+            borderRadius: 8, padding: '6px 10px', cursor: 'pointer',
+            fontFamily: 'inherit', textAlign: 'left',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--accent)')}
+          onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--navy-500)')}
+        >
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}>
+            <circle cx="5.5" cy="5.5" r="4" stroke="var(--navy-400)" strokeWidth="1.4"/>
+            <path d="M9 9l2.5 2.5" stroke="var(--navy-400)" strokeWidth="1.4" strokeLinecap="round"/>
+          </svg>
+          <span style={{ flex: 1, fontSize: 12.5, color: 'var(--navy-400)' }}>Search…</span>
+          <kbd style={{
+            fontSize: 10, padding: '1px 5px', background: 'var(--navy-700)',
+            border: '1px solid var(--navy-500)', borderRadius: 3, color: 'var(--navy-400)',
+            fontFamily: 'monospace', flexShrink: 0,
+          }}>⌘K</kbd>
+        </button>
       </div>
 
       {/* Nav groups */}
