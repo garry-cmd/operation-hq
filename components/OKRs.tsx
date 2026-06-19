@@ -1,5 +1,5 @@
 'use client'
-import { useState, type CSSProperties } from 'react'
+import { useState, useEffect, type CSSProperties } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem, WeeklyAction, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin } from '@/lib/types'
@@ -8,6 +8,7 @@ import { calculateRollingAggregate, calculateMetricAggregate } from '@/lib/habit
 import { recentCheckins, sparklineTrend } from '@/lib/metricUtils'
 import { getQuarterRange } from '@/lib/dateBuckets'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
+import { scrollToAndFlash } from '@/lib/scrollFlash'
 import ObjectiveCard from './ObjectiveCard'
 import ObjectivePanel from './ObjectivePanel'
 import Modal from './Modal'
@@ -83,11 +84,24 @@ type Props = {
   // Display name for the active space — drives the H1. Wired from page.tsx
   // as activeSpace.name; falls back to 'My OKRs' if a space lookup misses.
   spaceName: string
+  // Set by the command palette to deep-link a KR; consumed on arrival to
+  // scroll the KR into view and flash it.
+  initialKRId?: string | null
+  onConsumeInitialKRId?: () => void
 }
 
-export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, setLinks, setLogs, openObjectiveId, setOpenObjectiveId, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric, spaceName }: Props) {
+export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadmapItems, actions, setActions, weekStart, links, logs, setLinks, setLogs, openObjectiveId, setOpenObjectiveId, activeSpaceId, habitCheckins, metricCheckins, toast, onLogMetric, spaceName, initialKRId, onConsumeInitialKRId }: Props) {
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
+
+  // Command-palette deep-link: scroll the targeted KR into view + flash it, then
+  // clear so it doesn't re-fire on the next render.
+  useEffect(() => {
+    if (!initialKRId) return
+    scrollToAndFlash(initialKRId)
+    onConsumeInitialKRId?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialKRId])
   
   // OKRs tab = "what you're working on right now" → only KRs in the active quarter.
   // Future-quarter KRs (status 'planned') live on the Roadmap until their quarter

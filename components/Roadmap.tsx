@@ -1,10 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
 import { ACTIVE_Q, COLORS, getRollingQuarters, formatQ, parseDateLocal } from '@/lib/utils'
 import { formatDateRange } from '@/lib/dateBuckets'
+import { scrollToAndFlash } from '@/lib/scrollFlash'
 import Modal from './Modal'
 import EditKRModal from './EditKRModal'
 
@@ -15,6 +16,9 @@ type Props = {
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   activeSpaceId: string
   toast: (m: string) => void
+  // Command-palette KR deep-link target (scroll + flash, then consume).
+  initialKRId?: string | null
+  onConsumeInitialKRId?: () => void
 }
 
 type ModalState =
@@ -31,10 +35,18 @@ function hex2rgba(hex: string, a: number) {
   return `rgba(${r},${g},${b},${a})`
 }
 
-export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, activeSpaceId, toast }: Props) {
+export default function Roadmap({ objectives, roadmapItems, setObjectives, setRoadmapItems, activeSpaceId, toast, initialKRId, onConsumeInitialKRId }: Props) {
   const [modal, setModal] = useState<ModalState>(null)
   const [draggingId, setDraggingId] = useState<string | null>(null)   // drag-and-drop
   const [dragOverCell, setDragOverCell] = useState<string | null>(null) // "objId:quarter"
+
+  // Command-palette deep-link: scroll the targeted KR chip into view + flash it.
+  useEffect(() => {
+    if (!initialKRId) return
+    scrollToAndFlash(initialKRId)
+    onConsumeInitialKRId?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialKRId])
 
   const activeObjs = objectives.filter(o => o.status !== 'abandoned')
   const items = roadmapItems.filter(i => !i.is_parked)
@@ -313,6 +325,7 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
   const krDateText = formatDateRange(item.start_date, item.end_date)
   return (
     <div
+      data-kr-id={item.id}
       draggable
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}

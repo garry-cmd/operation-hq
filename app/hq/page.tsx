@@ -100,6 +100,9 @@ export default function HQPage() {
   // Currently-open objective panel on the OKRs tab. Same pattern as
   // openActionId — lifted to page level so <main> can widen for it.
   const [openObjectiveId, setOpenObjectiveId] = useState<string | null>(null)
+  // Set when the command palette deep-links to a KR; OKRs/Roadmap consume it to
+  // scroll the KR into view and flash it, then clear it.
+  const [initialKRId, setInitialKRId] = useState<string | null>(null)
   // Cross-app jump targets. Set by Tags clicks; consumed (and cleared) by
   // the destination screen's mount effect so subsequent re-renders don't
   // re-select the item.
@@ -355,7 +358,7 @@ export default function HQPage() {
         rec: recency(i.created_at),
         route: parked
           ? { screen: 'park', spaceId: i.space_id }
-          : { screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap', spaceId: i.space_id },
+          : { screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap', spaceId: i.space_id, krId: i.id },
       })
     }
 
@@ -509,6 +512,7 @@ export default function HQPage() {
     if (r.screen === 'reflect' && r.spaceId && r.weekStart) {
       setWeekStartForSpace(r.spaceId, () => r.weekStart!)
     }
+    if (r.krId) setInitialKRId(r.krId)
     goToScreen(r.screen as Screen)
     if (isMobile) setDrawerOpen(false)
   }
@@ -757,9 +761,9 @@ export default function HQPage() {
                 </button>
               </div>
             )}
-            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} spaceName={activeSpace?.name ?? 'My OKRs'} />}
+            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} spaceName={activeSpace?.name ?? 'My OKRs'} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} />}
-            {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} />}
+            {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
             {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>

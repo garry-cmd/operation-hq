@@ -354,7 +354,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
           })()
           return (
             <React.Fragment key={kr.id}>
-              <div style={{ padding: '10px 18px', display: 'flex', alignItems: 'flex-start', gap: 12, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
+              <div data-kr-id={kr.id} style={{ padding: '10px 18px', display: 'flex', alignItems: 'flex-start', gap: 12, borderTop: `1px solid ${divColor}`, background: 'var(--navy-800)' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ lineHeight: 1.4, marginBottom: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <button

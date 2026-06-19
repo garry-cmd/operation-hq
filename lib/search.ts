@@ -16,6 +16,7 @@ export interface SearchRoute {
   noteId?: string
   objectiveId?: string
   actionId?: string
+  krId?: string
 }
 
 export interface SearchEntry {
