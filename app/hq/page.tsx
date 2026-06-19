@@ -61,6 +61,9 @@ export default function HQPage() {
   // already a permanent column.
   const isMobile = useIsMobile(900)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  // Notes "focus mode" — when on (desktop), the NavRail is hidden and Notes
+  // collapses its own two panes so the editor gets the full viewport width.
+  const [notesFocus, setNotesFocus] = useState(false)
 
   const [objectives, setObjectives] = useState<AnnualObjective[]>([])
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([])
@@ -462,11 +465,15 @@ export default function HQPage() {
     setScreen(target)
   }
 
+  // Leaving Notes always restores the chrome (NavRail back).
+  useEffect(() => { if (screen !== 'notes') setNotesFocus(false) }, [screen])
+
   // Active-screen detection is now owned by NavRail; the bottom nav and its
   // NAV/navActive scaffolding were removed when the rail landed.
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--navy-900)' }}>
+      {!(notesFocus && !isMobile) && (
       <NavRail
         screen={screen}
         onScreenChange={goToScreen}
@@ -512,6 +519,7 @@ export default function HQPage() {
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
+      )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       {/* Mobile-only top bar — hamburger + brand. Hidden on desktop where
@@ -576,6 +584,7 @@ export default function HQPage() {
           initialNoteId={notesInitialId}
           onConsumeInitialNoteId={() => setNotesInitialId(null)}
           onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
+          onFocusChange={setNotesFocus}
           toast={setToast}
         />
       ) : screen === 'tags' && !loading ? (

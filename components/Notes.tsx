@@ -46,6 +46,8 @@ interface Props {
   onConsumeInitialNoteId?: () => void
   /** Called when the user clicks a tag chip — jumps to the Tags page. */
   onJumpToTag?: (tag: string) => void
+  /** Notify page.tsx when focus mode toggles, so it can collapse the NavRail. */
+  onFocusChange?: (focused: boolean) => void
   toast: (msg: string) => void
 }
 
@@ -64,7 +66,7 @@ type Scope =
 
 const EMPTY_DOC: NoteBody = { type: 'doc', content: [{ type: 'paragraph' }] }
 
-export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, notes, setNotes, tagsByNote, setTagsByNote, initialNoteId, onConsumeInitialNoteId, onJumpToTag, toast }: Props) {
+export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, notes, setNotes, tagsByNote, setTagsByNote, initialNoteId, onConsumeInitialNoteId, onJumpToTag, onFocusChange, toast }: Props) {
   const [scope, setScope] = useState<Scope>({ kind: 'inbox' })
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   // Left-pane UI state
@@ -575,7 +577,7 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
             note={selectedNote}
             tags={tagsByNote.get(selectedNote.id) ?? []}
             fullscreen={fullscreen}
-            onToggleFullscreen={() => setFullscreen(v => !v)}
+            onToggleFullscreen={() => setFullscreen(v => { const nv = !v; onFocusChange?.(nv); return nv })}
             onPatch={patch => onUpdateNote(selectedNote.id, patch)}
             onSetTags={tags => onSetNoteTags(selectedNote.id, tags)}
             onDelete={() => { if (confirm('Delete this note?')) onDeleteNote(selectedNote.id) }}
@@ -1062,9 +1064,10 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     onSetTags(tags.filter(x => x !== t))
   }
 
-  // In fullscreen, center the editor content for comfortable reading.
+  // In fullscreen / focus mode, give the editor a much wider column than the
+  // cramped default — roomy for tables while keeping prose line-length sane.
   const innerStyle: React.CSSProperties = fullscreen
-    ? { maxWidth: 780, margin: '0 auto', width: '100%' }
+    ? { maxWidth: 1100, margin: '0 auto', width: '100%' }
     : {}
 
   return (
@@ -1105,7 +1108,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
               : uploadState === 'error' ? '⚠ ' + uploadErr
               : saveState === 'saving' ? 'Saving…'
               : saveState === 'saved' ? '✓ Saved' : ''}
-            <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode' : 'Focus mode (hide panels)'}
               style={{ marginLeft: 10, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
               onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)' }}
               onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)' }}>
