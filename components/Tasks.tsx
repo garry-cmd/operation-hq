@@ -21,9 +21,10 @@
  */
 
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
-import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, TaskList, Priority } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, TaskList, TaskSection, Priority } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
 import * as taskListsDb from '@/lib/db/taskLists'
+import * as taskSectionsDb from '@/lib/db/taskSections'
 import { getActiveKRs } from '@/lib/krFilters'
 import { formatMinutes } from '@/lib/utils'
 import { useIsMobile } from '@/lib/useIsMobile'
@@ -50,6 +51,8 @@ interface Props {
   setTasks: (fn: (prev: Task[]) => Task[]) => void
   lists: TaskList[]
   setLists: (fn: (prev: TaskList[]) => TaskList[]) => void
+  sections: TaskSection[]
+  setSections: (fn: (prev: TaskSection[]) => TaskSection[]) => void
   tagsByTask: Map<string, string[]>
   setTagsByTask: (fn: (prev: Map<string, string[]>) => Map<string, string[]>) => void
   /** Task to focus when entering — set by cross-app jump from Tags page. */
@@ -108,7 +111,7 @@ function PlusIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
-export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems, tasks, setTasks, lists, setLists, tagsByTask, setTagsByTask, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
+export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems, tasks, setTasks, lists, setLists, sections, setSections, tagsByTask, setTagsByTask, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
   // Data lifecycle (load + tags) is owned by page.tsx as of May 18. This
   // component receives tasks/lists/tagsByTask via props and pushes mutations
   // through the corresponding setters. Eliminating the local load avoids a
@@ -151,6 +154,13 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
   const [renamingDraft, setRenamingDraft] = useState('')
   const [newListOpen, setNewListOpen] = useState(false)
   const [newListDraft, setNewListDraft] = useState('')
+  // Section UI state (list scope only)
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set())
+  const [newSectionOpen, setNewSectionOpen] = useState(false)
+  const [newSectionDraft, setNewSectionDraft] = useState('')
+  const [renamingSectionId, setRenamingSectionId] = useState<string | null>(null)
+  const [sectionRenameDraft, setSectionRenameDraft] = useState('')
+  const [sectionMenuOpenId, setSectionMenuOpenId] = useState<string | null>(null)
 
   // Cross-app jump: when Tags hands us an initialTaskId, find the task,
   // switch scope to its natural container, and select it. Then tell the
@@ -242,7 +252,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
 
   // Section the filtered list by due bucket. Sections render in this
   // fixed order. We compute the buckets up-front to keep the JSX flat.
-  const sections = useMemo(() => {
+  const dueBuckets = useMemo(() => {
     const thisWeek: Task[] = []
     const nextWeek: Task[] = []
     const later: Task[] = []
@@ -271,6 +281,32 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       { name: 'Done',      tasks: done,     accent: 'var(--navy-400)' },
     ].filter(s => s.tasks.length > 0)
   }, [filtered, today])
+
+  // When scope is a List, tasks group by user-defined section instead of due
+  // bucket. Ungrouped tasks come first (headerless unless real sections exist),
+  // then sections in sort_order. Orphaned/foreign section_ids fall to ungrouped.
+  const listSectionGroups = useMemo(() => {
+    if (scope.kind !== 'list') return [] as { section: TaskSection | null; tasks: Task[] }[]
+    const listId = scope.listId
+    const mySections = sections
+      .filter(s => s.list_id === listId)
+      .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
+    const validIds = new Set(mySections.map(s => s.id))
+    const byId = new Map<string, Task[]>()
+    const ungrouped: Task[] = []
+    for (const t of filtered) {
+      if (t.section_id && validIds.has(t.section_id)) {
+        const arr = byId.get(t.section_id) ?? []
+        arr.push(t)
+        byId.set(t.section_id, arr)
+      } else {
+        ungrouped.push(t)
+      }
+    }
+    const groups: { section: TaskSection | null; tasks: Task[] }[] = [{ section: null, tasks: ungrouped }]
+    for (const s of mySections) groups.push({ section: s, tasks: byId.get(s.id) ?? [] })
+    return groups
+  }, [scope, sections, filtered])
 
   const selected = useMemo(
     () => selectedId ? tasks.find(t => t.id === selectedId) ?? null : null,
@@ -472,6 +508,75 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     }
   }, [scope, toast])
 
+  const onAddSection = useCallback(async (name: string) => {
+    if (scope.kind !== 'list') return
+    const clean = name.trim()
+    if (!clean) return
+    const listId = scope.listId
+    try {
+      const count = sections.filter(s => s.list_id === listId).length
+      const created = await taskSectionsDb.create({ list_id: listId, name: clean, sort_order: count })
+      setSections(prev => [...prev, created])
+      setNewSectionDraft('')
+      setNewSectionOpen(false)
+    } catch (e) {
+      console.error('create section failed', e)
+      toast('Could not create section')
+    }
+  }, [scope, sections, setSections, toast])
+
+  const onRenameSection = useCallback(async (id: string, name: string) => {
+    const clean = name.trim()
+    if (!clean) return
+    try {
+      const updated = await taskSectionsDb.rename(id, clean)
+      setSections(prev => prev.map(s => s.id === id ? updated : s))
+    } catch (e) {
+      console.error('rename section failed', e)
+      toast('Could not rename section')
+    }
+  }, [setSections, toast])
+
+  const onDeleteSection = useCallback(async (id: string) => {
+    try {
+      await taskSectionsDb.remove(id)
+      // ON DELETE SET NULL orphans tasks to "no section"; mirror locally.
+      setSections(prev => prev.filter(s => s.id !== id))
+      setTasks(prev => prev.map(t => t.section_id === id ? { ...t, section_id: null } : t))
+    } catch (e) {
+      console.error('delete section failed', e)
+      toast('Could not delete section')
+    }
+  }, [setSections, setTasks, toast])
+
+  const onMoveSection = useCallback(async (id: string, dir: -1 | 1) => {
+    if (scope.kind !== 'list') return
+    const listId = scope.listId
+    const ordered = sections
+      .filter(s => s.list_id === listId)
+      .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
+    const idx = ordered.findIndex(s => s.id === id)
+    const swapIdx = idx + dir
+    if (idx < 0 || swapIdx < 0 || swapIdx >= ordered.length) return
+    const a = ordered[idx], b = ordered[swapIdx]
+    try {
+      const [ua, ub] = await Promise.all([
+        taskSectionsDb.setSortOrder(a.id, b.sort_order),
+        taskSectionsDb.setSortOrder(b.id, a.sort_order),
+      ])
+      setSections(prev => prev.map(s => s.id === ua.id ? ua : s.id === ub.id ? ub : s))
+    } catch (e) {
+      console.error('reorder section failed', e)
+      toast('Could not reorder section')
+    }
+  }, [scope, sections, setSections, toast])
+
+  const toggleSectionCollapse = (id: string) => setCollapsedSections(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
   // ── Rendering ────────────────────────────────────────────────────
 
   const heading = useMemo(() => {
@@ -493,6 +598,34 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     }
     return { title: `#${scope.tag}`, subtitle: '' }
   }, [scope, spaces, lists, today])
+
+  // Shared row renderer — a parent TaskRow plus its inline subtask children.
+  // Used by both the due-bucket view and the list-section view.
+  const renderTaskWithKids = (task: Task) => {
+    const kids = childrenByParent.get(task.id) ?? []
+    const kr = task.roadmap_item_id ? krById.get(task.roadmap_item_id) : undefined
+    const doneKids = kids.filter(k => k.completed_at).length
+    return (
+      <div key={task.id}>
+        <TaskRow task={task}
+          tags={tagsByTask.get(task.id) ?? []}
+          space={spaces.find(s => s.id === task.space_id)}
+          list={lists.find(l => l.id === task.list_id)}
+          krTitle={kr?.title}
+          subtaskProgress={kids.length > 0 ? { done: doneKids, total: kids.length } : undefined}
+          selected={selectedId === task.id}
+          onToggle={() => onToggle(task)}
+          onClick={() => setSelectedId(task.id)}
+          onTagClick={onJumpToTag} />
+        {kids.map(kid => (
+          <SubtaskRow key={kid.id} task={kid}
+            selected={selectedId === kid.id}
+            onToggle={() => onToggle(kid)}
+            onClick={() => setSelectedId(kid.id)} />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -642,69 +775,149 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
           {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
         </header>
 
-        {sections.length === 0 && (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
-            Nothing here. {scope.kind === 'smart' && scope.view === 'today' && 'Enjoy your day.'}
-          </div>
-        )}
-
-        {sections.map(section => {
-          const isDone = section.name === 'Done'
-          const collapsed = isDone && !showDone
-          return (
-          <section key={section.name} style={{ marginTop: 22 }}>
-            {isDone ? (
-              // Done header is a clickable toggle. Rows below are hidden by
-              // default per the showDone preference; count is always visible
-              // so the user knows how much is hiding.
-              <button onClick={toggleShowDone}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  fontSize: 10, fontWeight: 500, color: 'var(--nw-label-dim)',
-                  letterSpacing: '.16em', textTransform: 'uppercase',
-                  margin: '0 0 8px', padding: '0 12px',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}>
-                <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
-                  style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .15s' }}>
-                  <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-                {section.name} · {section.tasks.length}
-              </button>
-            ) : (
-              <h2 style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
-                {section.name} · {section.tasks.length}
-              </h2>
+        {scope.kind === 'list' ? (
+          // ── List scope: group by user-defined section ──
+          <>
+            {filtered.length === 0 && (
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
+                Nothing here yet. Add a task below, or a section to organize this list.
+              </div>
             )}
-            {!collapsed && section.tasks.map(task => {
-              const kids = childrenByParent.get(task.id) ?? []
-              const kr = task.roadmap_item_id ? krById.get(task.roadmap_item_id) : undefined
-              const doneKids = kids.filter(k => k.completed_at).length
+            {listSectionGroups.map((group, gi) => {
+              const s = group.section
+              const hasRealSections = listSectionGroups.length > 1
+              // Ungrouped group: render rows headerless unless real sections coexist.
+              if (s === null) {
+                if (group.tasks.length === 0) return null
+                return (
+                  <section key="__ungrouped" style={{ marginTop: hasRealSections ? 20 : 8 }}>
+                    {hasRealSections && (
+                      <h2 style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label-dim)', letterSpacing: '.12em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+                        No section · {group.tasks.length}
+                      </h2>
+                    )}
+                    {group.tasks.map(renderTaskWithKids)}
+                  </section>
+                )
+              }
+              const collapsed = collapsedSections.has(s.id)
+              const isFirst = gi === 1
+              const isLast = gi === listSectionGroups.length - 1
+              const renaming = renamingSectionId === s.id
               return (
-                <div key={task.id}>
-                  <TaskRow task={task}
-                    tags={tagsByTask.get(task.id) ?? []}
-                    space={spaces.find(s => s.id === task.space_id)}
-                    list={lists.find(l => l.id === task.list_id)}
-                    krTitle={kr?.title}
-                    subtaskProgress={kids.length > 0 ? { done: doneKids, total: kids.length } : undefined}
-                    selected={selectedId === task.id}
-                    onToggle={() => onToggle(task)}
-                    onClick={() => setSelectedId(task.id)}
-                    onTagClick={onJumpToTag} />
-                  {kids.map(kid => (
-                    <SubtaskRow key={kid.id} task={kid}
-                      selected={selectedId === kid.id}
-                      onToggle={() => onToggle(kid)}
-                      onClick={() => setSelectedId(kid.id)} />
-                  ))}
-                </div>
+                <section key={s.id} style={{ marginTop: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 12px', position: 'relative' }}>
+                    <button onClick={() => toggleSectionCollapse(s.id)} title={collapsed ? 'Expand' : 'Collapse'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--navy-400)', padding: 0, display: 'inline-flex' }}>
+                      <svg width="10" height="10" viewBox="0 0 12 12" fill="none"
+                        style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .15s' }}>
+                        <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                    </button>
+                    {renaming ? (
+                      <input autoFocus value={sectionRenameDraft}
+                        onChange={e => setSectionRenameDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') { onRenameSection(s.id, sectionRenameDraft); setRenamingSectionId(null) }
+                          if (e.key === 'Escape') setRenamingSectionId(null)
+                        }}
+                        onBlur={() => { if (sectionRenameDraft.trim() && sectionRenameDraft.trim() !== s.name) onRenameSection(s.id, sectionRenameDraft); setRenamingSectionId(null) }}
+                        style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.10em', textTransform: 'uppercase', color: 'var(--nw-cream)', background: 'var(--navy-700)', border: '1px solid var(--accent)', borderRadius: 4, padding: '2px 6px', fontFamily: 'inherit', outline: 'none' }} />
+                    ) : (
+                      <h2 onClick={() => toggleSectionCollapse(s.id)}
+                        style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-cream)', letterSpacing: '.10em', textTransform: 'uppercase', margin: 0, cursor: 'pointer' }}>
+                        {s.name}
+                      </h2>
+                    )}
+                    <span style={{ fontSize: 10, color: 'var(--navy-400)' }}>· {group.tasks.length}</span>
+                    <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button onClick={() => onMoveSection(s.id, -1)} disabled={isFirst} title="Move up"
+                        style={{ background: 'none', border: 'none', cursor: isFirst ? 'default' : 'pointer', color: isFirst ? 'var(--navy-600)' : 'var(--navy-400)', fontSize: 11, padding: 0, lineHeight: 1 }}>▲</button>
+                      <button onClick={() => onMoveSection(s.id, 1)} disabled={isLast} title="Move down"
+                        style={{ background: 'none', border: 'none', cursor: isLast ? 'default' : 'pointer', color: isLast ? 'var(--navy-600)' : 'var(--navy-400)', fontSize: 11, padding: 0, lineHeight: 1 }}>▼</button>
+                      <button onClick={() => setSectionMenuOpenId(sectionMenuOpenId === s.id ? null : s.id)} title="Section options"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--navy-400)', fontSize: 13, padding: 0, lineHeight: 1 }}>⋯</button>
+                    </div>
+                    {sectionMenuOpenId === s.id && (
+                      <div style={{ position: 'absolute', right: 8, top: 28, zIndex: 20, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', borderRadius: 7, padding: 4, minWidth: 130, boxShadow: '0 6px 20px rgba(0,0,0,.35)' }}>
+                        <button onClick={() => { setRenamingSectionId(s.id); setSectionRenameDraft(s.name); setSectionMenuOpenId(null) }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--navy-100)', fontSize: 12, padding: '7px 10px', borderRadius: 4, fontFamily: 'inherit' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--navy-600)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Rename</button>
+                        <button onClick={() => { onDeleteSection(s.id); setSectionMenuOpenId(null) }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--red-text)', fontSize: 12, padding: '7px 10px', borderRadius: 4, fontFamily: 'inherit' }}
+                          onMouseEnter={e => e.currentTarget.style.background = 'var(--navy-600)'} onMouseLeave={e => e.currentTarget.style.background = 'none'}>Delete section</button>
+                      </div>
+                    )}
+                  </div>
+                  {!collapsed && group.tasks.length === 0 && (
+                    <div style={{ padding: '8px 12px 4px 30px', fontSize: 11.5, color: 'var(--navy-400)', fontStyle: 'italic' }}>No tasks in this section</div>
+                  )}
+                  {!collapsed && group.tasks.map(renderTaskWithKids)}
+                </section>
               )
             })}
-          </section>
-          )
-        })}
+            {/* + Add section */}
+            <div style={{ marginTop: 16 }}>
+              {newSectionOpen ? (
+                <input autoFocus value={newSectionDraft}
+                  onChange={e => setNewSectionDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') onAddSection(newSectionDraft)
+                    if (e.key === 'Escape') { setNewSectionOpen(false); setNewSectionDraft('') }
+                  }}
+                  onBlur={() => { if (newSectionDraft.trim()) onAddSection(newSectionDraft); else setNewSectionOpen(false) }}
+                  placeholder="Section name…"
+                  style={{ width: '100%', padding: '8px 12px', background: 'var(--navy-800)', border: '1px solid var(--accent)', borderRadius: 8, color: 'var(--navy-100)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none' }} />
+              ) : (
+                <button onClick={() => { setNewSectionOpen(true); setNewSectionDraft('') }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'none', border: '1px dashed var(--navy-600)', borderRadius: 8, color: 'var(--navy-400)', fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', width: '100%', textAlign: 'left' }}
+                  onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)'; e.currentTarget.style.borderColor = 'var(--navy-500)' }}
+                  onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)'; e.currentTarget.style.borderColor = 'var(--navy-600)' }}>
+                  <span style={{ color: 'var(--accent)', fontWeight: 700 }}>+</span> Add section
+                </button>
+              )}
+            </div>
+          </>
+        ) : (
+          // ── Smart / Space / Tag scope: group by due bucket ──
+          <>
+            {dueBuckets.length === 0 && (
+              <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
+                Nothing here. {scope.kind === 'smart' && scope.view === 'today' && 'Enjoy your day.'}
+              </div>
+            )}
+            {dueBuckets.map(section => {
+              const isDone = section.name === 'Done'
+              const collapsed = isDone && !showDone
+              return (
+              <section key={section.name} style={{ marginTop: 22 }}>
+                {isDone ? (
+                  <button onClick={toggleShowDone}
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      fontSize: 10, fontWeight: 500, color: 'var(--nw-label-dim)',
+                      letterSpacing: '.16em', textTransform: 'uppercase',
+                      margin: '0 0 8px', padding: '0 12px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      fontFamily: 'inherit',
+                    }}>
+                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
+                      style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .15s' }}>
+                      <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    {section.name} · {section.tasks.length}
+                  </button>
+                ) : (
+                  <h2 style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+                    {section.name} · {section.tasks.length}
+                  </h2>
+                )}
+                {!collapsed && section.tasks.map(renderTaskWithKids)}
+              </section>
+              )
+            })}
+          </>
+        )}
 
         {/* Quick-add — sits at the bottom of the list, after all sections */}
         <form onSubmit={e => { e.preventDefault(); onQuickAdd() }} style={{ marginTop: 18 }}>
@@ -735,6 +948,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
             tags={tagsByTask.get(selected.id) ?? []}
             spaces={spaces}
             lists={lists}
+            sections={sections}
             objectives={objectives}
             roadmapItems={roadmapItems}
             subtasks={childrenByParent.get(selected.id) ?? []}
@@ -1005,8 +1219,8 @@ function SubtaskRow({ task, selected, onToggle, onClick }: {
   )
 }
 
-function DetailPanel({ task, tags, spaces, lists, objectives, roadmapItems, subtasks, onPatch, onSetTags, onAddSubtask, onToggleSubtask, onSelectTask, onDelete, onClose }: {
-  task: Task; tags: string[]; spaces: Space[]; lists: TaskList[]; objectives: AnnualObjective[]; roadmapItems: RoadmapItem[];
+function DetailPanel({ task, tags, spaces, lists, sections, objectives, roadmapItems, subtasks, onPatch, onSetTags, onAddSubtask, onToggleSubtask, onSelectTask, onDelete, onClose }: {
+  task: Task; tags: string[]; spaces: Space[]; lists: TaskList[]; sections: TaskSection[]; objectives: AnnualObjective[]; roadmapItems: RoadmapItem[];
   subtasks: Task[];
   onPatch: (patch: Partial<Task>) => void;
   onSetTags: (tags: string[]) => void;
@@ -1070,10 +1284,12 @@ function DetailPanel({ task, tags, spaces, lists, objectives, roadmapItems, subt
   function onChangeContainer(value: string) {
     const [kind, id] = value.split(':')
     if (kind === 's') {
-      onPatch({ space_id: id, list_id: null })
+      // Spaces have no sections; clear it.
+      onPatch({ space_id: id, list_id: null, section_id: null })
     } else if (kind === 'l') {
       // List-tasks can't link to a KR (DB CHECK constraint), so clear it on move.
-      onPatch({ space_id: null, list_id: id, roadmap_item_id: null })
+      // Sections belong to the old list, so clear section_id too.
+      onPatch({ space_id: null, list_id: id, roadmap_item_id: null, section_id: null })
     }
   }
 
@@ -1311,6 +1527,20 @@ function DetailPanel({ task, tags, spaces, lists, objectives, roadmapItems, subt
           )}
         </select>
       </Field>
+
+      {list && (
+        <Field label="Section">
+          <select value={task.section_id ?? ''}
+            onChange={e => onPatch({ section_id: e.target.value || null })}
+            style={selectStyle}>
+            <option value="">— No section —</option>
+            {sections
+              .filter(s => s.list_id === task.list_id)
+              .sort((a, b) => a.sort_order - b.sort_order || (a.created_at < b.created_at ? -1 : 1))
+              .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </Field>
+      )}
 
       {!list && task.space_id && (
         <div style={{ padding: '9px 0', borderTop: '1px solid var(--navy-700)' }}>

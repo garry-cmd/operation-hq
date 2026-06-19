@@ -192,13 +192,15 @@ export interface RecurrenceRule {
   freq: 'daily' | 'weekly' | 'monthly' | 'yearly'
   interval?: number                                              // every N (default 1)
   byday?: ('MO' | 'TU' | 'WE' | 'TH' | 'FR' | 'SA' | 'SU')[]    // weekly only
-  bymonthday?: number                                            // monthly only (1–31)
+  bymonth?: number                                               // yearly only (1–12) — date-anchored
+  bymonthday?: number                                            // monthly: 1–31; yearly: day within bymonth
 }
 
 export interface Task {
   id: string
   space_id: string | null
   list_id: string | null
+  section_id: string | null
   roadmap_item_id: string | null
   parent_task_id: string | null
   title: string
@@ -225,6 +227,7 @@ export interface NewTaskInput {
   title: string
   space_id?: string | null
   list_id?: string | null
+  section_id?: string | null
   roadmap_item_id?: string | null
   parent_task_id?: string | null
   description?: string | null
@@ -251,6 +254,24 @@ export interface TaskList {
 }
 
 export interface NewTaskListInput {
+  name: string
+  sort_order?: number
+}
+
+// A section is a header inside a List (Todoist-style). Tasks in a List can be
+// grouped under sections; deleting a section orphans its tasks to "no section"
+// (they stay in the List, just ungrouped).
+export interface TaskSection {
+  id: string
+  list_id: string
+  name: string
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NewTaskSectionInput {
+  list_id: string
   name: string
   sort_order?: number
 }

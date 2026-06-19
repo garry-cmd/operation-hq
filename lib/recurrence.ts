@@ -203,6 +203,42 @@ export function parseRecurrence(input: string): { text: string; rule: Recurrence
     return { text, rule: { freq: 'weekly', interval: 1, byday: days } }
   }
 
+  // "every N years"
+  const yearlyN = stripped.match(/^(\d+)\s+years?$/)
+  if (yearlyN) {
+    const n = parseInt(yearlyN[1], 10)
+    return { text: n === 1 ? 'every year' : `every ${n} years`, rule: { freq: 'yearly', interval: n } }
+  }
+
+  // "every 20th" / "every 1st" — monthly anchored to a day-of-month.
+  const domOnly = stripped.match(/^(\d{1,2})(?:st|nd|rd|th)$/)
+  if (domOnly) {
+    const dom = parseInt(domOnly[1], 10)
+    if (dom >= 1 && dom <= 31) {
+      return { text: `every ${ordinal(dom)}`, rule: { freq: 'monthly', interval: 1, bymonthday: dom } }
+    }
+  }
+
+  // "every april 5" / "every dec 10th" — yearly anchored to month + day.
+  const monthDay = stripped.match(/^([a-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?$/)
+  if (monthDay && monthDay[1] in MONTH_TO_NUM) {
+    const mon = MONTH_TO_NUM[monthDay[1]]
+    const day = parseInt(monthDay[2], 10)
+    if (day >= 1 && day <= 31) {
+      return { text: `every ${MONTH_NAME[mon - 1]} ${day}`, rule: { freq: 'yearly', interval: 1, bymonth: mon, bymonthday: day } }
+    }
+  }
+
+  // "every 2/5" / "every 11/15" — yearly anchored to M/D.
+  const slashMD = stripped.match(/^(\d{1,2})\/(\d{1,2})$/)
+  if (slashMD) {
+    const mon = parseInt(slashMD[1], 10)
+    const day = parseInt(slashMD[2], 10)
+    if (mon >= 1 && mon <= 12 && day >= 1 && day <= 31) {
+      return { text: `every ${MONTH_NAME[mon - 1]} ${day}`, rule: { freq: 'yearly', interval: 1, bymonth: mon, bymonthday: day } }
+    }
+  }
+
   return null
 }
 
@@ -484,6 +520,14 @@ function pad(n: number): string {
 const DAY_NAME_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const
 const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const
 
+// Month name / abbreviation → 1-based month number, for date-anchored yearly
+// recurrence ("every april 5", "every dec 10").
+const MONTH_TO_NUM: Record<string, number> = {
+  jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3, apr: 4, april: 4,
+  may: 5, jun: 6, june: 6, jul: 7, july: 7, aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9, oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+}
+
 function ordinal(n: number): string {
   const s = ['th', 'st', 'nd', 'rd']
   const v = n % 100
@@ -545,8 +589,8 @@ export function buildRecurrencePresets(anchor: string): RecurrencePreset[] {
       id: 'yearly',
       label: 'Every year',
       sublabel: `on ${monthName} ${dom}`,
-      text: 'every year',
-      rule: { freq: 'yearly', interval: 1 },
+      text: `every ${monthName.toLowerCase()} ${dom}`,
+      rule: { freq: 'yearly', interval: 1, bymonth: d.getMonth() + 1, bymonthday: dom },
     },
   ]
 }
@@ -591,8 +635,10 @@ export function snapDueDateToRule(
 
     case 'yearly': {
       const t = fromISO(today)
-      const month = t.getMonth()
-      const day = t.getDate()
+      // Date-anchored ("every april 5"): snap to the next occurrence of that
+      // month/day. Otherwise anchor to today's month/day (legacy behavior).
+      const month = rule.bymonth ? rule.bymonth - 1 : t.getMonth()
+      const day = rule.bymonthday && rule.bymonth ? rule.bymonthday : t.getDate()
       if (currentDue) {
         const c = fromISO(currentDue)
         if (c.getMonth() === month && c.getDate() === day) return currentDue
@@ -650,7 +696,11 @@ export function recurrenceLabel(rule: RecurrenceRule, dueDate: string | null): s
     }
 
     case 'yearly': {
-      if (dueDate) {
+      if (rule.bymonth && rule.bymonthday) {
+        const base = `Every year on ${MONTH_NAME[rule.bymonth - 1]} ${rule.bymonthday}`
+        return interval === 1 ? base : `Every ${interval} years on ${MONTH_NAME[rule.bymonth - 1]} ${rule.bymonthday}`
+      }
+      if (interval === 1 && dueDate) {
         const d = fromISO(dueDate)
         return `Every year on ${MONTH_NAME[d.getMonth()]} ${d.getDate()}`
       }
@@ -681,6 +731,7 @@ function sameRule(a: RecurrenceRule, b: RecurrenceRule): boolean {
   if (a.freq !== b.freq) return false
   if ((a.interval ?? 1) !== (b.interval ?? 1)) return false
   if ((a.bymonthday ?? null) !== (b.bymonthday ?? null)) return false
+  if ((a.bymonth ?? null) !== (b.bymonth ?? null)) return false
   const ad = [...(a.byday ?? [])].sort().join(',')
   const bd = [...(b.byday ?? [])].sort().join(',')
   return ad === bd

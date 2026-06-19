@@ -20,6 +20,7 @@ function rowToTask(row: Record<string, unknown>): Task {
     id: row.id as string,
     space_id: (row.space_id as string | null) ?? null,
     list_id: (row.list_id as string | null) ?? null,
+    section_id: (row.section_id as string | null) ?? null,
     roadmap_item_id: (row.roadmap_item_id as string | null) ?? null,
     parent_task_id: (row.parent_task_id as string | null) ?? null,
     title: row.title as string,
@@ -76,6 +77,7 @@ export async function create(input: NewTaskInput): Promise<Task> {
     .insert({
       space_id: input.space_id ?? null,
       list_id: input.list_id ?? null,
+      section_id: input.section_id ?? null,
       title: input.title,
       roadmap_item_id: input.roadmap_item_id ?? null,
       parent_task_id: input.parent_task_id ?? null,

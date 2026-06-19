@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, Notebook, Note } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note } from '@/lib/types'
 import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
@@ -13,6 +13,7 @@ import * as spacesDb from '@/lib/db/spaces'
 import * as shareTokensDb from '@/lib/db/shareTokens'
 import * as tasksDb from '@/lib/db/tasks'
 import * as taskListsDb from '@/lib/db/taskLists'
+import * as taskSectionsDb from '@/lib/db/taskSections'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
 import { extractNoteText } from '@/lib/noteText'
@@ -83,6 +84,7 @@ export default function HQPage() {
   // Tasks component receives these as props plus the corresponding setters.
   const [tasks, setTasks] = useState<Task[]>([])
   const [taskLists, setTaskLists] = useState<TaskList[]>([])
+  const [taskSections, setTaskSections] = useState<TaskSection[]>([])
   const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
   // Notes state (Jun 2026). Lifted from Notes.tsx so global search can match
   // note titles and body text. Same pattern as the Tasks lift (May 18).
@@ -209,7 +211,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, nb, nt] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -223,6 +225,7 @@ export default function HQPage() {
       shareTokensDb.findActiveByLabel('Melissa').catch(fallback('share_tokens', null)),
       tasksDb.listAll().catch(fallback('tasks', [] as Task[])),
       taskListsDb.listAll().catch(fallback('task_lists', [] as TaskList[])),
+      taskSectionsDb.listAll().catch(fallback('task_sections', [] as TaskSection[])),
       notebooksDb.listAll().catch(fallback('notebooks', [] as Notebook[])),
       notesDb.listAll().catch(fallback('notes', [] as Note[])),
     ])
@@ -239,6 +242,7 @@ export default function HQPage() {
     if (st) setShareToken(st.token)
     setTasks(tk)
     setTaskLists(tl)
+    setTaskSections(ts)
     setNotebooks(nb)
     setNotes(nt)
     // Tags follow tasks — a second query keyed by the loaded task ids. If
@@ -668,6 +672,8 @@ export default function HQPage() {
           setTasks={setTasks}
           lists={taskLists}
           setLists={setTaskLists}
+          sections={taskSections}
+          setSections={setTaskSections}
           tagsByTask={tagsByTask}
           setTagsByTask={setTagsByTask}
           initialTaskId={tasksInitialId}
