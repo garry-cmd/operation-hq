@@ -662,8 +662,8 @@ export default function HQPage() {
         <Tasks
           spaces={spaces}
           activeSpaceId={activeSpaceId}
-          objectives={spaceObjectives}
-          roadmapItems={spaceRoadmapItems}
+          objectives={objectives}
+          roadmapItems={roadmapItems}
           tasks={tasks}
           setTasks={setTasks}
           lists={taskLists}
