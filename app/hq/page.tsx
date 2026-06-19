@@ -359,9 +359,23 @@ export default function HQPage() {
       })
     }
 
+    // Dedup carry-forward actions: a recurring action spawns a fresh
+    // weekly_actions row each week with the same (roadmap_item_id, title) — its
+    // canonical identity. Collapse to one entry per identity: the this-week row
+    // if it exists, otherwise the most recent week (week_start sorts lexically).
+    const bestAction = new Map<string, WeeklyAction>()
+    const isThisWeek = (a: WeeklyAction) => a.week_start === weekStartFor(spaceForKR.get(a.roadmap_item_id))
     for (const a of actions) {
+      const key = `${a.roadmap_item_id}::${a.title}`
+      const cur = bestAction.get(key)
+      if (!cur) { bestAction.set(key, a); continue }
+      const aThis = isThisWeek(a), curThis = isThisWeek(cur)
+      if (aThis && !curThis) bestAction.set(key, a)
+      else if (aThis === curThis && a.week_start > cur.week_start) bestAction.set(key, a)
+    }
+    for (const a of bestAction.values()) {
       const sid = spaceForKR.get(a.roadmap_item_id)
-      const thisWeek = a.week_start === weekStartFor(sid)
+      const thisWeek = isThisWeek(a)
       out.push({
         id: `act:${a.id}`, kind: 'Action', icon: '▸', title: a.title,
         ...spaceMeta(sid), hint: thisWeek ? 'this week' : undefined,
