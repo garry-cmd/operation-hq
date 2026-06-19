@@ -24,6 +24,8 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react'
 import { Space, AnnualObjective, RoadmapItem, Task, TaskTag, TaskList, Priority } from '@/lib/types'
 import * as tasksDb from '@/lib/db/tasks'
 import * as taskListsDb from '@/lib/db/taskLists'
+import { getActiveKRs } from '@/lib/krFilters'
+import { formatMinutes } from '@/lib/utils'
 import { useIsMobile } from '@/lib/useIsMobile'
 import {
   parseQuickAdd,
@@ -106,7 +108,7 @@ function PlusIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
 }
 
-export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setTasks, lists, setLists, tagsByTask, setTagsByTask, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
+export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems, tasks, setTasks, lists, setLists, tagsByTask, setTagsByTask, initialTaskId, onConsumeInitialTaskId, onJumpToTag, toast }: Props) {
   // Data lifecycle (load + tags) is owned by page.tsx as of May 18. This
   // component receives tasks/lists/tagsByTask via props and pushes mutations
   // through the corresponding setters. Eliminating the local load avoids a
@@ -178,7 +180,9 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
   // user see if they clicked this" — same filter as the main view.
   const today = todayISO()
   const counts = useMemo(() => {
-    const open = tasks.filter(t => !t.completed_at)
+    // Top-level only — subtasks render beneath their parent, not as their own
+    // rows, so they shouldn't inflate any sidebar count.
+    const open = tasks.filter(t => !t.completed_at && !t.parent_task_id)
     return {
       today: open.filter(t => t.due_date && t.due_date <= today).length,
       upcoming: open.filter(t => t.due_date && t.due_date > today).length,
@@ -203,7 +207,9 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
   // Filtered list under the current scope. Order is: open first
   // (sorted by due-then-priority), then completed at the bottom.
   const filtered = useMemo(() => {
-    let pool = tasks
+    // Subtasks never appear as top-level rows — they're rendered beneath their
+    // parent (see childrenByParent + the section map). Drop them from the pool.
+    let pool = tasks.filter(t => !t.parent_task_id)
     if (scope.kind === 'smart') {
       pool = pool.filter(t => !t.completed_at)
       if (scope.view === 'today')    pool = pool.filter(t => t.due_date && t.due_date <= today)
@@ -271,6 +277,34 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
     [tasks, selectedId]
   )
 
+  // Subtasks grouped by parent id, ordered (open first, then by sort/created).
+  // Used both for the inline child rows under each parent and the detail-panel
+  // subtask block.
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, Task[]>()
+    for (const t of tasks) {
+      if (!t.parent_task_id) continue
+      const arr = map.get(t.parent_task_id) ?? []
+      arr.push(t)
+      map.set(t.parent_task_id, arr)
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => {
+        if (!!a.completed_at !== !!b.completed_at) return a.completed_at ? 1 : -1
+        if (a.sort_order !== b.sort_order) return a.sort_order - b.sort_order
+        return a.created_at < b.created_at ? -1 : 1
+      })
+    }
+    return map
+  }, [tasks])
+
+  // Fast KR lookup for the row chip + detail picker.
+  const krById = useMemo(() => {
+    const map = new Map<string, RoadmapItem>()
+    for (const r of roadmapItems) map.set(r.id, r)
+    return map
+  }, [roadmapItems])
+
   // ── Mutations ────────────────────────────────────────────────────
 
   const onQuickAdd = useCallback(async () => {
@@ -301,6 +335,8 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
         priority: parsed.priority,
         due_date: parsed.due_date,
         due_time: parsed.due_time,
+        deadline_date: parsed.deadline_date,
+        estimated_minutes: parsed.estimated_minutes,
         recurrence_text: parsed.recurrence_text,
         recurrence_rule: parsed.recurrence_rule,
       })
@@ -364,6 +400,27 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
     } catch (e) {
       console.error('set tags failed', e)
       toast('Could not update tags')
+    }
+  }, [toast])
+
+  // Create a subtask under `parent`. Inherits the parent's container so the
+  // tasks_one_container CHECK holds; never carries a KR link (the parent owns
+  // the alignment). Single level only — we don't offer subtasks-of-subtasks.
+  const onAddSubtask = useCallback(async (parent: Task, title: string) => {
+    const clean = title.trim()
+    if (!clean) return
+    try {
+      const created = await tasksDb.create({
+        title: clean,
+        space_id: parent.space_id,
+        list_id: parent.list_id,
+        parent_task_id: parent.id,
+        priority: 4,
+      })
+      setTasks(prev => [...prev, created])
+    } catch (e) {
+      console.error('add subtask failed', e)
+      toast('Could not add subtask')
     }
   }, [toast])
 
@@ -620,16 +677,31 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
                 {section.name} · {section.tasks.length}
               </h2>
             )}
-            {!collapsed && section.tasks.map(task => (
-              <TaskRow key={task.id} task={task}
-                tags={tagsByTask.get(task.id) ?? []}
-                space={spaces.find(s => s.id === task.space_id)}
-                list={lists.find(l => l.id === task.list_id)}
-                selected={selectedId === task.id}
-                onToggle={() => onToggle(task)}
-                onClick={() => setSelectedId(task.id)}
-                onTagClick={onJumpToTag} />
-            ))}
+            {!collapsed && section.tasks.map(task => {
+              const kids = childrenByParent.get(task.id) ?? []
+              const kr = task.roadmap_item_id ? krById.get(task.roadmap_item_id) : undefined
+              const doneKids = kids.filter(k => k.completed_at).length
+              return (
+                <div key={task.id}>
+                  <TaskRow task={task}
+                    tags={tagsByTask.get(task.id) ?? []}
+                    space={spaces.find(s => s.id === task.space_id)}
+                    list={lists.find(l => l.id === task.list_id)}
+                    krTitle={kr?.title}
+                    subtaskProgress={kids.length > 0 ? { done: doneKids, total: kids.length } : undefined}
+                    selected={selectedId === task.id}
+                    onToggle={() => onToggle(task)}
+                    onClick={() => setSelectedId(task.id)}
+                    onTagClick={onJumpToTag} />
+                  {kids.map(kid => (
+                    <SubtaskRow key={kid.id} task={kid}
+                      selected={selectedId === kid.id}
+                      onToggle={() => onToggle(kid)}
+                      onClick={() => setSelectedId(kid.id)} />
+                  ))}
+                </div>
+              )
+            })}
           </section>
           )
         })}
@@ -639,7 +711,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
           <input ref={quickAddRef}
             value={quickAdd}
             onChange={e => setQuickAdd(e.target.value)}
-            placeholder='+ Add task… try "review deck tomorrow 3pm #stellar p1"'
+            placeholder='+ Add task… try "close month tomorrow 2h by jun 30 #finance p1"'
             style={{
               width: '100%', padding: '10px 14px',
               background: 'var(--navy-800)', border: '1px dashed var(--navy-500)', borderRadius: 8,
@@ -663,9 +735,14 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
             tags={tagsByTask.get(selected.id) ?? []}
             spaces={spaces}
             lists={lists}
+            objectives={objectives}
             roadmapItems={roadmapItems}
+            subtasks={childrenByParent.get(selected.id) ?? []}
             onPatch={patch => onPatch(selected.id, patch)}
             onSetTags={tags => onSetTags(selected.id, tags)}
+            onAddSubtask={title => onAddSubtask(selected, title)}
+            onToggleSubtask={onToggle}
+            onSelectTask={setSelectedId}
             onDelete={() => onDelete(selected.id)}
             onClose={() => setSelectedId(null)} />
         </div>
@@ -827,10 +904,17 @@ const menuItemStyle: React.CSSProperties = {
   borderRadius: 4, fontFamily: 'inherit',
 }
 
-function TaskRow({ task, tags, space, list, selected, onToggle, onClick, onTagClick }: {
-  task: Task; tags: string[]; space?: Space; list?: TaskList; selected: boolean; onToggle: () => void; onClick: () => void; onTagClick?: (tag: string) => void
+function TaskRow({ task, tags, space, list, krTitle, subtaskProgress, selected, onToggle, onClick, onTagClick }: {
+  task: Task; tags: string[]; space?: Space; list?: TaskList; krTitle?: string;
+  subtaskProgress?: { done: number; total: number };
+  selected: boolean; onToggle: () => void; onClick: () => void; onTagClick?: (tag: string) => void
 }) {
   const done = !!task.completed_at
+  const durLabel = formatMinutes(task.estimated_minutes)
+  // Deadline chip shows only when there's a hard deadline distinct from the
+  // scheduled due date — otherwise it'd just duplicate the due pill.
+  const showDeadline = !!task.deadline_date && task.deadline_date !== task.due_date
+  const hasMeta = space || tags.length > 0 || task.recurrence_text || krTitle || durLabel || subtaskProgress || showDeadline
   return (
     <button onClick={onClick}
       style={{
@@ -856,9 +940,18 @@ function TaskRow({ task, tags, space, list, selected, onToggle, onClick, onTagCl
         <span style={{ fontSize: 13.5, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {task.title}
         </span>
-        {(space || tags.length > 0 || task.recurrence_text) && (
+        {hasMeta && (
           <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             {space && <span title={space.name} style={{ width: 6, height: 6, borderRadius: '50%', background: space.color, flexShrink: 0 }} />}
+            {krTitle && (
+              <span title={`Advances KR: ${krTitle}`} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>◆ {krTitle}</span>
+            )}
+            {subtaskProgress && (
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--navy-700)', color: 'var(--navy-300)' }}>◷ {subtaskProgress.done}/{subtaskProgress.total}</span>
+            )}
+            {durLabel && (
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--navy-700)', color: 'var(--navy-100)' }}>⏱ {durLabel}</span>
+            )}
             {tags.map(tag => (
               <span key={tag}
                 onClick={e => { if (onTagClick) { e.stopPropagation(); onTagClick(tag) } }}
@@ -871,6 +964,7 @@ function TaskRow({ task, tags, space, list, selected, onToggle, onClick, onTagCl
               </span>
             ))}
             {task.recurrence_text && <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--slate-bg)', color: 'var(--slate-text)' }}>↻ {task.recurrence_text}</span>}
+            {showDeadline && <span title="Hard deadline" style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--red-bg)', color: 'var(--red-text)' }}>⚑ {formatShortDate(task.deadline_date!)}</span>}
           </span>
         )}
       </div>
@@ -881,10 +975,44 @@ function TaskRow({ task, tags, space, list, selected, onToggle, onClick, onTagCl
   )
 }
 
-function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTags, onDelete, onClose }: {
-  task: Task; tags: string[]; spaces: Space[]; lists: TaskList[]; roadmapItems: RoadmapItem[];
+/** Lightweight subtask row, rendered indented beneath its parent. Toggle +
+ *  title only; clicking the title selects it into the detail panel. */
+function SubtaskRow({ task, selected, onToggle, onClick }: {
+  task: Task; selected: boolean; onToggle: () => void; onClick: () => void
+}) {
+  const done = !!task.completed_at
+  return (
+    <button onClick={onClick}
+      style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+        padding: '5px 12px 5px 44px', border: 'none', borderRadius: 6, cursor: 'pointer',
+        background: selected ? 'var(--accent-dim)' : 'none', textAlign: 'left', fontFamily: 'inherit',
+      }}
+      onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'var(--navy-800)' }}
+      onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'none' }}>
+      <span onClick={e => { e.stopPropagation(); onToggle() }}
+        style={{
+          width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+          border: `1.4px solid ${done ? 'var(--teal-text)' : 'var(--navy-500)'}`,
+          background: done ? 'var(--teal-text)' : 'transparent',
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', fontSize: 8,
+        }}>{done && '✓'}</span>
+      <span style={{ fontSize: 12.5, color: done ? 'var(--navy-400)' : 'var(--navy-300)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {task.title}
+      </span>
+    </button>
+  )
+}
+
+function DetailPanel({ task, tags, spaces, lists, objectives, roadmapItems, subtasks, onPatch, onSetTags, onAddSubtask, onToggleSubtask, onSelectTask, onDelete, onClose }: {
+  task: Task; tags: string[]; spaces: Space[]; lists: TaskList[]; objectives: AnnualObjective[]; roadmapItems: RoadmapItem[];
+  subtasks: Task[];
   onPatch: (patch: Partial<Task>) => void;
   onSetTags: (tags: string[]) => void;
+  onAddSubtask: (title: string) => void;
+  onToggleSubtask: (t: Task) => void;
+  onSelectTask: (id: string) => void;
   onDelete: () => void;
   onClose: () => void;
 }) {
@@ -895,6 +1023,8 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
   const [recurrenceError, setRecurrenceError] = useState<string | null>(null)
   const [recMenuOpen, setRecMenuOpen] = useState(false)
   const [recCustomOpen, setRecCustomOpen] = useState(false)
+  const [subtaskDraft, setSubtaskDraft] = useState('')
+  const [krPickerOpen, setKrPickerOpen] = useState(false)
   const recMenuRef = useRef<HTMLDivElement | null>(null)
   // Keep local state in sync when the selected task changes
   useEffect(() => {
@@ -904,6 +1034,8 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
     setRecurrenceError(null)
     setRecMenuOpen(false)
     setRecCustomOpen(false)
+    setSubtaskDraft('')
+    setKrPickerOpen(false)
   }, [task.id])
   // Close the recurrence menu on outside click
   useEffect(() => {
@@ -928,6 +1060,11 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
 
   const list = lists.find(l => l.id === task.list_id)
   const linkedKR = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
+  const isSubtask = !!task.parent_task_id
+  // KR link is only valid on space-scoped tasks (tasks_list_no_kr_link CHECK).
+  // Candidates = active KRs in this task's space, across quarters.
+  const krCandidates = task.space_id ? getActiveKRs(roadmapItems).filter(r => r.space_id === task.space_id) : []
+  const linkedObjective = linkedKR?.annual_objective_id ? objectives.find(o => o.id === linkedKR.annual_objective_id) : null
   const containerValue = task.space_id ? `s:${task.space_id}` : (task.list_id ? `l:${task.list_id}` : '')
 
   function onChangeContainer(value: string) {
@@ -1036,6 +1173,44 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
         <input type="time" value={task.due_time?.slice(0, 5) ?? ''} onChange={e => onPatch({ due_time: e.target.value ? `${e.target.value}:00` : null })} style={inputStyle} />
       </Field>
 
+      <Field label="Deadline">
+        <input type="date" value={task.deadline_date ?? ''} onChange={e => onPatch({ deadline_date: e.target.value || null })} style={inputStyle} />
+      </Field>
+      {task.deadline_date && (
+        <div style={{ fontSize: 10.5, color: 'var(--navy-400)', margin: '-4px 0 8px', paddingLeft: 2 }}>
+          ⚑ Hard date — won&apos;t move. Separate from the due date you scheduled.
+        </div>
+      )}
+
+      {/* Duration — preset minute buckets; click the active one to clear. Drives
+          the calendar time-block length downstream (same model as weekly actions). */}
+      <div style={{ padding: '9px 0', borderTop: '1px solid var(--navy-700)' }}>
+        <div style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 7 }}>Duration</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {[15, 30, 45, 60, 90, 120].map(mins => {
+            const on = task.estimated_minutes === mins
+            return (
+              <button key={mins}
+                onClick={() => onPatch({ estimated_minutes: on ? null : mins })}
+                style={{
+                  fontSize: 11.5, padding: '4px 11px', borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--navy-600)'}`,
+                  background: on ? 'var(--accent)' : 'var(--navy-700)',
+                  color: on ? '#fff' : 'var(--navy-300)', fontWeight: on ? 600 : 400,
+                }}>{formatMinutes(mins)}</button>
+            )
+          })}
+          {/* Non-preset value (e.g. migrated 2h15m) shows as its own active pill. */}
+          {task.estimated_minutes != null && ![15, 30, 45, 60, 90, 120].includes(task.estimated_minutes) && (
+            <button onClick={() => onPatch({ estimated_minutes: null })}
+              style={{
+                fontSize: 11.5, padding: '4px 11px', borderRadius: 99, cursor: 'pointer', fontFamily: 'inherit',
+                border: '1px solid var(--accent)', background: 'var(--accent)', color: '#fff', fontWeight: 600,
+              }}>{formatMinutes(task.estimated_minutes)} ×</button>
+          )}
+        </div>
+      </div>
+
       {/* Recurrence — trigger button opens a preset dropdown; Custom… reveals freeform input */}
       <div ref={recMenuRef} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '9px 0', borderTop: '1px solid var(--navy-700)', fontSize: 12, position: 'relative' }}>
         <span style={{ color: 'var(--navy-300)' }}>Recurrence</span>
@@ -1137,10 +1312,71 @@ function DetailPanel({ task, tags, spaces, lists, roadmapItems, onPatch, onSetTa
         </select>
       </Field>
 
-      {linkedKR && !list && (
-        <Field label="Linked KR">
-          <span style={{ fontSize: 12, color: 'var(--accent)' }}>{linkedKR.title}</span>
-        </Field>
+      {!list && task.space_id && (
+        <div style={{ padding: '9px 0', borderTop: '1px solid var(--navy-700)' }}>
+          <div style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 7 }}>Linked KR</div>
+          {linkedKR && !krPickerOpen ? (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '9px 11px', background: 'var(--accent-dim)', border: '1px solid var(--accent)', borderRadius: 7 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12.5, color: 'var(--accent)', fontWeight: 500, lineHeight: 1.3 }}>◆ {linkedKR.title}</div>
+                {linkedObjective && <div style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 2 }}>{linkedObjective.name}</div>}
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+                <button onClick={() => setKrPickerOpen(true)} style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit', padding: 0 }}>change</button>
+                <button onClick={() => onPatch({ roadmap_item_id: null })} style={{ background: 'none', border: 'none', color: 'var(--navy-400)', fontSize: 10, cursor: 'pointer', textDecoration: 'underline', fontFamily: 'inherit', padding: 0 }}>unlink</button>
+              </div>
+            </div>
+          ) : krCandidates.length > 0 ? (
+            <select value={task.roadmap_item_id ?? ''}
+              onChange={e => { onPatch({ roadmap_item_id: e.target.value || null }); setKrPickerOpen(false) }}
+              style={{ ...selectStyle, width: '100%' }}>
+              <option value="">— Link a KR… —</option>
+              {krCandidates.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
+            </select>
+          ) : (
+            <div style={{ fontSize: 11, color: 'var(--navy-400)' }}>No active KRs in this space yet.</div>
+          )}
+          <div style={{ fontSize: 10.5, color: 'var(--navy-400)', marginTop: 6, paddingLeft: 2 }}>
+            Surfaces this task as advancing the KR — the alignment Todoist can&apos;t do.
+          </div>
+        </div>
+      )}
+
+      {/* Subtasks — single level. Hidden on subtasks themselves (no grandchildren). */}
+      {!isSubtask && (
+        <div style={{ padding: '9px 0', borderTop: '1px solid var(--navy-700)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 }}>
+            <span style={{ fontSize: 12, color: 'var(--navy-300)' }}>Subtasks</span>
+            {subtasks.length > 0 && (
+              <span style={{ fontSize: 10, color: 'var(--navy-400)' }}>{subtasks.filter(s => s.completed_at).length} / {subtasks.length} done</span>
+            )}
+          </div>
+          {subtasks.map(st => {
+            const done = !!st.completed_at
+            return (
+              <div key={st.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 0', borderTop: '1px solid var(--navy-700)' }}>
+                <span onClick={() => onToggleSubtask(st)}
+                  style={{
+                    width: 15, height: 15, borderRadius: '50%', flexShrink: 0, cursor: 'pointer',
+                    border: `1.5px solid ${done ? 'var(--teal-text)' : 'var(--navy-500)'}`,
+                    background: done ? 'var(--teal-text)' : 'transparent',
+                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 9,
+                  }}>{done && '✓'}</span>
+                <span onClick={() => onSelectTask(st.id)}
+                  style={{ flex: 1, fontSize: 12.5, color: done ? 'var(--navy-400)' : 'var(--navy-100)', textDecoration: done ? 'line-through' : 'none', cursor: 'pointer' }}>
+                  {st.title}
+                </span>
+              </div>
+            )
+          })}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 0 0' }}>
+            <span style={{ color: 'var(--accent)', fontSize: 14, lineHeight: 1 }}>+</span>
+            <input value={subtaskDraft} onChange={e => setSubtaskDraft(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); if (subtaskDraft.trim()) { onAddSubtask(subtaskDraft); setSubtaskDraft('') } } }}
+              placeholder="Add subtask…"
+              style={{ flex: 1, background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 12.5, fontFamily: 'inherit', outline: 'none' }} />
+          </div>
+        </div>
       )}
 
       <div style={{ marginBottom: 14 }}>
@@ -1236,4 +1472,10 @@ function dueColor(iso: string | null): string {
   if (iso < today) return 'var(--red-text)'
   if (iso === today) return 'var(--accent)'
   return 'var(--navy-300)'
+}
+
+/** Compact "Mon D" for the deadline chip (no year). */
+function formatShortDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }

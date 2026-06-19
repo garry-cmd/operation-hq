@@ -212,6 +212,8 @@ export interface QuickAddResult {
   title: string
   due_date?: string
   due_time?: string
+  deadline_date?: string
+  estimated_minutes?: number
   priority?: Priority
   recurrence_text?: string
   recurrence_rule?: RecurrenceRule
@@ -263,7 +265,23 @@ export function parseQuickAdd(input: string): QuickAddResult {
   while (i < tokens.length) {
     const tok = tokens[i]
     const next = tokens[i + 1]
+    const next2 = tokens[i + 2]
     const pair = next ? `${tok} ${next}` : ''
+
+    // Deadline: "by <date>" — only treated as a deadline when what follows
+    // actually parses as a date, so titles like "stand by generator" are safe.
+    // Try a 2-token date first ("by may 22"), then 1-token ("by 6/30").
+    if (tok.toLowerCase() === 'by') {
+      if (next && next2) {
+        const d2 = parseDateToken(`${next} ${next2}`)
+        if (d2) { result.deadline_date = d2; i += 3; continue }
+      }
+      if (next) {
+        const d1 = parseDateToken(next)
+        if (d1) { result.deadline_date = d1; i += 2; continue }
+      }
+      // "by" not followed by a date — fall through, keep it in the title.
+    }
 
     // Try 2-token date first
     if (pair) {
@@ -277,6 +295,10 @@ export function parseQuickAdd(input: string): QuickAddResult {
     // Time
     const t = parseTimeToken(tok)
     if (t) { result.due_time = t; i += 1; continue }
+
+    // Duration ("2h", "45m", "1h30m", "1.5h") → estimated_minutes
+    const dur = parseDurationToken(tok)
+    if (dur != null) { result.estimated_minutes = dur; i += 1; continue }
 
     // Priority
     const p = parsePriorityToken(tok)
@@ -427,6 +449,29 @@ function parseTimeToken(raw: string): string | null {
 function parsePriorityToken(raw: string): Priority | null {
   const m = raw.toLowerCase().match(/^p([1-4])$/)
   if (m) return parseInt(m[1], 10) as Priority
+  return null
+}
+
+/** Parse a bare duration token into minutes.
+ *    "45m" → 45 · "2h" → 120 · "1h30m" → 90 · "1.5h" → 90
+ *  Returns null if the token isn't a duration. Caps at 24h to avoid
+ *  swallowing stray numbers; "0m"/"0h" return null (no zero durations). */
+function parseDurationToken(raw: string): number | null {
+  const t = raw.toLowerCase().trim()
+  // Decimal hours: "1.5h"
+  const dec = t.match(/^(\d+(?:\.\d+)?)h$/)
+  if (dec) {
+    const mins = Math.round(parseFloat(dec[1]) * 60)
+    return mins > 0 && mins <= 1440 ? mins : null
+  }
+  // Combined / single: "1h30m", "2h", "45m"
+  const combo = t.match(/^(?:(\d+)h)?(?:(\d+)m)?$/)
+  if (combo && (combo[1] || combo[2])) {
+    const h = combo[1] ? parseInt(combo[1], 10) : 0
+    const m = combo[2] ? parseInt(combo[2], 10) : 0
+    const mins = h * 60 + m
+    return mins > 0 && mins <= 1440 ? mins : null
+  }
   return null
 }
 

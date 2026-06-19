@@ -206,6 +206,13 @@ export interface Task {
   priority: Priority
   due_date: string | null
   due_time: string | null
+  // Hard "must be done by" date, distinct from due_date (when the work is
+  // scheduled). Surfaced with a ⚑ indicator and only shown on the row when it
+  // differs from due_date. Added in the Todoist-kill Deploy 1.
+  deadline_date: string | null
+  // Optional time estimate in minutes; mirrors weekly_actions.estimated_minutes.
+  // Feeds the eventual calendar-sync (time + duration → a real block).
+  estimated_minutes: number | null
   recurrence_text: string | null
   recurrence_rule: RecurrenceRule | null
   completed_at: string | null
@@ -224,6 +231,8 @@ export interface NewTaskInput {
   priority?: Priority
   due_date?: string | null
   due_time?: string | null
+  deadline_date?: string | null
+  estimated_minutes?: number | null
   recurrence_text?: string | null
   recurrence_rule?: RecurrenceRule | null
 }

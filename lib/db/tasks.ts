@@ -27,6 +27,8 @@ function rowToTask(row: Record<string, unknown>): Task {
     priority: row.priority as 1 | 2 | 3 | 4,
     due_date: (row.due_date as string | null) ?? null,
     due_time: (row.due_time as string | null) ?? null,
+    deadline_date: (row.deadline_date as string | null) ?? null,
+    estimated_minutes: (row.estimated_minutes as number | null) ?? null,
     recurrence_text: (row.recurrence_text as string | null) ?? null,
     recurrence_rule: (row.recurrence_rule as RecurrenceRule | null) ?? null,
     completed_at: (row.completed_at as string | null) ?? null,
@@ -81,6 +83,8 @@ export async function create(input: NewTaskInput): Promise<Task> {
       priority: input.priority ?? 4,
       due_date: input.due_date ?? null,
       due_time: input.due_time ?? null,
+      deadline_date: input.deadline_date ?? null,
+      estimated_minutes: input.estimated_minutes ?? null,
       recurrence_text: input.recurrence_text ?? null,
       recurrence_rule: input.recurrence_rule ?? null,
     })
