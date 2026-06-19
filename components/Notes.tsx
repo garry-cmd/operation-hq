@@ -27,6 +27,7 @@ import TaskItem from '@tiptap/extension-task-item'
 import Placeholder from '@tiptap/extension-placeholder'
 import { ImageWithPath } from '@/lib/notes/imageWithPath'
 import { FileAttachment } from '@/lib/notes/fileAttachment'
+import { tableExtensions, CELL_COLORS } from '@/lib/notes/tableWithColor'
 import { uploadNoteImage, uploadNoteFile } from '@/lib/db/noteMedia'
 
 interface Props {
@@ -991,6 +992,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       Placeholder.configure({ placeholder: 'Write something…' }),
       ImageWithPath,
       FileAttachment,
+      ...tableExtensions,
     ],
     content: (note.body ?? EMPTY_DOC) as Content,
     onUpdate: ({ editor }) => {
@@ -1115,6 +1117,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
         onPickImage={() => fileInputRef.current?.click()}
         onPickFile={() => attachInputRef.current?.click()}
       />
+      {editor && editor.isActive('table') && <TableToolbar editor={editor} />}
       <input
         ref={fileInputRef}
         type="file"
@@ -1163,6 +1166,55 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
         .notes-editor pre code { background: none; padding: 0; }
         .notes-editor blockquote { border-left: 3px solid var(--navy-500); padding-left: 12px; margin: 10px 0; color: var(--navy-200); }
         .notes-editor a { color: var(--accent); text-decoration: underline; }
+        .notes-editor hr {
+          border: none;
+          border-top: 1px solid var(--navy-600);
+          margin: 18px 0;
+        }
+        .notes-editor hr.ProseMirror-selectednode {
+          border-top-color: var(--accent);
+        }
+        .notes-editor .tableWrapper { overflow-x: auto; margin: 14px 0; }
+        .notes-editor table {
+          border-collapse: collapse;
+          table-layout: fixed;
+          width: 100%;
+          margin: 0;
+        }
+        .notes-editor td, .notes-editor th {
+          border: 1px solid var(--navy-600);
+          padding: 6px 9px;
+          vertical-align: top;
+          box-sizing: border-box;
+          position: relative;
+          min-width: 60px;
+        }
+        .notes-editor th {
+          background: var(--navy-800);
+          font-weight: 700;
+          text-align: left;
+        }
+        .notes-editor td > p, .notes-editor th > p { margin: 0 0 4px; }
+        .notes-editor td > :last-child, .notes-editor th > :last-child { margin-bottom: 0; }
+        .notes-editor .selectedCell:after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          background: var(--accent);
+          opacity: 0.12;
+          pointer-events: none;
+        }
+        .notes-editor .column-resize-handle {
+          position: absolute;
+          right: -2px;
+          top: 0;
+          bottom: 0;
+          width: 4px;
+          background: var(--accent);
+          cursor: col-resize;
+          z-index: 5;
+        }
+        .notes-editor.resize-cursor { cursor: col-resize; }
         .notes-editor img.note-image {
           max-width: 100%;
           height: auto;
@@ -1291,6 +1343,7 @@ function Toolbar({ editor, onPickImage, onPickFile }: { editor: Editor | null; o
       {sep}
       {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '"', 'Quote')}
       {btn(editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run(), '<>', 'Code block')}
+      {btn(false, () => editor.chain().focus().setHorizontalRule().run(), '―', 'Divider')}
       {sep}
       <button onClick={onPickImage} title="Insert image"
         style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
@@ -1304,6 +1357,54 @@ function Toolbar({ editor, onPickImage, onPickFile }: { editor: Editor | null; o
         onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
       </button>
+      <button onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table"
+        style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="1" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
+      </button>
+    </div>
+  )
+}
+
+function TableToolbar({ editor }: { editor: Editor }) {
+  const [showColors, setShowColors] = useState(false)
+  const tbtn = (onClick: () => void, label: string, title: string, danger = false) => (
+    <button onClick={onClick} title={title}
+      style={{ background: 'none', color: danger ? 'var(--red-text)' : 'var(--navy-200)', border: 'none', padding: '3px 7px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+      {label}
+    </button>
+  )
+  const div = <span style={{ width: 1, height: 14, background: 'var(--navy-700)', margin: '0 4px' }} />
+  return (
+    <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, padding: '5px 18px 8px', borderBottom: '1px solid var(--navy-700)' }}>
+      <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', color: 'var(--nw-label)', textTransform: 'uppercase', marginRight: 6 }}>Table</span>
+      {tbtn(() => editor.chain().focus().addRowBefore().run(), '+Row↑', 'Add row above')}
+      {tbtn(() => editor.chain().focus().addRowAfter().run(), '+Row↓', 'Add row below')}
+      {tbtn(() => editor.chain().focus().deleteRow().run(), '−Row', 'Delete row')}
+      {div}
+      {tbtn(() => editor.chain().focus().addColumnBefore().run(), '+Col←', 'Add column left')}
+      {tbtn(() => editor.chain().focus().addColumnAfter().run(), '+Col→', 'Add column right')}
+      {tbtn(() => editor.chain().focus().deleteColumn().run(), '−Col', 'Delete column')}
+      {div}
+      {tbtn(() => editor.chain().focus().toggleHeaderRow().run(), 'Header', 'Toggle header row')}
+      {tbtn(() => editor.chain().focus().mergeOrSplit().run(), 'Merge', 'Merge / split cells')}
+      {tbtn(() => setShowColors(s => !s), 'Fill ▾', 'Cell color')}
+      {div}
+      {tbtn(() => editor.chain().focus().deleteTable().run(), '✕ Table', 'Delete table', true)}
+      {showColors && (
+        <div style={{ position: 'absolute', top: '100%', left: 18, zIndex: 20, display: 'flex', gap: 6, padding: 8, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.35)' }}>
+          {CELL_COLORS.map(c => (
+            <button key={c.label} title={c.label}
+              onClick={() => { editor.chain().focus().setCellAttribute('backgroundColor', c.value).run(); setShowColors(false) }}
+              style={{ width: 22, height: 22, borderRadius: 5, cursor: 'pointer', border: '1px solid var(--navy-500)', background: c.value ?? 'transparent', position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              {c.value === null && <span style={{ fontSize: 13, color: 'var(--navy-300)' }}>⊘</span>}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
