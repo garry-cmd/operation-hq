@@ -1,10 +1,15 @@
 'use client'
 /**
  * TodoistStrip — read-only display of today + overdue Todoist tasks on the
- * Focus tab. Fetches from the server-side proxy at /api/todoist/tasks.
+ * Focus tab, scoped to the active space. Fetches from the server-side proxy at
+ * /api/todoist/tasks (which returns only OKRs-project tasks — the KR mirror).
  *
- * Degrades silently: if Todoist is unreachable, unconfigured, or returns
- * zero tasks, the strip renders nothing rather than breaking Focus.
+ * Space scoping: OKRs-project tasks carry a per-space Todoist label. We show
+ * only the tasks whose label matches the active space. "My OKRs" has no Todoist
+ * label, so it shows the unlabeled OKRs-project tasks.
+ *
+ * Degrades silently: if Todoist is unreachable, unconfigured, or returns zero
+ * tasks for this space, the strip renders nothing rather than breaking Focus.
  */
 import { useEffect, useState, useCallback } from 'react'
 
@@ -16,7 +21,18 @@ interface TodoistTask {
   due: { date: string; string: string; is_recurring: boolean } | null
 }
 
-export default function TodoistStrip() {
+// Space name → Todoist label. Casing matches the labels in Todoist exactly
+// (note "VidScrip" the space vs "Vidscrip" the label). Spaces not listed here
+// (i.e. "My OKRs") have no label and match unlabeled OKRs-project tasks.
+const SPACE_LABEL: Record<string, string> = {
+  Stellar: 'Stellar',
+  USPSA: 'USPSA',
+  Keeply: 'Keeply',
+  VidScrip: 'Vidscrip',
+}
+const KNOWN_LABELS_LC = Object.values(SPACE_LABEL).map(l => l.toLowerCase())
+
+export default function TodoistStrip({ spaceName }: { spaceName: string }) {
   const [tasks, setTasks] = useState<TodoistTask[]>([])
   const [loaded, setLoaded] = useState(false)
   const [syncTime, setSyncTime] = useState<string | null>(null)
@@ -35,16 +51,23 @@ export default function TodoistStrip() {
 
   useEffect(() => { load() }, [load])
 
-  // Nothing to show — hide entirely
-  if (!loaded || tasks.length === 0) return null
+  // Scope to the active space by label. Known space → match its label.
+  // "My OKRs" (no mapped label) → tasks carrying none of the known space labels.
+  const label = SPACE_LABEL[spaceName]
+  const scoped = label
+    ? tasks.filter(t => t.labels.some(l => l.toLowerCase() === label.toLowerCase()))
+    : tasks.filter(t => !t.labels.some(l => KNOWN_LABELS_LC.includes(l.toLowerCase())))
+
+  // Nothing to show for this space — hide entirely
+  if (!loaded || scoped.length === 0) return null
 
   const now = new Date()
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
 
   // Overdue first, then today; normalize datetime strings to date-only for comparison
   const dateOf = (d: string) => d.includes('T') ? d.split('T')[0] : d
-  const overdue = tasks.filter(t => t.due && dateOf(t.due.date) < today)
-  const todayTasks = tasks.filter(t => !t.due || dateOf(t.due.date) >= today)
+  const overdue = scoped.filter(t => t.due && dateOf(t.due.date) < today)
+  const todayTasks = scoped.filter(t => !t.due || dateOf(t.due.date) >= today)
 
   function daysOverdue(dateStr: string): string {
     // due.date can be "2026-06-05" or "2026-06-05T09:00:00" — handle both
@@ -109,17 +132,6 @@ export default function TodoistStrip() {
             }}>
               {task.content}
             </span>
-
-            {/* Labels as space hint */}
-            {task.labels.length > 0 && (
-              <span style={{
-                fontSize: 10, fontWeight: 600, color: 'var(--navy-300)',
-                background: 'var(--navy-700)', borderRadius: 6,
-                padding: '1px 7px', flexShrink: 0,
-              }}>
-                {task.labels[0]}
-              </span>
-            )}
 
             {/* Due pill */}
             {task.due && (() => {

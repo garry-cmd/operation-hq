@@ -46,6 +46,8 @@ type Props = {
   setLogs: (fn: (p: ObjectiveLog[]) => ObjectiveLog[]) => void
   openActionId: string | null
   setOpenActionId: (id: string | null) => void
+  // Active space display name — used to scope the Todoist strip by label.
+  spaceName: string
 }
 
 export default function Focus({
@@ -53,6 +55,7 @@ export default function Focus({
   habitCheckins, setHabitCheckins,
   weekStart, setWeekStart, toast, onRequestCloseWeek,
   logs, setLogs, openActionId, setOpenActionId,
+  spaceName,
 }: Props) {
   const [planning, setPlanning] = useState(false)
   // Inline-add state for the per-KR "+ Add action" row.
@@ -529,7 +532,7 @@ export default function Focus({
         </div>
 
         {/* Todoist: today + overdue tasks — operational layer below strategic actions */}
-        <TodoistStrip />
+        <TodoistStrip spaceName={spaceName} />
 
       </div>
     </>
