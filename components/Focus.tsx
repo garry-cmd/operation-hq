@@ -534,7 +534,7 @@ export default function Focus({
         </div>
 
         {/* Native space tasks: today + overdue — operational layer below strategic actions */}
-        <FocusTasks tasks={tasks} roadmapItems={roadmapItems} setTasks={setTasks} onOpenTask={onOpenTask} toast={toast} />
+        <FocusTasks tasks={tasks} roadmapItems={roadmapItems} weekStart={weekStart} setTasks={setTasks} onOpenTask={onOpenTask} toast={toast} />
 
       </div>
     </>

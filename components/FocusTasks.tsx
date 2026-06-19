@@ -1,20 +1,21 @@
 'use client'
 /**
- * FocusTasks — today + overdue native tasks for the active space, shown on the
- * Focus tab below the strategic actions. Replaces the old read-only Todoist
- * strip (retired with the Todoist→HQ migration). These are real HQ tasks, so
- * the checkbox actually completes them.
+ * FocusTasks — the active space's native tasks that fall within the displayed
+ * Focus week (Mon–Sun of `weekStart`). Focus is a weekly perspective, so this
+ * tracks the week shown above it and follows week navigation.
  *
- * Scope: caller passes the active space's tasks. We surface the open ones whose
- * due_date is today or earlier (mirrors the NavRail "Today" badge filter).
- * Recurring tasks roll their due_date forward on complete (toggleComplete), so
- * checking one drops it out of the window rather than crossing it off.
+ * Scope: caller passes the active space's tasks; we surface the open ones whose
+ * due_date lands inside [weekStart, weekStart+6]. Tasks due before this week
+ * (stale overdue) are intentionally NOT shown here — they live on the Tasks
+ * "Today" view. Recurring tasks roll due_date forward on complete
+ * (toggleComplete), so checking one moves it out of the window.
  *
- * Renders nothing when the space has no due/overdue tasks.
+ * Renders nothing when no tasks fall in the week.
  */
 import { useState } from 'react'
 import * as tasksDb from '@/lib/db/tasks'
 import { Task, RoadmapItem, Priority } from '@/lib/types'
+import { parseDateLocal } from '@/lib/utils'
 
 const PRIORITY_COLOR: Record<Priority, string> = {
   1: '#d12d2d',
@@ -23,41 +24,62 @@ const PRIORITY_COLOR: Record<Priority, string> = {
   4: 'transparent',
 }
 
+function ymd(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 type Props = {
   // Active space's tasks (already space-scoped by the caller).
   tasks: Task[]
   roadmapItems: RoadmapItem[]
+  // Monday (YYYY-MM-DD) of the week currently shown on Focus.
+  weekStart: string
   setTasks: (fn: (prev: Task[]) => Task[]) => void
   onOpenTask: (id: string) => void
   toast: (m: string) => void
 }
 
-export default function FocusTasks({ tasks, roadmapItems, setTasks, onOpenTask, toast }: Props) {
+export default function FocusTasks({ tasks, roadmapItems, weekStart, setTasks, onOpenTask, toast }: Props) {
   const [busy, setBusy] = useState<string | null>(null)
 
-  const now = new Date()
-  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+  const today = ymd(new Date())
+  const weekEndDate = parseDateLocal(weekStart)
+  weekEndDate.setDate(weekEndDate.getDate() + 6)
+  const weekEnd = ymd(weekEndDate)
 
-  // Open tasks due today or earlier. due_date is 'YYYY-MM-DD' so string compare
-  // is chronological. Skip subtasks (they show under their parent on Tasks).
-  const due = tasks
-    .filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date <= today)
+  // Open, non-subtask tasks due within the displayed week, chronological then
+  // by priority (1 = urgent).
+  const inWeek = tasks
+    .filter(t =>
+      !t.completed_at && !t.parent_task_id &&
+      t.due_date && t.due_date >= weekStart && t.due_date <= weekEnd
+    )
     .sort((a, b) => {
-      // overdue (older due_date) first; then by priority (1 = urgent) ascending
       if (a.due_date !== b.due_date) return (a.due_date! < b.due_date!) ? -1 : 1
       return a.priority - b.priority
     })
 
-  if (due.length === 0) return null
+  if (inWeek.length === 0) return null
 
   const krTitle = (id: string | null) =>
     id ? (roadmapItems.find(r => r.id === id)?.title ?? null) : null
 
   function daysOverdue(dateStr: string): string {
     const d = Math.floor((Date.now() - new Date(dateStr + 'T12:00:00').getTime()) / 86400000)
-    if (d <= 0) return 'today'
     if (d === 1) return '1d over'
     return `${d}d over`
+  }
+
+  // Due pill: past-but-this-week → alarm; today → caution; later this week → neutral weekday.
+  function duePill(dueDate: string) {
+    if (dueDate < today) {
+      return { bg: 'var(--red-bg)', color: 'var(--red-text)', text: daysOverdue(dueDate) }
+    }
+    if (dueDate === today) {
+      return { bg: 'var(--amber-bg)', color: 'var(--amber-text)', text: 'today' }
+    }
+    const wd = new Date(dueDate + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'short' })
+    return { bg: 'var(--navy-700)', color: 'var(--navy-300)', text: wd }
   }
 
   async function complete(task: Task) {
@@ -81,12 +103,10 @@ export default function FocusTasks({ tasks, roadmapItems, setTasks, onOpenTask, 
           fontSize: 10, fontWeight: 500, color: 'var(--nw-label)',
           textTransform: 'uppercase', letterSpacing: '.16em', margin: 0,
         }}>
-          Today &amp; overdue
+          This week&apos;s tasks
         </h2>
-        <span style={{
-          fontSize: 10, fontWeight: 700, color: 'var(--navy-400)',
-        }}>
-          {due.length}
+        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)' }}>
+          {inWeek.length}
         </span>
       </div>
 
@@ -95,9 +115,9 @@ export default function FocusTasks({ tasks, roadmapItems, setTasks, onOpenTask, 
         background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
         borderRadius: 14, padding: '6px 14px',
       }}>
-        {due.map((task, i) => {
-          const isOver = !!task.due_date && task.due_date < today
+        {inWeek.map((task, i) => {
           const kr = krTitle(task.roadmap_item_id)
+          const pill = duePill(task.due_date!)
           return (
             <div key={task.id} style={{
               display: 'flex', alignItems: 'center', gap: 11, padding: '9px 0',
@@ -149,16 +169,13 @@ export default function FocusTasks({ tasks, roadmapItems, setTasks, onOpenTask, 
               )}
 
               {/* Due pill */}
-              {task.due_date && (
-                <span style={{
-                  fontSize: 10, fontWeight: 700, padding: '1px 8px',
-                  borderRadius: 99, flexShrink: 0,
-                  background: isOver ? 'var(--red-bg)' : 'var(--amber-bg)',
-                  color: isOver ? 'var(--red-text)' : 'var(--amber-text)',
-                }}>
-                  {isOver ? daysOverdue(task.due_date) : 'today'}
-                </span>
-              )}
+              <span style={{
+                fontSize: 10, fontWeight: 700, padding: '1px 8px',
+                borderRadius: 99, flexShrink: 0,
+                background: pill.bg, color: pill.color,
+              }}>
+                {pill.text}
+              </span>
             </div>
           )
         })}
