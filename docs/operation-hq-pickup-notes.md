@@ -1,9 +1,46 @@
 # Operation HQ — Session Pickup Notes
-*Last updated: May 18, 2026 (end of day) · Replaces the May 14 version*
+*Last updated: Jun 19, 2026 (end of day) · The May 18 starter below is retained for history; read the Jun 19 block first.*
 
 ---
 
-## 🎯 Session starter — read this first
+## 🧭 Current state (Jun 19, 2026) — read this first
+
+Three sessions shipped Jun 19 (full detail in `operation-hq-session-2026-06-19.md`):
+
+**Session 1 — objective/KR time windows + metric cards.** Objective start/end dates
+(migration `add_objective_start_end_dates`), surfaced on OKR cards + Roadmap headers
+(alarm-red when overdue); "N wk remain" retargeted to the objective's own end_date; KR
+date windows on Roadmap chips; Roadmap KR editing unified onto the shared `EditKRModal`
+(optional `quarters` selector + `onPark`); metric KPI sparklines; metric **flip cards**
+(front sparkline / back readings, "+ Log" on the back).
+
+**Session 2 — Notes to near-Evernote parity.** Inline images + file attachments (private
+`note-media` bucket, body stores storage **path** not URL), dividers, robust tables
+(resize + per-cell colors + checkboxes in cells), focus mode, pinned notes, internal
+`[[ ]]` links, quick-file Move, Markdown export, version history (`note_versions`),
+storage GC, sub-notebook depth→3. **Strategic call: Evernote → REPLACE; Todoist → WRAP.**
+
+**Session 3 — Command Palette search rewrite + KR deep-linking.** The old sidebar search
+dropdown is gone; ⌘K opens a **centered command palette** with a flat ranked, multi-source
+index (objectives, KRs incl. parked, all actions, tasks, notes + bodies, reflect,
+notebooks, spaces, tags). Multi-term AND (word-order independent), accent highlighting,
+keyboard nav. **Scoping operators** `#tag` / `in:<space>` / `task:`/`note:`/`kr:`/`obj:`/
+`action:`/`reflect:`/`notebook:`/`space:` (scope-only queries list everything in scope).
+**Fuzzy typo tolerance** (bounded Levenshtein, ranked below substring). **Recent items** on
+empty query (`localStorage['hq-search-recents']`). Every pick **deep-links to the item** —
+switches space, opens the panel, jumps to the week; KRs **scroll-to + flash** the row/chip
+(auto-expanding the owning ObjectiveCard first). Plus a version-aware Notes media-GC fix.
+
+**Key new modules:** `lib/search.ts` (ranker), `components/CommandPalette.tsx`,
+`lib/scrollFlash.ts`, `lib/notes/collectMediaPaths.ts`. No schema changes in Session 3.
+
+**Still parked:** Notes whole-app visual redesign (`hq-notes-redesign.html`, rebuilt
+Jun 19, awaiting an aesthetic decision); daily metric logging (`week_start`→`entry_date`
+refactor); OCR; web clipper; Todoist write-back.
+
+---
+
+## 🎯 Session starter — read this first (May 18 — retained for history)
 
 **Heavy chrome + plumbing session.** Eleven distinct shipments today across bug fixes, mobile fallback, Tasks/Notes refinement, and a full UI palette propagation. The app's visual identity is now unified end-to-end under the "night-watch" palette; both light and dark mode read as one family.
 
@@ -229,12 +266,12 @@ Full rewrite, state library, tests, OKRs split, component library.
 **14. Responsive ActionPanel / ObjectivePanel.** Still desktop-only push-aside at 800px. ~2hr.
 
 ### 🟢 Nice to have
-- Search space-scoping
+- ~~Search space-scoping~~ ✅ shipped Jun 19 as the `in:<space>` palette operator
 - Share page query optimization
 - PWA install prompt
 - Keyboard shortcuts (Cmd+Enter save, Esc close, etc.)
 - Reflect history sparkline
-- Quick filing affordance on a note (move from Inbox to space/notebook from the editor header)
+- ~~Quick filing affordance on a note (move from Inbox to space/notebook from the editor header)~~ ✅ shipped Jun 19 (Notes quick-file Move)
 
 ### ❄️ Deferred indefinitely
 

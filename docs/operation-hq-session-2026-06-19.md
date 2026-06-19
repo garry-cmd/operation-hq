@@ -212,3 +212,135 @@ introduced and fixed same-session (a hooks-order crash and a focus-mode "trap").
 ## PWA (carried, unchanged)
 App is already a proper PWA (manifest + icons wired in `app/layout.tsx`); install via
 browser. No in-app install prompt yet — backlog nicety.
+
+---
+
+# Session 3 — Command Palette: full search rewrite + KR deep-linking
+
+## TL;DR
+
+Replaced the old cramped sidebar search dropdown with a centered ⌘K command
+palette and built it out across three tiers plus item-level deep-linking. Search
+now spans every entity (objectives, KRs incl. parked, all actions, tasks, notes +
+bodies, reflect entries, notebooks, spaces, tags), ranks flat (best match first),
+and routes a pick to the **item itself** — switching space, opening the right
+panel, jumping to the right week, and for KRs scrolling-to + flashing the row/chip.
+Also shipped a version-aware media GC fix for Notes. Six commits, no migrations.
+All verified live in Chrome (Browser 1).
+
+## Shipped (in deploy order)
+
+1. **Notes node-level media GC (version-aware).** Deleting an image mid-edit
+   (backspace) previously leaked its file in the `note-media` bucket until the whole
+   note was deleted; and the attachment-chip remove button deleted files *without*
+   checking version snapshots (could break a version restore). Fix: new pure
+   `lib/notes/collectMediaPaths.ts` (walks the doc — incl. table cells — collecting
+   image+attachment storage `path`s, ignoring external src-only images). `Notes.tsx`
+   holds `lastMediaPathsRef` and a `gcRemovedMedia()` run inside `flushBody` after
+   save: diff prev→current paths, and for each removed path delete it **only if no
+   retained `note_versions` snapshot still references it** (version-aware). Removed
+   the inline immediate-delete from `fileAttachment.ts`. No bucket-listing (avoids
+   in-flight-upload races). Verified live: orphan GC fires, version-referenced media
+   survives, whole-note delete still purges + cascades.
+
+2. **Centered command palette (Tier 1+2).** New `lib/search.ts` (pure ranker) +
+   `components/CommandPalette.tsx` (centered modal). Old sidebar dropdown
+   (single `.includes()`, source-order, slice(10), no keyboard nav) is gone; the
+   NavRail search box is now a trigger button (`onOpenSearch`).
+   - **Ranker:** tiered token scoring exact(1000) > prefix(620) > word-boundary(420)
+     > substring(240). Field weights title 1.0 / tag 0.72 / container 0.6 / body 0.42.
+     KIND_BOOST + recency tiebreak. **Multi-term AND, word-order independent**
+     ("sam consolidation" → "Consolidation Meeting with Sam"). `highlightSegments`
+     returns React-safe segments (no `dangerouslySetInnerHTML`); `makeSnippet` for
+     body context.
+   - **Index** (memoised in `page.tsx`): objectives, KRs (incl. parked), ALL actions
+     (not just this-week), tasks + descriptions, notes + extracted bodies, reflect
+     entries (win/slipped/adjust_notes), notebooks, spaces, tags.
+   - **Deep-link routing** (`handleSearchPick`): always `switchSpace` first, then
+     objective→panel / action→week-jump+panel / task→detail / note→its container.
+   - Palette UI: type chips (All/Objective/Key Result/Action/Task/Note), accent-tinted
+     highlight via `--accent-dim`/`--accent`, ↑↓/↵/esc, footer hints.
+
+3. **Action dedup.** Carry-forward spawns one `weekly_actions` row per week with the
+   same `(roadmap_item_id, title)` — search showed "Get Rick report" ×4. Index now
+   collapses to one entry per that identity, keeping the this-week row else the most
+   recent (`week_start` sorts lexically). Verified: `rick` → 1 result.
+
+4. **Tier 3 — operators + fuzzy + recents.**
+   - **Scoping operators** via `parseQuery` (non-destructive — raw text stays in the
+     box): `#tag` (tag-only), `in:<space>` (matches `entry.spaceName`, shows a cobalt
+     `in:` pill), and kind ops `task:`/`note:`/`kr:`/`obj:`/`action:`/`reflect:`/
+     `notebook:`/`space:` (reflected in the chips; operator wins over manual chip). A
+     **scope-only** query with no tokens (e.g. `in:keeply`, `task:`) lists everything
+     in scope by kind+recency.
+   - **Fuzzy typo tolerance:** bounded word-level Levenshtein (`withinEdits`), gated to
+     tokens ≥3 chars, threshold 1 (len≤4) else 2, scored **90 — below substring(240)**
+     so a clean hit always wins. `stellr` → all Stellar items. (Fuzzy matches show no
+     highlight — there's no exact span — which is acceptable.)
+   - **Recent items:** empty query shows the last 8 opened items under a "RECENT"
+     header, persisted in `localStorage['hq-search-recents']`, resolved against the live
+     index (stale ids drop out), fully keyboard-navigable.
+
+5. **KR deep-link (scroll-to + flash, with auto-expand).** Picking a KR now routes to
+   OKR (active quarter) or Roadmap and scrolls-to + flashes the actual KR.
+   - `SearchRoute` gains `krId`; the KR index route carries `krId: i.id` (non-parked).
+     `page.tsx` owns `initialKRId`, set in `handleSearchPick`, threaded into `OKRs` +
+     `Roadmap` as `initialKRId` / `onConsumeInitialKRId`.
+   - New `lib/scrollFlash.ts` `scrollToAndFlash(krId, onSettled, attempts=20)`:
+     `querySelector('[data-kr-id="…"]')`, polls 70ms×20 (~1.4s) until the element
+     mounts, then `scrollIntoView({block:'center'})` + a 1.5s cobalt box-shadow ring;
+     calls `onSettled` once it finds (or gives up) so the caller defers consuming.
+   - `data-kr-id` added to the **ObjectiveCard KR row** and the **Roadmap KRChip**.
+   - **Gotcha that needed a follow-up commit:** ObjectiveCards default to `collapsed`,
+     so the KR row (and its `data-kr-id`) isn't in the DOM. ObjectiveCard now takes
+     `expandKRId` and auto-`setCollapsed(false)` when it owns that KR; OKRs passes
+     `expandKRId={initialKRId}`. Consume is **deferred until `scrollToAndFlash`
+     settles** (not eagerly), so on a cross-space jump `expandKRId` stays live until the
+     owning card mounts and expands.
+   - Verified live: OKR path (Finances Improved auto-expands, scrolls to "Earning
+     $3k/month with Stellar", flashes; only that card's rows are in the DOM) and
+     Roadmap path ("Hike 100 miles" chip in the 3Q2026 column flashes).
+
+## Commits (this session, in order)
+1. `notes: version-aware node-level media GC (reclaim orphaned images/attachments on save)`
+2. `search: centered command palette with ranked multi-source search (Tier 1+2)`
+3. `search: dedup carry-forward actions by (roadmap_item_id, title)`
+4. `search: Tier 3 — scoping operators (in:/type:), fuzzy typo tolerance, recent items`
+5. `search: KR deep-link — scroll-to + flash on OKR/Roadmap`
+6. `search: KR deep-link auto-expands owning objective card before scroll-flash`
+
+No migrations.
+
+## Files of record (Session 3)
+- New: `lib/search.ts`, `components/CommandPalette.tsx`, `lib/scrollFlash.ts`,
+  `lib/notes/collectMediaPaths.ts`.
+- Modified: `app/hq/page.tsx` (search index + `handleSearchPick` + `initialKRId`),
+  `components/NavRail.tsx` (search box → trigger button), `components/Notes.tsx`
+  (media GC), `components/OKRs.tsx` + `components/Roadmap.tsx` (KR deep-link effects),
+  `components/ObjectiveCard.tsx` (`data-kr-id` + `expandKRId` auto-expand),
+  `lib/notes/fileAttachment.ts` (dropped inline media delete).
+
+## Key learnings (Session 3)
+- **ObjectiveCard KR rows are collapse-gated** (`{!collapsed && …}`, default collapsed).
+  Anything that needs to target a KR row in the DOM (scroll, measure) must expand the
+  owning card first.
+- **Deep-link consume timing:** when a pick triggers a cross-space jump, the destination
+  screen's data propagates a tick later. Defer clearing the deep-link state until the
+  scroll/flash actually settles, so any "expand/select this item" prop stays live for the
+  late-mounting target. `scrollToAndFlash`'s `onSettled` callback is the hook.
+- **Fuzzy ranks below substring on purpose** — typo tolerance must never outrank a clean
+  match. And `highlightSegments` only highlights exact substrings, so fuzzy hits render
+  un-highlighted (fine).
+- **Action carry-forward identity is `(roadmap_item_id, title)`**, reconfirmed — dedup on
+  that, not row id (row id changes each week).
+- Recents key: `localStorage['hq-search-recents']` (cap 8, most-recent-first, dedup).
+
+## Parked / not built (Session 3)
+- **Notes visual redesign** — the Jun 6 `hq-notes-redesign.html` mockup was rebuilt
+  faithfully this session (the original was staged-only and never committed) and remains
+  **parked pending a whole-app aesthetic decision**, not a silent feature-batch ship. The
+  open call within it: quiet-grey labels (a calm island) vs amber (app-consistent), and
+  whether any refresh goes whole-app. Mockup lives in `~/Downloads` /
+  `operation-hq-notes-redesign/`, not committed to the repo.
+- OCR and web clipper (the latter is a separate browser-extension product, and the
+  largest remaining real Evernote gap) — both deliberately deferred.
