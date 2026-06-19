@@ -298,3 +298,13 @@ export interface NoteTag {
   note_id: string
   tag: string
 }
+
+/** A point-in-time snapshot of a note's title + body, for version history. */
+export interface NoteVersion {
+  id: string
+  note_id: string
+  title: string
+  body: NoteBody | null
+  body_format: string
+  created_at: string
+}

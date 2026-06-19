@@ -14,10 +14,12 @@
  * shared with Tasks — same string set, separate join table.
  */
 import { useEffect, useState, useMemo, useCallback, useRef, useReducer } from 'react'
-import { Space, Notebook, Note, NoteTag, NoteBody } from '@/lib/types'
+import { Space, Notebook, Note, NoteTag, NoteBody, NoteVersion } from '@/lib/types'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
+import * as noteVersionsDb from '@/lib/db/noteVersions'
 import { extractNoteText } from '@/lib/noteText'
+import { noteToMarkdown } from '@/lib/notes/noteMarkdown'
 import { useIsMobile } from '@/lib/useIsMobile'
 import { useEditor, EditorContent, Editor } from '@tiptap/react'
 import type { Content } from '@tiptap/react'
@@ -28,7 +30,8 @@ import Placeholder from '@tiptap/extension-placeholder'
 import { ImageWithPath } from '@/lib/notes/imageWithPath'
 import { FileAttachment } from '@/lib/notes/fileAttachment'
 import { tableExtensions, CELL_COLORS } from '@/lib/notes/tableWithColor'
-import { uploadNoteImage, uploadNoteFile } from '@/lib/db/noteMedia'
+import { createInternalLinks } from '@/lib/notes/internalLinks'
+import { uploadNoteImage, uploadNoteFile, deleteAllMediaForNote } from '@/lib/db/noteMedia'
 
 interface Props {
   spaces: Space[]
@@ -65,6 +68,15 @@ type Scope =
   | { kind: 'tag'; tag: string }
 
 const EMPTY_DOC: NoteBody = { type: 'doc', content: [{ type: 'paragraph' }] }
+
+// Pinned notes float to the top (newest pin first); the rest by recency.
+function byPinnedThenUpdated(a: Note, b: Note): number {
+  const ap = a.pinned_at, bp = b.pinned_at
+  if (ap && !bp) return -1
+  if (!ap && bp) return 1
+  if (ap && bp) return ap < bp ? 1 : -1
+  return a.updated_at < b.updated_at ? 1 : -1
+}
 
 export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, notes, setNotes, tagsByNote, setTagsByNote, initialNoteId, onConsumeInitialNoteId, onJumpToTag, onFocusChange, toast }: Props) {
   const [scope, setScope] = useState<Scope>({ kind: 'inbox' })
@@ -156,15 +168,15 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
     if (scope.kind === 'inbox') {
       return notes
         .filter(n => n.space_id == null && n.notebook_id == null)
-        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+        .sort(byPinnedThenUpdated)
     }
     if (scope.kind === 'all') {
-      return [...notes].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+      return [...notes].sort(byPinnedThenUpdated)
     }
     if (scope.kind === 'space') {
       return notes
         .filter(n => n.space_id === scope.spaceId)
-        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+        .sort(byPinnedThenUpdated)
     }
     if (scope.kind === 'notebook') {
       const ids = new Set<string>([scope.notebookId])
@@ -172,12 +184,12 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
       for (const c of children) ids.add(c.id)
       return notes
         .filter(n => n.notebook_id && ids.has(n.notebook_id))
-        .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+        .sort(byPinnedThenUpdated)
     }
     // tag
     return notes
       .filter(n => (tagsByNote.get(n.id) ?? []).includes(scope.tag))
-      .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+      .sort(byPinnedThenUpdated)
   }, [notes, scope, childrenByParent, tagsByNote])
 
   const selectedNote = useMemo(
@@ -310,6 +322,8 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
   const onDeleteNote = useCallback(async (id: string) => {
     try {
       await notesDb.remove(id)
+      // Storage GC: purge the note's images/attachments so they don't orphan.
+      void deleteAllMediaForNote(id)
       setNotes(prev => prev.filter(n => n.id !== id))
       setTagsByNote(prev => { const next = new Map(prev); next.delete(id); return next })
       if (selectedNoteId === id) setSelectedNoteId(null)
@@ -318,6 +332,23 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
       toast('Could not delete note')
     }
   }, [toast, selectedNoteId])
+
+  // Resolve a `[[Title]]` click to a note and open it. Prefer a match within
+  // the current note's space; fall back to any space; else tell the user.
+  const onOpenNoteByTitle = useCallback((rawTitle: string) => {
+    const title = rawTitle.trim().toLowerCase()
+    if (!title) return
+    const current = selectedNoteId ? notes.find(n => n.id === selectedNoteId) : null
+    const inSpace = current
+      ? notes.find(n => n.space_id === current.space_id && (n.title || '').trim().toLowerCase() === title)
+      : null
+    const target = inSpace ?? notes.find(n => (n.title || '').trim().toLowerCase() === title)
+    if (!target) { toast(`No note titled "${rawTitle.trim()}"`); return }
+    if (target.notebook_id) setScope({ kind: 'notebook', notebookId: target.notebook_id })
+    else if (target.space_id) setScope({ kind: 'space', spaceId: target.space_id })
+    else setScope({ kind: 'inbox' })
+    setSelectedNoteId(target.id)
+  }, [notes, selectedNoteId, toast])
 
   const onSetNoteTags = useCallback(async (id: string, tags: string[]) => {
     try {
@@ -583,10 +614,13 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
             key={selectedNote.id}
             note={selectedNote}
             tags={tagsByNote.get(selectedNote.id) ?? []}
+            spaces={spaces}
+            notebooks={notebooks}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen(v => { const nv = !v; onFocusChange?.(nv); return nv })}
             onPatch={patch => onUpdateNote(selectedNote.id, patch)}
             onSetTags={tags => onSetNoteTags(selectedNote.id, tags)}
+            onOpenNoteByTitle={onOpenNoteByTitle}
             onDelete={() => { if (confirm('Delete this note?')) { onDeleteNote(selectedNote.id); setFullscreen(false); onFocusChange?.(false) } }}
           />
         ) : (
@@ -765,7 +799,7 @@ function NotebookBranch(props: {
         <div style={{ position: 'absolute', top: '100%', right: 6, zIndex: 30, marginTop: 2,
           background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 6,
           padding: 4, minWidth: 150, boxShadow: '0 4px 14px rgba(0,0,0,0.35)' }}>
-          {depth === 1 && (
+          {depth <= 2 && (
             <button onClick={() => { props.onAddChild(notebook.id); setMenuOpen(false) }} style={branchMenuItemStyle}
               onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
               onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
@@ -870,8 +904,11 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
       }}
       onMouseEnter={e => { if (!selected) e.currentTarget.style.background = 'var(--navy-800)' }}
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'none' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 3, color: note.title ? 'var(--navy-50)' : 'var(--navy-400)', fontStyle: note.title ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-        {note.title || 'Untitled'}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
+        {note.pinned_at && <span style={{ fontSize: 10, flexShrink: 0 }} title="Pinned">📌</span>}
+        <span style={{ fontSize: 13, fontWeight: 600, color: note.title ? 'var(--navy-50)' : 'var(--navy-400)', fontStyle: note.title ? 'normal' : 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {note.title || 'Untitled'}
+        </span>
       </div>
       <div style={{
         fontSize: 11.5, color: 'var(--navy-300)', lineHeight: 1.45, marginBottom: 5,
@@ -895,13 +932,16 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
 
 // ── Editor ─────────────────────────────────────────────────────────
 
-function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSetTags, onDelete }: {
+function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscreen, onPatch, onSetTags, onOpenNoteByTitle, onDelete }: {
   note: Note;
   tags: string[];
+  spaces: Space[];
+  notebooks: Notebook[];
   fullscreen: boolean;
   onToggleFullscreen: () => void;
   onPatch: (patch: Partial<Note>) => void;
   onSetTags: (tags: string[]) => void;
+  onOpenNoteByTitle: (title: string) => void;
   onDelete: () => void;
 }) {
   const [title, setTitle] = useState(note.title)
@@ -909,6 +949,23 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle')
   const pendingBodyRef = useRef<NoteBody | null>(null)
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Throttle version snapshots: at most one per note per this interval.
+  const lastSnapshotRef = useRef<number>(0)
+  // Latest title, readable from async flush without going stale.
+  const titleRef = useRef(note.title)
+  // Internal-link resolver, kept fresh so the editor plugin never closes over
+  // a stale handler.
+  const openLinkRef = useRef<(t: string) => void>(() => {})
+  openLinkRef.current = onOpenNoteByTitle
+  titleRef.current = title
+
+  // Snapshot the current title+body into history, throttled. Best-effort.
+  const snapshot = useCallback((body: NoteBody | null) => {
+    const now = Date.now()
+    if (now - lastSnapshotRef.current < 3 * 60 * 1000) return
+    lastSnapshotRef.current = now
+    void noteVersionsDb.createVersion(note.id, titleRef.current, body).catch(() => {})
+  }, [note.id])
 
   // Body autosave: schedule a debounced write on every onUpdate.
   // On unmount, flush immediately so switching notes doesn't lose
@@ -921,11 +978,17 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     setSaveState('saving')
     try {
       await onPatch({ body })
+      snapshot(body)
       setSaveState('saved')
     } catch {
       setSaveState('idle')
     }
-  }, [onPatch])
+  }, [onPatch, snapshot])
+
+  const [moveOpen, setMoveOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [versions, setVersions] = useState<NoteVersion[]>([])
+  const [versionsLoading, setVersionsLoading] = useState(false)
 
   const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'error'>('idle')
   const [uploadErr, setUploadErr] = useState('Upload failed')
@@ -1002,6 +1065,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       ImageWithPath,
       FileAttachment,
       ...tableExtensions,
+      createInternalLinks(openLinkRef),
     ],
     content: (note.body ?? EMPTY_DOC) as Content,
     onUpdate: ({ editor }) => {
@@ -1071,6 +1135,57 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     onSetTags(tags.filter(x => x !== t))
   }
 
+  const pinned = !!note.pinned_at
+  function togglePin() {
+    onPatch({ pinned_at: pinned ? null : new Date().toISOString() })
+  }
+
+  function exportMarkdown() {
+    const body = editor?.getJSON() ?? note.body
+    const md = noteToMarkdown(title, body)
+    const safe = (title || 'untitled').replace(/[^\w\- ]+/g, '').trim().slice(0, 80) || 'untitled'
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${safe}.md`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  async function openHistory() {
+    setHistoryOpen(true)
+    setVersionsLoading(true)
+    try {
+      // Flush any pending edits first so the latest is reflected.
+      await flushBody()
+      setVersions(await noteVersionsDb.listVersions(note.id))
+    } catch {
+      setVersions([])
+    } finally {
+      setVersionsLoading(false)
+    }
+  }
+
+  function restoreVersion(v: NoteVersion) {
+    if (!confirm('Restore this version? Your current note is saved to history first, so this is reversible.')) return
+    // Snapshot current state so restore can be undone, bypassing the throttle.
+    lastSnapshotRef.current = 0
+    snapshot(editor?.getJSON() ?? note.body)
+    const body = (v.body ?? EMPTY_DOC) as Content
+    editor?.commands.setContent(body)
+    setTitle(v.title)
+    onPatch({ title: v.title, body: v.body })
+    setHistoryOpen(false)
+  }
+
+  function moveTo(spaceId: string | null, notebookId: string | null) {
+    onPatch({ space_id: spaceId, notebook_id: notebookId })
+    setMoveOpen(false)
+  }
+
   // In fullscreen / focus mode, give the editor a much wider column than the
   // cramped default — roomy for tables while keeping prose line-length sane.
   const innerStyle: React.CSSProperties = fullscreen
@@ -1110,13 +1225,25 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
               placeholder="+ tag"
               style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 11.5, fontFamily: 'inherit', outline: 'none', width: 80 }} />
           </div>
-          <div style={{ fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+          <div style={{ position: 'relative', fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
             {uploadState === 'uploading' ? 'Uploading…'
               : uploadState === 'error' ? '⚠ ' + uploadErr
               : saveState === 'saving' ? 'Saving…'
               : saveState === 'saved' ? '✓ Saved' : ''}
+            <IconBtn title={pinned ? 'Unpin note' : 'Pin note'} active={pinned} onClick={togglePin}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 3h6l-1 7 3 3H7l3-3-1-7z"/></svg>
+            </IconBtn>
+            <IconBtn title="Move to space / notebook" active={moveOpen} onClick={() => { setHistoryOpen(false); setMoveOpen(o => !o) }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+            </IconBtn>
+            <IconBtn title="Version history" active={historyOpen} onClick={() => { setMoveOpen(false); historyOpen ? setHistoryOpen(false) : openHistory() }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
+            </IconBtn>
+            <IconBtn title="Export as Markdown" onClick={exportMarkdown}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
+            </IconBtn>
             <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode' : 'Focus mode (hide panels)'}
-              style={{ marginLeft: 10, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
+              style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
               onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)' }}
               onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)' }}>
               {fullscreen ? (
@@ -1128,6 +1255,12 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
             <button onClick={onDelete} title="Delete note" style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>
               🗑
             </button>
+            {moveOpen && (
+              <MovePanel spaces={spaces} notebooks={notebooks} note={note} onMove={moveTo} onClose={() => setMoveOpen(false)} />
+            )}
+            {historyOpen && (
+              <HistoryPanel versions={versions} loading={versionsLoading} onRestore={restoreVersion} onClose={() => setHistoryOpen(false)} />
+            )}
           </div>
         </div>
       </div>
@@ -1187,6 +1320,15 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
         .notes-editor pre code { background: none; padding: 0; }
         .notes-editor blockquote { border-left: 3px solid var(--navy-500); padding-left: 12px; margin: 10px 0; color: var(--navy-200); }
         .notes-editor a { color: var(--accent); text-decoration: underline; }
+        .notes-editor .note-link {
+          color: var(--accent);
+          text-decoration: underline;
+          text-decoration-style: dotted;
+          text-underline-offset: 2px;
+          cursor: pointer;
+          border-radius: 2px;
+        }
+        .notes-editor .note-link:hover { background: var(--accent-dim); }
         .notes-editor hr {
           border: none;
           border-top: 1px solid var(--navy-600);
@@ -1330,6 +1472,115 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
           pointer-events: none;
         }
       `}</style>
+    </div>
+  )
+}
+
+function IconBtn({ title, active, onClick, children }: {
+  title: string; active?: boolean; onClick: () => void; children: React.ReactNode
+}) {
+  return (
+    <button onClick={onClick} title={title}
+      style={{ marginLeft: 8, background: 'none', border: 'none', color: active ? 'var(--accent)' : 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.color = 'var(--navy-100)' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.color = 'var(--navy-400)' }}>
+      {children}
+    </button>
+  )
+}
+
+const panelStyle: React.CSSProperties = {
+  position: 'absolute', top: '100%', right: 0, marginTop: 6, zIndex: 40,
+  width: 270, background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
+  borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
+}
+const panelHeaderStyle: React.CSSProperties = {
+  padding: '8px 12px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em',
+  textTransform: 'uppercase', color: 'var(--nw-label)', borderBottom: '1px solid var(--navy-700)',
+}
+const panelEmptyStyle: React.CSSProperties = {
+  padding: '14px 12px', fontSize: 11.5, color: 'var(--navy-400)', lineHeight: 1.5,
+}
+
+function PanelRow({ label, active, onClick, indent, bold }: {
+  label: string; active?: boolean; onClick: () => void; indent?: boolean; bold?: boolean
+}) {
+  return (
+    <button onClick={onClick}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
+        padding: '6px 10px', paddingLeft: indent ? 26 : 10, border: 'none', borderRadius: 5,
+        background: active ? 'var(--accent-dim)' : 'none', color: active ? 'var(--accent)' : 'var(--navy-100)',
+        cursor: 'pointer', fontSize: 12.5, fontWeight: bold ? 600 : 500, fontFamily: 'inherit' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--navy-700)' }}
+      onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      {active && <span style={{ fontSize: 11 }}>✓</span>}
+    </button>
+  )
+}
+
+function MovePanel({ spaces, notebooks, note, onMove, onClose }: {
+  spaces: Space[]; notebooks: Notebook[]; note: Note;
+  onMove: (spaceId: string | null, notebookId: string | null) => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [onClose])
+  const here = (s: string | null, n: string | null) => note.space_id === s && note.notebook_id === n
+  return (
+    <div ref={ref} style={panelStyle}>
+      <div style={panelHeaderStyle}>Move note</div>
+      <div style={{ maxHeight: 320, overflowY: 'auto', padding: 4 }}>
+        <PanelRow label="📥 Inbox (no space)" active={here(null, null)} onClick={() => onMove(null, null)} />
+        {spaces.map(sp => {
+          const nbs = notebooks.filter(nb => nb.space_id === sp.id)
+          return (
+            <div key={sp.id}>
+              <PanelRow label={sp.name} bold active={here(sp.id, null)} onClick={() => onMove(sp.id, null)} />
+              {nbs.map(nb => (
+                <PanelRow key={nb.id} label={nb.name} indent active={here(sp.id, nb.id)} onClick={() => onMove(sp.id, nb.id)} />
+              ))}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function HistoryPanel({ versions, loading, onRestore, onClose }: {
+  versions: NoteVersion[]; loading: boolean;
+  onRestore: (v: NoteVersion) => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [onClose])
+  return (
+    <div ref={ref} style={panelStyle}>
+      <div style={panelHeaderStyle}>Version history</div>
+      <div style={{ maxHeight: 320, overflowY: 'auto', padding: 4 }}>
+        {loading ? (
+          <div style={panelEmptyStyle}>Loading…</div>
+        ) : versions.length === 0 ? (
+          <div style={panelEmptyStyle}>No earlier versions yet. Snapshots are captured automatically as you edit.</div>
+        ) : versions.map(v => (
+          <button key={v.id} onClick={() => onRestore(v)}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, width: '100%', textAlign: 'left',
+              padding: '7px 10px', border: 'none', borderRadius: 5, background: 'none', color: 'var(--navy-100)',
+              cursor: 'pointer', fontSize: 12.5, fontFamily: 'inherit' }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v.title?.trim() || 'Untitled'}</span>
+            <span style={{ fontSize: 10.5, color: 'var(--navy-400)', flexShrink: 0 }}>{formatRelative(v.created_at)}</span>
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

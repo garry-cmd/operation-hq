@@ -58,3 +58,33 @@ export async function signNoteMedia(
   if (error || !data) return null
   return data.signedUrl
 }
+
+/**
+ * Delete specific media objects by path. Best-effort — used for node-level GC
+ * (e.g. removing an attachment chip). Never throws; storage cleanup must not
+ * break the editing flow.
+ */
+export async function deleteNoteMedia(paths: string[]): Promise<void> {
+  const clean = paths.filter(Boolean)
+  if (clean.length === 0) return
+  try {
+    await supabase.storage.from(BUCKET).remove(clean)
+  } catch (e) {
+    console.warn('deleteNoteMedia failed', e)
+  }
+}
+
+/**
+ * Purge every object under a note's `{noteId}/` prefix. Called when a note is
+ * deleted so its images/attachments don't orphan in the bucket. Best-effort.
+ */
+export async function deleteAllMediaForNote(noteId: string): Promise<void> {
+  try {
+    const { data, error } = await supabase.storage.from(BUCKET).list(noteId, { limit: 1000 })
+    if (error || !data || data.length === 0) return
+    const paths = data.map(o => `${noteId}/${o.name}`)
+    await supabase.storage.from(BUCKET).remove(paths)
+  } catch (e) {
+    console.warn('deleteAllMediaForNote failed', e)
+  }
+}

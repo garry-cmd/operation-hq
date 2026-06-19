@@ -1,5 +1,5 @@
 import { Node, mergeAttributes } from '@tiptap/core'
-import { signNoteMedia } from '@/lib/db/noteMedia'
+import { signNoteMedia, deleteNoteMedia } from '@/lib/db/noteMedia'
 
 function fmtSize(bytes: number): string {
   if (!bytes || bytes < 0) return ''
@@ -103,6 +103,8 @@ export const FileAttachment = Node.create({
         const pos = getPos()
         if (pos == null) return
         editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run()
+        // Node-level GC: drop the backing storage object too.
+        if (path) void deleteNoteMedia([path])
       })
 
       dom.appendChild(badge)
