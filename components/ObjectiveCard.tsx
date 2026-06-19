@@ -1,5 +1,5 @@
 'use client'
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus, MetricCheckin } from '@/lib/types'
@@ -44,14 +44,23 @@ interface Props {
   // came from (mirrors the action-row accent in Focus.tsx).
   isActive: boolean
   toast: (m: string) => void
+  // Command-palette deep-link: when this matches one of the card's KRs, the
+  // card auto-expands so the targeted KR row renders (and can be scrolled to).
+  expandKRId?: string | null
 }
 
-export default function ObjectiveCard({ obj, krs, actions, weekStart, metricCheckins, setRoadmapItems, setObjectives, setActions, onEditKR, onLogMetric, onObjectiveClick, onEditObjective, isActive, toast }: Props) {
+export default function ObjectiveCard({ obj, krs, actions, weekStart, metricCheckins, setRoadmapItems, setObjectives, setActions, onEditKR, onLogMetric, onObjectiveClick, onEditObjective, isActive, toast, expandKRId }: Props) {
   // Default to collapsed on mount (May 21 — Garry's call). Compact OKR tab
   // by default; expand the cards you actually want to read. State resets per
   // navigation since the component remounts when the screen changes; no
   // localStorage persistence wanted.
   const [collapsed, setCollapsed] = useState(true)
+
+  // Auto-expand when a command-palette KR deep-link points at one of our KRs,
+  // so its row mounts and the screen-level scroll-to-flash can find it.
+  useEffect(() => {
+    if (expandKRId && krs.some(k => k.id === expandKRId)) setCollapsed(false)
+  }, [expandKRId, krs])
   const [addingKR, setAddingKR] = useState(false)
   const [newKRTitle, setNewKRTitle] = useState('')
   const [newKRIsHabit, setNewKRIsHabit] = useState(false)

@@ -41,10 +41,11 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
   const [dragOverCell, setDragOverCell] = useState<string | null>(null) // "objId:quarter"
 
   // Command-palette deep-link: scroll the targeted KR chip into view + flash it.
+  // Consume once scrollToAndFlash settles (chips always render, but a cross-space
+  // jump may still be propagating data on the first frames).
   useEffect(() => {
     if (!initialKRId) return
-    scrollToAndFlash(initialKRId)
-    onConsumeInitialKRId?.()
+    scrollToAndFlash(initialKRId, () => onConsumeInitialKRId?.())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialKRId])
 

@@ -94,12 +94,12 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
 
-  // Command-palette deep-link: scroll the targeted KR into view + flash it, then
-  // clear so it doesn't re-fire on the next render.
+  // Command-palette deep-link: scroll the targeted KR into view + flash it.
+  // Consume only once scrollToAndFlash settles, so expandKRId stays live long
+  // enough for a cross-space jump's owning card to mount and auto-expand.
   useEffect(() => {
     if (!initialKRId) return
-    scrollToAndFlash(initialKRId)
-    onConsumeInitialKRId?.()
+    scrollToAndFlash(initialKRId, () => onConsumeInitialKRId?.())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialKRId])
   
@@ -264,6 +264,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                   onEditObjective={setEditingObjective}
                   isActive={openObjectiveId === obj.id}
                   toast={toast}
+                  expandKRId={initialKRId}
                 />
               )
             })}
