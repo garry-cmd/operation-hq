@@ -946,8 +946,10 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       }
       const ed = editorRef.current
       if (ed && nodes.length) {
-        if (at != null) ed.chain().focus().insertContentAt(at, nodes).run()
-        else ed.chain().focus().insertContent(nodes).run()
+        // insertContentAt(number) inserts WITHOUT replacing; bare insertContent
+        // targets the selection and would overwrite a node-selected chip.
+        const pos = at != null ? at : ed.state.selection.to
+        ed.chain().focus().insertContentAt(pos, nodes).run()
       }
       setUploadState('idle')
     } catch {
@@ -969,8 +971,10 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       }
       const ed = editorRef.current
       if (ed && nodes.length) {
-        if (at != null) ed.chain().focus().insertContentAt(at, nodes).run()
-        else ed.chain().focus().insertContent(nodes).run()
+        // insertContentAt(number) inserts WITHOUT replacing; bare insertContent
+        // targets the selection and would overwrite a node-selected chip.
+        const pos = at != null ? at : ed.state.selection.to
+        ed.chain().focus().insertContentAt(pos, nodes).run()
       }
       setUploadState('idle')
     } catch {
