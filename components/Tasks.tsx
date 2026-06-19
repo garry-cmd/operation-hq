@@ -363,13 +363,20 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       targetSpaceId = activeSpaceId
     }
     if (!targetSpaceId && !targetListId && !isInboxScope) { toast('Pick a space or list first'); return }
+    // A recurring task needs a due_date (DB CHECK). If the quick-add gave a
+    // recurrence but no explicit due, snap to the rule's anchor — so "every
+    // feb 6" lands on the next Feb 6, not today.
+    let dueForCreate = parsed.due_date
+    if (parsed.recurrence_rule) {
+      dueForCreate = snapDueDateToRule(parsed.due_date ?? null, parsed.recurrence_rule, today)
+    }
     try {
       const created = await tasksDb.create({
         space_id: targetSpaceId,
         list_id: targetListId,
         title: parsed.title,
         priority: parsed.priority,
-        due_date: parsed.due_date,
+        due_date: dueForCreate,
         due_time: parsed.due_time,
         deadline_date: parsed.deadline_date,
         estimated_minutes: parsed.estimated_minutes,
@@ -390,7 +397,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       console.error('quick add failed', e)
       toast('Could not create task')
     }
-  }, [quickAdd, scope, activeSpaceId, toast])
+  }, [quickAdd, scope, activeSpaceId, today, toast])
 
   const onToggle = useCallback(async (task: Task) => {
     try {
@@ -1313,13 +1320,16 @@ function DetailPanel({ task, tags, spaces, lists, sections, objectives, roadmapI
       setRecurrenceError("Couldn't parse — try 'every monday', 'daily', 'every 2 weeks'")
       return
     }
-    // DB CHECK constraint: recurring task must have a due_date.
-    // If none set, default to today so the row is valid.
     const patch: Partial<Task> = {
       recurrence_text: parsed.text,
       recurrence_rule: parsed.rule,
     }
-    if (!task.due_date) patch.due_date = todayISO()
+    // Snap the due date to the rule's anchor (matches applyPreset). For a
+    // date-anchored rule ("every Feb 6") this lands the due on the next Feb 6
+    // so completion-advance follows the anchor; otherwise the DB CHECK that a
+    // recurring task has a due_date would be satisfied by the wrong date.
+    const newDue = snapDueDateToRule(task.due_date, parsed.rule, todayAnchor)
+    if (newDue !== task.due_date) patch.due_date = newDue
     onPatch(patch)
     setRecurrenceInput(parsed.text) // normalize displayed text
   }
