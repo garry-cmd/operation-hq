@@ -1191,6 +1191,12 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
           background: var(--navy-800);
           max-width: 420px;
           user-select: none;
+          cursor: pointer;
+          transition: background 0.12s, border-color 0.12s;
+        }
+        .notes-editor .note-file-chip:hover {
+          background: var(--navy-700);
+          border-color: var(--navy-500);
         }
         .notes-editor .note-file-chip.ProseMirror-selectednode {
           outline: 2px solid var(--accent);
@@ -1221,20 +1227,23 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
           font-size: 11px;
           color: var(--navy-400);
         }
-        .notes-editor .note-file-open {
+        .notes-editor .note-file-remove {
           flex: 0 0 auto;
           display: inline-flex;
           align-items: center;
           background: none;
           border: none;
-          color: var(--navy-300);
+          color: var(--navy-400);
           cursor: pointer;
           padding: 2px;
           border-radius: 4px;
+          opacity: 0.55;
+          transition: opacity 0.12s, color 0.12s, background 0.12s;
         }
-        .notes-editor .note-file-open:hover {
-          color: var(--accent);
-          background: var(--navy-700);
+        .notes-editor .note-file-chip:hover .note-file-remove { opacity: 1; }
+        .notes-editor .note-file-remove:hover {
+          color: var(--red-text);
+          background: var(--navy-900);
         }
         .notes-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
         .notes-editor ul[data-type="taskList"] li { display: flex; gap: 8px; align-items: flex-start; }

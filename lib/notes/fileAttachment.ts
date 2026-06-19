@@ -66,7 +66,7 @@ export const FileAttachment = Node.create({
   },
 
   addNodeView() {
-    return ({ node }) => {
+    return ({ editor, node, getPos }) => {
       const path: string | null = node.attrs.path
       const name: string = node.attrs.name || 'Attachment'
       const size: number = node.attrs.size || 0
@@ -74,7 +74,7 @@ export const FileAttachment = Node.create({
       const dom = document.createElement('div')
       dom.className = 'note-file-chip'
       dom.contentEditable = 'false'
-      dom.title = name
+      dom.title = `Open ${name}`
 
       const badge = document.createElement('span')
       badge.className = 'note-file-badge'
@@ -88,23 +88,35 @@ export const FileAttachment = Node.create({
       meta.className = 'note-file-size'
       meta.textContent = fmtSize(size)
 
-      const open = document.createElement('button')
-      open.className = 'note-file-open'
-      open.type = 'button'
-      open.title = 'Open / download'
-      open.innerHTML =
-        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>'
-      open.addEventListener('mousedown', e => {
-        // Don't let ProseMirror grab this as a node selection — it's an action.
+      const remove = document.createElement('button')
+      remove.className = 'note-file-remove'
+      remove.type = 'button'
+      remove.title = 'Remove attachment'
+      remove.setAttribute('aria-label', 'Remove attachment')
+      remove.innerHTML =
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+      remove.addEventListener('mousedown', e => {
+        // Remove the node; don't let the click bubble to the chip's open handler.
         e.preventDefault()
         e.stopPropagation()
-        if (path) void openAttachment(path)
+        if (typeof getPos !== 'function') return
+        const pos = getPos()
+        if (pos == null) return
+        editor.chain().focus().deleteRange({ from: pos, to: pos + node.nodeSize }).run()
       })
 
       dom.appendChild(badge)
       dom.appendChild(label)
       dom.appendChild(meta)
-      dom.appendChild(open)
+      dom.appendChild(remove)
+
+      // Click anywhere on the chip → open the file. mousedown + preventDefault so
+      // ProseMirror doesn't first turn it into a node selection.
+      dom.addEventListener('mousedown', e => {
+        if (e.button !== 0) return
+        e.preventDefault()
+        if (path) void openAttachment(path)
+      })
 
       return { dom }
     }
