@@ -939,14 +939,15 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     if (imgs.some(f => f.size > 10 * 1024 * 1024)) { flashUploadError('Image too large — max 10 MB'); return }
     setUploadState('uploading')
     try {
+      const nodes: { type: string; attrs: Record<string, unknown> }[] = []
       for (const file of imgs) {
         const { path } = await uploadNoteImage(note.id, file)
-        const ed = editorRef.current
-        if (!ed) continue
-        const chain = ed.chain().focus()
-        if (at != null) chain.insertContentAt(at, { type: 'image', attrs: { path } })
-        else chain.insertContent({ type: 'image', attrs: { path } })
-        chain.run()
+        nodes.push({ type: 'image', attrs: { path } })
+      }
+      const ed = editorRef.current
+      if (ed && nodes.length) {
+        if (at != null) ed.chain().focus().insertContentAt(at, nodes).run()
+        else ed.chain().focus().insertContent(nodes).run()
       }
       setUploadState('idle')
     } catch {
@@ -961,15 +962,15 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     if (list.some(f => f.size > 50 * 1024 * 1024)) { flashUploadError('File too large — max 50 MB'); return }
     setUploadState('uploading')
     try {
+      const nodes: { type: string; attrs: Record<string, unknown> }[] = []
       for (const file of list) {
         const { path, name, size, mime } = await uploadNoteFile(note.id, file)
-        const ed = editorRef.current
-        if (!ed) continue
-        const attrs = { path, name, size, mime }
-        const chain = ed.chain().focus()
-        if (at != null) chain.insertContentAt(at, { type: 'fileAttachment', attrs })
-        else chain.insertContent({ type: 'fileAttachment', attrs })
-        chain.run()
+        nodes.push({ type: 'fileAttachment', attrs: { path, name, size, mime } })
+      }
+      const ed = editorRef.current
+      if (ed && nodes.length) {
+        if (at != null) ed.chain().focus().insertContentAt(at, nodes).run()
+        else ed.chain().focus().insertContent(nodes).run()
       }
       setUploadState('idle')
     } catch {
