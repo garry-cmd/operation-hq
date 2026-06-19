@@ -31,7 +31,8 @@ import { ImageWithPath } from '@/lib/notes/imageWithPath'
 import { FileAttachment } from '@/lib/notes/fileAttachment'
 import { tableExtensions, CELL_COLORS } from '@/lib/notes/tableWithColor'
 import { createInternalLinks } from '@/lib/notes/internalLinks'
-import { uploadNoteImage, uploadNoteFile, deleteAllMediaForNote } from '@/lib/db/noteMedia'
+import { collectMediaPaths } from '@/lib/notes/collectMediaPaths'
+import { uploadNoteImage, uploadNoteFile, deleteAllMediaForNote, deleteNoteMedia } from '@/lib/db/noteMedia'
 
 interface Props {
   spaces: Space[]
@@ -951,6 +952,12 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Throttle version snapshots: at most one per note per this interval.
   const lastSnapshotRef = useRef<number>(0)
+  // Media paths present in the last-saved body. Diffing against this on each
+  // save tells us which image/attachment objects a body dropped, so we can GC
+  // them without a bucket-listing sweep. Initialised from the mounted note's
+  // body; the editor is keyed by note id, so this ref is fresh per note.
+  const lastMediaPathsRef = useRef<Set<string> | null>(null)
+  if (lastMediaPathsRef.current === null) lastMediaPathsRef.current = collectMediaPaths(note.body)
   // Latest title, readable from async flush without going stale.
   const titleRef = useRef(note.title)
   // Internal-link resolver, kept fresh so the editor plugin never closes over
@@ -967,6 +974,35 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
     void noteVersionsDb.createVersion(note.id, titleRef.current, body).catch(() => {})
   }, [note.id])
 
+  // Reclaim storage objects a save dropped (e.g. an image backspaced out).
+  // Only paths that *were* in the last saved body and are *now* gone are
+  // candidates, so an in-flight upload (not yet in any saved body) is never a
+  // deletion target. Candidates still referenced by a retained version snapshot
+  // are spared so history restore can't surface a broken image. Best-effort.
+  const gcRemovedMedia = useCallback(async (body: NoteBody | null) => {
+    try {
+      const current = collectMediaPaths(body)
+      const prev = lastMediaPathsRef.current
+      lastMediaPathsRef.current = current
+      if (!prev || prev.size === 0) return
+      const removed = [...prev].filter(p => !current.has(p))
+      if (removed.length === 0) return
+      let protectedPaths: Set<string> = current
+      try {
+        const versions = await noteVersionsDb.listVersions(note.id)
+        protectedPaths = new Set(current)
+        for (const v of versions)
+          for (const p of collectMediaPaths(v.body)) protectedPaths.add(p)
+      } catch {
+        // Couldn't read history — fall back to protecting only the current body.
+      }
+      const orphans = removed.filter(p => !protectedPaths.has(p))
+      if (orphans.length) void deleteNoteMedia(orphans)
+    } catch {
+      // GC must never break the editing flow.
+    }
+  }, [note.id])
+
   // Body autosave: schedule a debounced write on every onUpdate.
   // On unmount, flush immediately so switching notes doesn't lose
   // the last 1.5s of typing.
@@ -979,11 +1015,12 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
     try {
       await onPatch({ body })
       snapshot(body)
+      void gcRemovedMedia(body)
       setSaveState('saved')
     } catch {
       setSaveState('idle')
     }
-  }, [onPatch, snapshot])
+  }, [onPatch, snapshot, gcRemovedMedia])
 
   const [moveOpen, setMoveOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
