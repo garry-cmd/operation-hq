@@ -25,6 +25,8 @@ import StarterKit from '@tiptap/starter-kit'
 import TaskList from '@tiptap/extension-task-list'
 import TaskItem from '@tiptap/extension-task-item'
 import Placeholder from '@tiptap/extension-placeholder'
+import { ImageWithPath } from '@/lib/notes/imageWithPath'
+import { uploadNoteImage } from '@/lib/db/noteMedia'
 
 interface Props {
   spaces: Space[]
@@ -914,6 +916,40 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
     }
   }, [onPatch])
 
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'error'>('idle')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const editorRef = useRef<Editor | null>(null)
+  const errTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const flashUploadError = useCallback(() => {
+    setUploadState('error')
+    if (errTimerRef.current) clearTimeout(errTimerRef.current)
+    errTimerRef.current = setTimeout(() => setUploadState('idle'), 3000)
+  }, [])
+
+  // Upload image File(s) → insert as path-only image node(s). `at` lets a drop
+  // land at the cursor position; paste/picker insert at the current selection.
+  const insertImageFiles = useCallback(async (files: File[] | FileList, at?: number) => {
+    const imgs = Array.from(files).filter(f => f.type.startsWith('image/'))
+    if (imgs.length === 0) return
+    if (imgs.some(f => f.size > 10 * 1024 * 1024)) { flashUploadError(); return }
+    setUploadState('uploading')
+    try {
+      for (const file of imgs) {
+        const { path } = await uploadNoteImage(note.id, file)
+        const ed = editorRef.current
+        if (!ed) continue
+        const chain = ed.chain().focus()
+        if (at != null) chain.insertContentAt(at, { type: 'image', attrs: { path } })
+        else chain.insertContent({ type: 'image', attrs: { path } })
+        chain.run()
+      }
+      setUploadState('idle')
+    } catch {
+      flashUploadError()
+    }
+  }, [note.id, flashUploadError])
+
   const editor = useEditor({
     immediatelyRender: false,
     extensions: [
@@ -921,6 +957,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       TaskList,
       TaskItem.configure({ nested: true }),
       Placeholder.configure({ placeholder: 'Write something…' }),
+      ImageWithPath,
     ],
     content: (note.body ?? EMPTY_DOC) as Content,
     onUpdate: ({ editor }) => {
@@ -932,8 +969,26 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       attributes: {
         class: 'notes-editor',
       },
+      handlePaste: (_view, event) => {
+        const files = event.clipboardData?.files
+        const imgs = files ? Array.from(files).filter(f => f.type.startsWith('image/')) : []
+        if (imgs.length === 0) return false
+        event.preventDefault()
+        void insertImageFiles(imgs)
+        return true
+      },
+      handleDrop: (view, event) => {
+        const files = event.dataTransfer?.files
+        const imgs = files ? Array.from(files).filter(f => f.type.startsWith('image/')) : []
+        if (imgs.length === 0) return false
+        event.preventDefault()
+        const coords = view.posAtCoords({ left: event.clientX, top: event.clientY })
+        void insertImageFiles(imgs, coords?.pos)
+        return true
+      },
     },
   })
+  editorRef.current = editor
 
   // Flush on unmount (note switch)
   useEffect(() => {
@@ -994,7 +1049,10 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
               style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 11.5, fontFamily: 'inherit', outline: 'none', width: 80 }} />
           </div>
           <div style={{ fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {saveState === 'saving' ? 'Saving…' : saveState === 'saved' ? '✓ Saved' : ''}
+            {uploadState === 'uploading' ? 'Uploading image…'
+              : uploadState === 'error' ? '⚠ Upload failed — image only, max 10 MB'
+              : saveState === 'saving' ? 'Saving…'
+              : saveState === 'saved' ? '✓ Saved' : ''}
             <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
               style={{ marginLeft: 10, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
               onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)' }}
@@ -1013,7 +1071,19 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
       </div>
 
       {/* Toolbar */}
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} onPickImage={() => fileInputRef.current?.click()} />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/gif,image/webp"
+        multiple
+        style={{ display: 'none' }}
+        onChange={e => {
+          const files = e.target.files
+          if (files && files.length) void insertImageFiles(files)
+          e.target.value = ''
+        }}
+      />
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '14px 24px 60px' }}>
@@ -1039,6 +1109,23 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
         .notes-editor pre code { background: none; padding: 0; }
         .notes-editor blockquote { border-left: 3px solid var(--navy-500); padding-left: 12px; margin: 10px 0; color: var(--navy-200); }
         .notes-editor a { color: var(--accent); text-decoration: underline; }
+        .notes-editor img.note-image {
+          max-width: 100%;
+          height: auto;
+          display: block;
+          margin: 12px 0;
+          border-radius: 8px;
+          border: 1px solid var(--navy-700);
+        }
+        .notes-editor img.note-image[data-loading="true"] {
+          min-height: 80px;
+          width: 180px;
+          background: var(--navy-800);
+        }
+        .notes-editor img.note-image.ProseMirror-selectednode {
+          outline: 2px solid var(--accent);
+          outline-offset: 1px;
+        }
         .notes-editor ul[data-type="taskList"] { list-style: none; padding-left: 0; }
         .notes-editor ul[data-type="taskList"] li { display: flex; gap: 8px; align-items: flex-start; }
         .notes-editor ul[data-type="taskList"] li > label { margin-top: 4px; }
@@ -1055,7 +1142,7 @@ function NoteEditor({ note, tags, fullscreen, onToggleFullscreen, onPatch, onSet
   )
 }
 
-function Toolbar({ editor }: { editor: Editor | null }) {
+function Toolbar({ editor, onPickImage }: { editor: Editor | null; onPickImage: () => void }) {
   if (!editor) return <div style={{ height: 36 }} />
   const btn = (active: boolean, onClick: () => void, label: string, title: string) => (
     <button onClick={onClick} title={title}
@@ -1085,6 +1172,13 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       {sep}
       {btn(editor.isActive('blockquote'), () => editor.chain().focus().toggleBlockquote().run(), '"', 'Quote')}
       {btn(editor.isActive('codeBlock'), () => editor.chain().focus().toggleCodeBlock().run(), '<>', 'Code block')}
+      {sep}
+      <button onClick={onPickImage} title="Insert image"
+        style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
+      </button>
     </div>
   )
 }
