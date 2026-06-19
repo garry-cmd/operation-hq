@@ -64,6 +64,9 @@ export default function HQPage() {
   // Notes "focus mode" — when on (desktop), the NavRail is hidden and Notes
   // collapses its own two panes so the editor gets the full viewport width.
   const [notesFocus, setNotesFocus] = useState(false)
+  // Leaving Notes restores the chrome (NavRail back). Must live up here with
+  // the other hooks — above the auth early-returns — to keep hook order stable.
+  useEffect(() => { if (screen !== 'notes') setNotesFocus(false) }, [screen])
 
   const [objectives, setObjectives] = useState<AnnualObjective[]>([])
   const [roadmapItems, setRoadmapItems] = useState<RoadmapItem[]>([])
@@ -464,9 +467,6 @@ export default function HQPage() {
     }
     setScreen(target)
   }
-
-  // Leaving Notes always restores the chrome (NavRail back).
-  useEffect(() => { if (screen !== 'notes') setNotesFocus(false) }, [screen])
 
   // Active-screen detection is now owned by NavRail; the bottom nav and its
   // NAV/navActive scaffolding were removed when the rail landed.
