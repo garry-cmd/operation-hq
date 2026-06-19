@@ -5,7 +5,7 @@
 
 ## 🧭 Current state (Jun 19, 2026) — read this first
 
-Three sessions shipped Jun 19 (full detail in `operation-hq-session-2026-06-19.md`):
+Four sessions shipped Jun 19 (full detail in `operation-hq-session-2026-06-19.md`):
 
 **Session 1 — objective/KR time windows + metric cards.** Objective start/end dates
 (migration `add_objective_start_end_dates`), surfaced on OKR cards + Roadmap headers
@@ -34,9 +34,23 @@ switches space, opens the panel, jumps to the week; KRs **scroll-to + flash** th
 **Key new modules:** `lib/search.ts` (ranker), `components/CommandPalette.tsx`,
 `lib/scrollFlash.ts`, `lib/notes/collectMediaPaths.ts`. No schema changes in Session 3.
 
-**Still parked:** Notes whole-app visual redesign (`hq-notes-redesign.html`, rebuilt
-Jun 19, awaiting an aesthetic decision); daily metric logging (`week_start`→`entry_date`
-refactor); OCR; web clipper; Todoist write-back.
+**Session 4 — Kill Todoist: native task surface to parity + Todoist→HQ migration.**
+Strategic reversal: **Todoist WRAP → REPLACE.** Built native Tasks to operational parity —
+durations (`estimated_minutes`) + deadlines (`deadline_date`) + subtasks + KR-link picker
+(D1); **sections in lists** + date-anchored recurrence (`RecurrenceRule.bymonth`) + both-null
+Inbox (D2); **sections in spaces too** (`task_sections.space_id`, XOR parent; spaces stay in
+the due-bucket view until ≥1 section, then opt into section grouping). Then **migrated 87
+non-OKR / non-boat Todoist tasks** into HQ across 2 new lists (Admin & Compliance, Reading)
++ 3 spaces (USPSA, VidScrip, Keeply) and ~10 new sections — recurrence translated through
+the app's own `parseRecurrence` (0 unparsed). Deduped 5 stale pre-existing predecessors;
+bills consolidated under Admin & Compliance. Migrations: `tasks_add_estimated_minutes_and_
+deadline_date`, `task_sections_and_inbox_container_relax`, `task_sections_allow_space_parent`.
+
+**Still parked:** **D3 / Todoist retirement** — Todoist originals are still in Todoist
+(delete only after HQ is confirmed, else the Focus strip double-counts); then remove
+`TodoistStrip.tsx` + `/api/todoist/*` + env var; reminders/push (PWA), mobile capture,
+email→task. Notes whole-app visual redesign (`hq-notes-redesign.html`, awaiting an aesthetic
+decision); daily metric logging (`week_start`→`entry_date` refactor); OCR; web clipper.
 
 ---
 
@@ -320,6 +334,18 @@ Adds to May 14's (desktop-first; SECURITY DEFINER RPCs for anon validation; NULL
 | VidScrip | `572f74de-d3bf-4aec-831b-c8c2dfb57225` |
 | USPSA | `535fb6bd-9a9e-4cdc-8574-ebf61e43e13d` |
 | My OKRs | `d759151f-8a6c-4c28-9fe1-db303f4ecf3a` |
+| Keeply | `39450371-6432-4700-8f15-20fcd9ca2068` |
+
+**Task lists** (global, no space): App Bugs `ed6849b4-…`, HQ Notes `1102a12c-…`,
+Keeply `efd02fa2-…`, Supplies `679e9e5f-…`, **Admin & Compliance** `67d8f402-…` (★ Jun 19),
+**Reading** `fa93467f-…` (★ Jun 19).
+
+**Todoist project IDs (for the D3 retirement — delete originals only after HQ confirmed):**
+migrated → Admin/Compliance hub `6cGvP9RX4hhMCwvf`, USPSA admin `6X496xw7CVxPpJp8`,
+Keeply backlog `6gFfGQ9pffrpQ73V`, Reading `6fgRf5vfrR77cJFV`. **Boat (OUT of scope):**
+`6Xh2cH9Hf3JPf9jH` (maintenance), `6fmxC49GhwP78V7v`, `6fmx78xwq7r9mHR9`,
+`6fVHc4mmxr3fxVCX`, `6f5CgPgfCjRXMfhc`, `6X3m5rMxhm45cXPg` (Supplies, already migrated).
+OKRs project `6gmgfF3847FPPjjJ` stays native.
 
 ---
 
@@ -367,13 +393,18 @@ spaces
   │     └── objective_logs (objective_id)
   ├── weekly_reviews (space_id) — UNIQUE(space_id, week_start)
   │     .closed_at — nullable. NULL = draft. NOT NULL = committed.
-  ├── tasks (space_id NULLABLE)
-  │     .roadmap_item_id — optional FK to roadmap_items (KR link, no UI yet)
-  │     .parent_task_id — self-FK for subtasks (no UI yet)
-  │     .priority — smallint 1–4
+  ├── tasks (space_id XOR list_id; BOTH NULL = unified Inbox ★ Jun 19 D2)
+  │     .roadmap_item_id — optional FK to roadmap_items (KR link; picker shipped Jun 19 D1)
+  │     .parent_task_id — self-FK for subtasks (UI shipped Jun 19 D1)
+  │     .section_id — FK → task_sections ON DELETE SET NULL ★ Jun 19 D2
+  │     .priority — smallint 1–4 (Todoist p1→1 … p4→4)
+  │     .estimated_minutes (int) + .deadline_date (date) ★ Jun 19 D1
+  │     .due_date + .due_time (time) — split
   │     .recurrence_text + .recurrence_rule (jsonb) — paired (both null OR both set)
   │     .completed_at — null = open. Recurring: always null, due_date rolls forward.
-  ├── task_lists (space_id)
+  ├── task_lists — GLOBAL, no space_id (id, name, sort_order) ★ corrected Jun 19
+  ├── task_sections (list_id XOR space_id; name, sort_order) ★ NEW Jun 19 D2/space-sections
+  │     CHECK task_sections_one_parent = ((list_id IS NOT NULL) <> (space_id IS NOT NULL))
   ├── notebooks (space_id)
   │     .parent_notebook_id — self-FK for nesting
   ├── notes (space_id NULLABLE ★ May 18)

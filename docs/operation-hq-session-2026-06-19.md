@@ -1,5 +1,5 @@
 # Operation HQ — Session Notes
-*June 19, 2026 · Two sessions this day. Prepend to / merge into `operation-hq-pickup-notes.md`.*
+*June 19, 2026 · Four sessions this day. Prepend to / merge into `operation-hq-pickup-notes.md`.*
 
 ---
 
@@ -344,3 +344,123 @@ No migrations.
   `operation-hq-notes-redesign/`, not committed to the repo.
 - OCR and web clipper (the latter is a separate browser-extension product, and the
   largest remaining real Evernote gap) — both deliberately deferred.
+
+---
+
+# Session 4 — Kill Todoist: native task surface to parity + Todoist→HQ migration
+
+## TL;DR
+
+The big strategic move: **Todoist WRAP → REPLACE.** Built the native Tasks surface up
+to operational parity (durations, deadlines, subtasks, KR-link, **sections** — in lists
+*and* spaces), then **migrated 87 non-OKR / non-boat Todoist tasks into HQ** with full
+recurrence fidelity, and deduped against pre-existing native tasks. Todoist's own data is
+now mirrored natively; only the read-only Focus strip + the Todoist originals remain to
+retire (D3). Three schema migrations, ~10 new sections, 2 new lists.
+
+## Shipped (in deploy order)
+
+**D1 — task fields + KR link + subtasks.**
+- Migration `tasks_add_estimated_minutes_and_deadline_date` (`estimated_minutes int`,
+  `deadline_date date`).
+- Duration pills (15/30/45m, 1h/1h30m/2h), **deadline** chip (distinct from due date),
+  **subtasks** UI (`parent_task_id`, indented children), **KR-link picker** in the detail
+  panel (`roadmap_item_id`). Quick-add tokens extended for duration/deadline.
+- **Cross-space KR bug:** `page.tsx` now passes the **all-spaces** roadmapItems + objectives
+  to `<Tasks>` so the KR-link picker resolves KRs outside the active space.
+
+**D2 — sections in lists + date-anchored recurrence + inbox fix.**
+- Migration `task_sections_and_inbox_container_relax`: `task_sections` table
+  (`list_id` FK → task_lists CASCADE, name, sort_order); `tasks.section_id` FK → task_sections
+  ON DELETE SET NULL; relaxed `tasks_one_container` to allow **both-null Inbox**
+  (`CHECK (NOT (space_id IS NOT NULL AND list_id IS NOT NULL))`).
+- Section grouping UI: collapsible headers, add / rename / delete / reorder. New
+  `lib/db/taskSections.ts`.
+- **Date-anchored recurrence:** `RecurrenceRule.bymonth`; `parseRecurrence` now covers
+  month-name + day ("every April 5"), `M/D` ("every 2/5"), and day-of-month ordinals.
+  `MONTH_TO_NUM` map added.
+- Recurrence-snap **bugfix** (`0e7f230`): `commitRecurrence` + `onQuickAdd` call
+  `snapDueDateToRule` so date-anchored rules advance from the right anchor.
+
+**Space-sections — sections can live in spaces too.**
+- Migration `task_sections_allow_space_parent`: `task_sections.list_id` made nullable;
+  added `task_sections.space_id` FK → spaces CASCADE; CHECK `task_sections_one_parent` =
+  `((list_id IS NOT NULL) <> (space_id IS NOT NULL))` (XOR); dropped
+  `tasks_section_needs_list`, added `tasks_section_needs_container`.
+- **Behavior:** Lists are always section-grouped. **Spaces keep the due-bucket
+  (Today/This-week/Later) view until they have ≥1 section**, then flip to section grouping
+  — opt-in via a "+ Add section" footer, so the OKR/space task view isn't disrupted by
+  default. Space-task detail panel shows the Section picker **and** the Linked-KR picker
+  together.
+
+**Todoist → HQ migration (87 tasks).**
+- **Scope:** non-OKR, non-boat Todoist projects only. Boat projects OUT (separate domain).
+  OKR tasks stay native. The boat **Supplies** project was already migrated (HQ Supplies
+  list) — skipped.
+- **4 in-scope Todoist projects → HQ:**
+  - Admin/Compliance hub (`6cGvP9RX4hhMCwvf`, mixed GM/Vidscrip/USPSA by label) → split by
+    label: GM personal → new **Admin & Compliance** list (Bills & Cards / Filings &
+    Registrations); Vidscrip → **VidScrip** space · Tax & Compliance; USPSA → **USPSA**
+    space · Finance & Ops.
+  - USPSA admin/finance (`6X496xw7CVxPpJp8`) → **USPSA** space · Compliance & Filings (9) +
+    Finance & Ops.
+  - Keeply product backlog (`6gFfGQ9pffrpQ73V`, 48) → **Keeply** space · Backlog (27) /
+    Bugs (7) / Growth & Marketing (5) / Vendors / Parts Sources (5) / QA Scenarios (4).
+  - Reading (`6fgRf5vfrR77cJFV`, 3) → new **Reading** list.
+- **Recurrence fidelity:** translated every Todoist recurrence string through the app's own
+  `parseRecurrence` (compiled `lib/recurrence.ts` standalone via `tsc`), giving canonical
+  `recurrence_text` + `recurrence_rule` jsonb. **0 unparsed** (32 recurring). Normalizations:
+  "every 25" → "every 25th"; strip " at 7:00"; "every 1st tuesday" has no nth-weekday rule →
+  best-effort `{freq:monthly,interval:1}` keeping its literal text. Due dates kept as
+  Todoist's (NOT snapped — snap anchors interval-monthly to today, destructive). Priority
+  p1→1…p4→4; duration→estimated_minutes; due time split from T-timestamps (midnight dropped);
+  descriptions carried.
+- **Dedup:** the migration overlapped pre-existing native tasks. Removed **5 stale
+  predecessors** (created mid-May): `MN Sales Tax return` (VidScrip), `Review Expensify
+  Customers` (USPSA), `Update Expensify Amex` (USPSA), `Pay Line of Credit` + `Pay Credit
+  Card` (My OKRs). Per Garry, **bills consolidated under Admin & Compliance** (kept migrated
+  copies). Intentional same-title survivors: `Quarterly ES` ×4 (distinct quarters),
+  `Estimated Tax Payments` ×2 (USPSA vs VidScrip), `Pay LOC` ×2 (10th vs 12th — two lines).
+- **Two judgment calls flagged to Garry:** deleted generic `Pay Credit Card` assuming
+  BECU CC + Pay Apple card cover it; kept both `Pay LOC` (10th/12th) as distinct.
+
+## Migrations applied (Session 4)
+- `tasks_add_estimated_minutes_and_deadline_date`
+- `task_sections_and_inbox_container_relax`
+- `task_sections_allow_space_parent`
+- (migration data inserts done via `execute_sql`, not a tracked migration)
+
+## Containers + sections created (migration targets)
+- **Lists:** Admin & Compliance `67d8f402-6527-4386-b035-f170b555d9bc`,
+  Reading `fa93467f-619a-40c8-884e-b9212ad9dd76`.
+- **Sections:** Bills & Cards `a62b4ca0…`, Filings & Registrations `dd197467…` (Admin list);
+  Tax & Compliance `30db4f77…` (VidScrip); Compliance & Filings `16ff8ce6…`, Finance & Ops
+  `bdb3c995…` (USPSA); Backlog `2cd02ba1…`, Bugs `a425f2a6…`, Growth & Marketing `310d843f…`,
+  Vendors / Parts Sources `41adbc51…`, QA Scenarios `52398f11…` (Keeply).
+
+## Key learnings (Session 4)
+- **`task_lists` is GLOBAL** — no `space_id` (id, name, sort_order). `task_sections` takes
+  `list_id` XOR `space_id`.
+- **Don't snap migrated due dates.** `snapDueDateToRule` anchors interval-only monthly
+  ("every 6 months") to *today's* day-of-month — destructive for real future due dates.
+  Keep the source app's due date; the rule only governs the next advance. (Snap is correct
+  for quick-add, wrong for migration.)
+- **Reuse the app's own parser for data migrations.** Compiling `lib/recurrence.ts`
+  standalone (`tsc` with a tmp tsconfig: `module commonjs`, `paths @/*`, absolute includes,
+  `noEmitOnError:false`) and feeding Todoist's recurrence strings through `parseRecurrence`
+  guaranteed the stored `recurrence_rule` matches what the app expects — 0 hand-rolled jsonb.
+- **Supabase numerics return as JS strings; `execute_sql` runs as service role** (bypasses
+  RLS) — right tool for bulk data inserts. Multi-statement `execute_sql` returns only the
+  last result set → verify with a single combined SELECT / CTE RETURNING.
+- **Migration dedup is a real step, not an afterthought.** Pre-existing native tasks
+  overlapped the import (exact + semantic). Surfaced to Garry before deleting; did not
+  silently reconcile.
+- `AnnualObjective` uses `.name`, not `.title`.
+
+## Parked / not built (Session 4) — D3 backlog
+- **Todoist originals still live in Todoist.** Nothing deleted on the Todoist side yet —
+  do that only after Garry confirms HQ looks right, else the Focus strip double-counts.
+- **Retire the Todoist Focus strip:** remove `TodoistStrip.tsx` + `/api/todoist/*` proxy +
+  the env var, sweep Focus/docs. Gated on the cleanup above.
+- **Reminders / push (PWA), mobile capture, email→task** — the "what Todoist still does that
+  HQ doesn't" list. Not started.
