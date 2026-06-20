@@ -100,7 +100,7 @@ function BriefCard({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
         <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))' }}>{b.title}</span>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-400)', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {relTime(b.created_at)}{b.source === 'cron' ? ' · auto' : ''}
+          {relTime(b.created_at)}{b.source === 'cron' ? ' · auto' : b.source === 'watch' ? ' · scout' : ''}
         </span>
       </div>
       <p style={{ margin: '4px 0 0', fontSize: 12.5, lineHeight: 1.5, color: 'var(--navy-200)' }}>{b.body}</p>
