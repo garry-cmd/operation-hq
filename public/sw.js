@@ -22,9 +22,12 @@ self.addEventListener('notificationclick', (event) => {
   event.notification.close()
   const url = (event.notification.data && event.notification.data.url) || '/hq'
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (wins) => {
       for (const w of wins) {
-        if (w.url.includes('/hq') && 'focus' in w) return w.focus()
+        if (w.url.includes('/hq')) {
+          try { if ('navigate' in w) await w.navigate(url) } catch (e) { /* ignore */ }
+          return w.focus()
+        }
       }
       return self.clients.openWindow(url)
     }),

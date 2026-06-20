@@ -1,4 +1,5 @@
 import { buildAgentContext } from '@/lib/agentContext'
+import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 
 const MODEL = 'claude-sonnet-4-6'
 
@@ -56,4 +57,18 @@ function parseBrief(text: string): Brief {
   } catch {
     return { title: 'Operation HQ \u2014 daily brief', body: (text.slice(0, 220) || 'Open HQ for today\u2019s brief.') }
   }
+}
+
+/** Persist a generated brief (server-only, service-role). Callers wrap this so a
+ *  logging failure can't block the push send. */
+export async function saveBrief(userId: string, brief: Brief, opts: { forDate: string; source: 'manual' | 'cron' }): Promise<void> {
+  const admin = getSupabaseAdmin()
+  const { error } = await admin.from('briefings').insert({
+    user_id: userId,
+    title: brief.title,
+    body: brief.body,
+    for_date: opts.forDate,
+    source: opts.source,
+  })
+  if (error) throw error
 }

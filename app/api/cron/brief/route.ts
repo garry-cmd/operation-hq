@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server'
-import { generateBrief } from '@/lib/briefing'
+import { generateBrief, saveBrief } from '@/lib/briefing'
 import { listAllSubscriptions, deleteSubscription, markSent } from '@/lib/db/pushSubscriptions'
 import { sendPush, isPushConfigured } from '@/lib/push'
 import { APP_TZ } from '@/lib/google'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+// Single-user system — the scheduled brief is always for the owner.
+const OWNER_USER_ID = '91ae1704-b98d-4212-a096-bc8ccc5b5581'
 
 function errMsg(e: unknown): string {
   return (e && typeof e === 'object' && 'message' in e) ? String((e as { message: unknown }).message) : 'error'
@@ -36,9 +39,10 @@ export async function GET(req: Request) {
   let brief
   try { brief = await generateBrief({ today, weekStart }) }
   catch (e) { return NextResponse.json({ error: `brief failed: ${errMsg(e)}` }, { status: 502 }) }
+  try { await saveBrief(OWNER_USER_ID, brief, { forDate: today, source: 'cron' }) } catch (e) { console.error('saveBrief (cron)', errMsg(e)) }
 
   const subs = await listAllSubscriptions()
-  const payload = { title: brief.title, body: brief.body, url: '/hq' }
+  const payload = { title: brief.title, body: brief.body, url: '/hq?screen=agent' }
   let sent = 0
   const okEndpoints: string[] = []
   for (const { endpoint, sub } of subs) {

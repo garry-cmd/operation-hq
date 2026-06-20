@@ -74,6 +74,7 @@ export default function PushSetup() {
       })
       const j = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(j.error || `test failed ${r.status}`)
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('hq:brief-saved'))
       setMsg(j.sent ? `Sent to ${j.sent} device${j.sent === 1 ? '' : 's'} — check your notifications.` : (j.error || 'No devices subscribed yet.'))
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'test failed')

@@ -229,15 +229,17 @@ export default function HQPage() {
     else setToast('Could not disconnect')
   }, [])
 
-  // Surface the OAuth round-trip result (callback redirects to /hq?google=...).
+  // Surface the OAuth round-trip result (callback redirects to /hq?google=...),
+  // and honor ?screen=<name> deep-links (e.g. push notification → Chief of Staff).
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const g = params.get('google')
-    if (!g) return
+    const scr = params.get('screen')
     if (g === 'connected') { setGoogleConnected(true); setToast('Google Calendar connected') }
     else if (g === 'denied') setToast('Google connection cancelled')
     else if (g === 'error') setToast('Google connection failed — try again')
-    window.history.replaceState({}, '', '/hq')
+    if (scr === 'agent') setScreen('agent')
+    if (g || scr) window.history.replaceState({}, '', '/hq')
   }, [])
 
   const loadAll = useCallback(async () => {

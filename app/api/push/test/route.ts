@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { userIdFromRequest } from '@/lib/google'
-import { generateBrief } from '@/lib/briefing'
+import { generateBrief, saveBrief } from '@/lib/briefing'
 import { listSubscriptions, deleteSubscription, markSent } from '@/lib/db/pushSubscriptions'
 import { sendPush, isPushConfigured } from '@/lib/push'
 
@@ -25,11 +25,12 @@ export async function POST(req: Request) {
   let brief
   try { brief = await generateBrief({ today: body.today, weekStart: body.weekStart }) }
   catch (e) { return NextResponse.json({ error: `brief failed: ${errMsg(e)}` }, { status: 502 }) }
+  try { await saveBrief(userId, brief, { forDate: body.today, source: 'manual' }) } catch (e) { console.error('saveBrief (test)', errMsg(e)) }
 
   const subs = await listSubscriptions(userId)
   if (!subs.length) return NextResponse.json({ ok: false, error: 'no subscriptions for this user yet', brief })
 
-  const payload = { title: brief.title, body: brief.body, url: '/hq' }
+  const payload = { title: brief.title, body: brief.body, url: '/hq?screen=agent' }
   let sent = 0
   const okEndpoints: string[] = []
   for (const { endpoint, sub } of subs) {
