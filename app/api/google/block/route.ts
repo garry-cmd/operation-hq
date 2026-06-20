@@ -91,7 +91,9 @@ export async function POST(req: Request) {
     }
     if (!title || !blockDate || typeof startMinute !== 'number' || typeof endMinute !== 'number')
       return NextResponse.json({ error: 'title, blockDate, startMinute, endMinute required' }, { status: 400 })
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(blockDate) || endMinute <= startMinute)
+    // Match the DB's block_time_chk (0 ≤ start < end ≤ 1440) so a bad time fails
+    // here, before any Google event is created.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(blockDate) || startMinute < 0 || endMinute <= startMinute || endMinute > 1440)
       return NextResponse.json({ error: 'invalid date or time range' }, { status: 400 })
 
     let accessToken: string, calId: string | null
@@ -103,20 +105,36 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Google Calendar isn’t connected — connect it on the Calendar screen first.' }, { status: 409 })
     }
 
-    const eventId = await createEvent(accessToken, calId, { summary: title, date: blockDate, startMinute, endMinute })
-
     const admin = getSupabaseAdmin()
+
+    // Insert the row FIRST so any constraint failure happens before we create a
+    // Google event (otherwise a rejected insert orphans the event).
     const { data: block, error } = await admin
       .from('calendar_blocks')
-      .insert({
-        title, block_date: blockDate, start_minute: startMinute, end_minute: endMinute,
-        status: 'committed', google_event_id: eventId, google_calendar_id: calId,
-      })
+      .insert({ title, block_date: blockDate, start_minute: startMinute, end_minute: endMinute, status: 'committed' })
       .select('*').single()
-    if (error) throw error
-    return NextResponse.json({ block })
+    if (error) return NextResponse.json({ error: error.message || 'could not save the event' }, { status: 500 })
+
+    // Then create the Google event and record its ids. If Google fails, roll the
+    // row back so we never leave an unsynced ghost block.
+    let eventId: string
+    try {
+      eventId = await createEvent(accessToken, calId, { summary: title, date: blockDate, startMinute, endMinute })
+    } catch (ev) {
+      await admin.from('calendar_blocks').delete().eq('id', block.id)
+      const m = ev instanceof Error ? ev.message : 'calendar event failed'
+      return NextResponse.json({ error: m }, { status: 502 })
+    }
+
+    const { data: updated, error: upErr } = await admin
+      .from('calendar_blocks')
+      .update({ google_event_id: eventId, google_calendar_id: calId })
+      .eq('id', block.id)
+      .select('*').single()
+    if (upErr) return NextResponse.json({ block }) // event created + row exists; ids best-effort
+    return NextResponse.json({ block: updated })
   } catch (e) {
-    const msg = e instanceof Error ? e.message : 'error'
+    const msg = (e && typeof e === 'object' && 'message' in e) ? String((e as { message: unknown }).message) : 'error'
     console.error('POST /api/google/block', msg)
     return NextResponse.json({ error: msg }, { status: 500 })
   }

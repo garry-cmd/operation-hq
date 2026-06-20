@@ -182,6 +182,8 @@ export async function POST(req: Request) {
         const send = (o: unknown) => controller.enqueue(encoder.encode(JSON.stringify(o) + '\n'))
         const blocks = new Map<number, { type?: string; name?: string; json: string }>()
         let buf = ''
+        let emittedText = false   // have we forwarded any reply text yet?
+        let lastChar = ''         // last char forwarded, to avoid double spaces
         try {
           while (true) {
             const { done, value } = await reader.read()
@@ -198,9 +200,16 @@ export async function POST(req: Request) {
               try { p = JSON.parse(raw) } catch { continue }
               if (p.type === 'content_block_start' && typeof p.index === 'number') {
                 blocks.set(p.index, { type: p.content_block?.type, name: p.content_block?.name, json: '' })
+                // A new text block after earlier text means the model paused for a
+                // web search and resumed — bridge the gap so words don't collide
+                // ("hours.Perfect" → "hours. Perfect").
+                if (p.content_block?.type === 'text' && emittedText && lastChar && !/\s/.test(lastChar)) {
+                  send({ t: 'text', d: ' ' }); lastChar = ' '
+                }
               } else if (p.type === 'content_block_delta' && typeof p.index === 'number') {
                 if (p.delta?.type === 'text_delta' && p.delta.text) {
                   send({ t: 'text', d: p.delta.text })
+                  emittedText = true; lastChar = p.delta.text.slice(-1)
                 } else if (p.delta?.type === 'input_json_delta') {
                   const b = blocks.get(p.index); if (b) b.json += p.delta.partial_json ?? ''
                 }
