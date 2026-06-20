@@ -90,6 +90,7 @@ export default function Agent({
     const input = a.input
     if (a.tool === 'complete_task') {
       const id = stripId(input.task_id, 'task'); const t = tasks.find(x => x.id === id)
+      if (t?.recurrence_rule && t.due_date) return `Complete “${t.title}” (recurring — rolls to next)`
       return `Mark “${t?.title ?? id}” done`
     }
     if (a.tool === 'reschedule_task') {
@@ -117,10 +118,13 @@ export default function Agent({
     const input = a.input
     if (a.tool === 'complete_task') {
       const id = stripId(input.task_id, 'task')
-      if (!tasks.some(t => t.id === id)) throw new Error('Task not found')
-      const at = new Date().toISOString()
-      await tasksDb.update(id, { completed_at: at })
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, completed_at: at } : t))
+      const task = tasks.find(t => t.id === id)
+      if (!task) throw new Error('Task not found')
+      if (task.completed_at) return // already done — don't un-complete
+      // Canonical completion: recurring tasks roll their due date forward; others
+      // set completed_at. Mirrors the Tasks UI instead of hard-completing.
+      const updated = await tasksDb.toggleComplete(task)
+      setTasks(prev => prev.map(t => t.id === id ? updated : t))
       return
     }
     if (a.tool === 'reschedule_task') {
