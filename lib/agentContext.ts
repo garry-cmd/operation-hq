@@ -57,7 +57,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     admin.from('calendar_blocks').select('title,block_date,start_minute,end_minute,status,space_id').gte('block_date', weekStart).lte('block_date', weekEnd),
     admin.from('weekly_reviews').select('space_id,week_start,rating,win,slipped,adjust_notes,krs_hit,krs_total,closed_at')
       .not('closed_at', 'is', null).order('week_start', { ascending: false }).limit(6),
-    admin.from('notes').select('title,space_id,updated_at,roadmap_item_id').order('updated_at', { ascending: false }).limit(8),
+    admin.from('notes').select('id,title,space_id,updated_at,roadmap_item_id').order('updated_at', { ascending: false }).limit(15),
     admin.from('metric_checkins').select('roadmap_item_id,value,week_start').order('week_start', { ascending: false }),
   ])
 
@@ -208,7 +208,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     for (const n of notes) {
       const sp = str(n.space_id) ? (spaceName.get(str(n.space_id)) ?? '') : 'Inbox'
       const linked = str(n.roadmap_item_id) ? ` → linked to KR "${str(krById.get(str(n.roadmap_item_id))?.title ?? '')}"` : ''
-      lines.push(`- "${str(n.title) || 'Untitled'}"${sp ? ` (${sp})` : ''}${linked}`)
+      lines.push(`- [note:${str(n.id)}] "${str(n.title) || 'Untitled'}"${sp ? ` (${sp})` : ''}${linked}`)
     }
     lines.push('')
   }

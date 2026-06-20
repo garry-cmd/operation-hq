@@ -4,7 +4,7 @@ import * as notesDb from '@/lib/db/notes'
 import { createCalendarEvent } from '@/lib/db/googleApi'
 import { markdownToTipTapDoc } from '@/lib/notes/markdownToDoc'
 import type { ProposedAction } from '@/lib/agentTools'
-import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note } from '@/lib/types'
+import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note, NoteBody } from '@/lib/types'
 
 /**
  * Canonical executor for a propose-first agent action. Shared by the Chief of
@@ -17,10 +17,19 @@ export interface ActionContext {
   tasks: Task[]
   roadmapItems: RoadmapItem[]
   spaces: Space[]
+  notes: Note[]
   setTasks: (fn: (p: Task[]) => Task[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   setNotes?: (fn: (p: Note[]) => Note[]) => void
+}
+
+/** Top-level block list of a TipTap doc body (empty if null / malformed). */
+function docBlocks(body: NoteBody | null | undefined): unknown[] {
+  if (body && typeof body === 'object' && Array.isArray((body as { content?: unknown }).content)) {
+    return (body as { content: unknown[] }).content
+  }
+  return []
 }
 
 function stripId(v: unknown, prefix: string): string {
@@ -36,7 +45,7 @@ function hhmmToMin(v: unknown): number {
 /** Human-readable label for a proposed action's confirmation card. */
 export function describeAction(
   a: ProposedAction,
-  ctx: Pick<ActionContext, 'tasks' | 'roadmapItems' | 'spaces'>,
+  ctx: Pick<ActionContext, 'tasks' | 'roadmapItems' | 'spaces' | 'notes'>,
 ): string {
   const input = a.input
   if (a.tool === 'complete_task') {
@@ -65,6 +74,24 @@ export function describeAction(
     const sid = stripId(input.space_id, 'space')
     const sp = sid ? ctx.spaces.find(s => s.id === sid)?.name : null
     return `Create note \u201c${String(input.title ?? 'Untitled')}\u201d${sp ? ` in ${sp}` : ''}`
+  }
+  if (a.tool === 'append_note') {
+    const id = stripId(input.note_id, 'note'); const n = ctx.notes.find(x => x.id === id)
+    return `Append to note \u201c${n?.title || 'Untitled'}\u201d`
+  }
+  if (a.tool === 'update_note') {
+    const id = stripId(input.note_id, 'note'); const n = ctx.notes.find(x => x.id === id)
+    const bits = [input.title != null ? 'title' : null, input.body != null ? 'body' : null].filter(Boolean).join(' + ')
+    return `Edit note \u201c${n?.title || 'Untitled'}\u201d${bits ? ` (${bits})` : ''}`
+  }
+  if (a.tool === 'update_task') {
+    const id = stripId(input.task_id, 'task'); const t = ctx.tasks.find(x => x.id === id)
+    const changes: string[] = []
+    if (input.title != null) changes.push(`title \u2192 \u201c${String(input.title)}\u201d`)
+    if (input.due_date != null) changes.push(`due ${String(input.due_date)}`)
+    if (input.priority != null) changes.push(`priority ${String(input.priority)}`)
+    if (input.description != null) changes.push('description')
+    return `Edit \u201c${t?.title ?? id}\u201d${changes.length ? `: ${changes.join(', ')}` : ''}`
   }
   return a.tool
 }
@@ -129,6 +156,49 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
       notebook_id: null,
     })
     ctx.setNotes?.(prev => [...prev, created])
+    return
+  }
+  if (a.tool === 'append_note') {
+    const id = stripId(input.note_id, 'note')
+    const note = ctx.notes.find(n => n.id === id)
+    if (!note) throw new Error('Note not found')
+    const addText = String(input.body ?? '')
+    if (!addText.trim()) throw new Error('Nothing to append')
+    const merged = { type: 'doc', content: [...docBlocks(note.body), ...docBlocks(markdownToTipTapDoc(addText))] }
+    const updated = await notesDb.saveBody(id, merged)
+    ctx.setNotes?.(prev => prev.map(n => n.id === id ? updated : n))
+    return
+  }
+  if (a.tool === 'update_note') {
+    const id = stripId(input.note_id, 'note')
+    if (!ctx.notes.some(n => n.id === id)) throw new Error('Note not found')
+    const patch: { title?: string; body?: NoteBody } = {}
+    if (input.title != null) patch.title = String(input.title)
+    if (input.body != null) patch.body = markdownToTipTapDoc(String(input.body))
+    if (!Object.keys(patch).length) throw new Error('Nothing to update')
+    const updated = await notesDb.update(id, patch)
+    ctx.setNotes?.(prev => prev.map(n => n.id === id ? updated : n))
+    return
+  }
+  if (a.tool === 'update_task') {
+    const id = stripId(input.task_id, 'task')
+    if (!ctx.tasks.some(t => t.id === id)) throw new Error('Task not found')
+    const patch: Partial<Task> = {}
+    if (input.title != null) patch.title = String(input.title)
+    if (input.due_date != null) {
+      const due = String(input.due_date)
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('Bad date')
+      patch.due_date = due
+    }
+    if (input.priority != null) {
+      const p = Number(input.priority)
+      if (![1, 2, 3, 4].includes(p)) throw new Error('Bad priority')
+      patch.priority = p as Task['priority']
+    }
+    if (input.description != null) patch.description = String(input.description)
+    if (!Object.keys(patch).length) throw new Error('Nothing to update')
+    const updated = await tasksDb.update(id, patch)
+    ctx.setTasks(prev => prev.map(t => t.id === id ? updated : t))
     return
   }
   throw new Error('Unknown action')

@@ -62,7 +62,7 @@ function classifyConfirm(t: string): 'yes' | 'no' | 'unclear' {
 }
 
 export default function Agent({
-  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, setNotes, onOpenNote, toast,
+  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, notes, setNotes, onOpenNote, toast,
   messages, setMessages, pending, setPending,
 }: {
   tasks: Task[]
@@ -71,6 +71,7 @@ export default function Agent({
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   spaces: Space[]
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
+  notes: Note[]
   setNotes: (fn: (p: Note[]) => Note[]) => void
   onOpenNote?: (noteId: string) => void
   toast: (m: string) => void
@@ -90,7 +91,7 @@ export default function Agent({
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  const ctx: ActionContext = { tasks, roadmapItems, spaces, setTasks, setRoadmapItems, setCalendarBlocks, setNotes }
+  const ctx: ActionContext = { tasks, roadmapItems, spaces, notes, setTasks, setRoadmapItems, setCalendarBlocks, setNotes }
 
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
   const weekStart = getMonday()

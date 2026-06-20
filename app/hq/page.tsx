@@ -808,6 +808,7 @@ export default function HQPage() {
           setRoadmapItems={setRoadmapItems}
           spaces={spaces}
           setCalendarBlocks={setCalendarBlocks}
+          notes={notes}
           setNotes={setNotes}
           onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
           messages={agentMessages}

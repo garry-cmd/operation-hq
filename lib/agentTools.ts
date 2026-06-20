@@ -87,6 +87,46 @@ export const TOOLS = [
       required: ['title'],
     },
   },
+  {
+    name: 'append_note',
+    description: 'Propose adding content to the END of an existing note (keeps everything already there). Use for "add this to my … note". Reference the note by the id in [note:…] in the state.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        note_id: { type: 'string', description: 'The note id from [note:…].' },
+        body: { type: 'string', description: 'Markdown to append (same Markdown support as create_note, including tables and checkboxes).' },
+      },
+      required: ['note_id', 'body'],
+    },
+  },
+  {
+    name: 'update_note',
+    description: 'Propose editing an existing note — rename it and/or REPLACE its entire body. Use to rewrite or restructure. To merely add to a note without losing its content, use append_note instead. Reference by [note:…].',
+    input_schema: {
+      type: 'object',
+      properties: {
+        note_id: { type: 'string', description: 'The note id from [note:…].' },
+        title: { type: 'string', description: 'New title. Omit to leave the title unchanged.' },
+        body: { type: 'string', description: 'New body in Markdown — REPLACES the existing body entirely. Omit to leave the body unchanged. Same Markdown support as create_note.' },
+      },
+      required: ['note_id'],
+    },
+  },
+  {
+    name: 'update_task',
+    description: 'Propose editing an existing task — its title, due date, priority, or description. Reference by [task:…]. (For just the due date, reschedule_task is also fine; for marking it done use complete_task.)',
+    input_schema: {
+      type: 'object',
+      properties: {
+        task_id: { type: 'string', description: 'The task id from [task:…].' },
+        title: { type: 'string', description: 'New title. Omit to leave unchanged.' },
+        due_date: { type: 'string', description: 'New due date YYYY-MM-DD. Omit to leave unchanged.' },
+        priority: { type: 'integer', description: 'Priority 1 (highest) to 4 (lowest). Omit to leave unchanged.', enum: [1, 2, 3, 4] },
+        description: { type: 'string', description: 'New description / notes for the task. Omit to leave unchanged.' },
+      },
+      required: ['task_id'],
+    },
+  },
 ]
 
 // Anthropic-executed server tool: web search. Runs inside the model's turn
