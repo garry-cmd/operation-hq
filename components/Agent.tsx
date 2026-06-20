@@ -10,7 +10,7 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { getMonday } from '@/lib/utils'
-import { sendAgentMessage, type AgentMessage, type ProposedAction } from '@/lib/db/agentApi'
+import { streamAgentMessage, type AgentMessage, type ProposedAction } from '@/lib/db/agentApi'
 import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import type { Task, RoadmapItem, Space, HealthStatus } from '@/lib/types'
@@ -75,7 +75,7 @@ export default function Agent({
   const weekStart = getMonday()
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' })
   }, [messages, pending])
 
   // ── describe a proposed action for its card label ──
@@ -158,19 +158,42 @@ export default function Agent({
   async function send(text: string) {
     const content = text.trim()
     if (!content || pending) return
+    const prevState = messages
     const next: ChatMsg[] = [...messages, { role: 'user', content }]
+    const assistantIdx = next.length
     setMessages(next)
     setInput('')
     setPending(true)
+    let started = false
+    let assembled = ''
     try {
       const history: AgentMessage[] = next.map(({ role, content }) => ({ role, content }))
-      const { reply, actions } = await sendAgentMessage(history, today, weekStart)
-      const uiActions: UIAction[] = actions.map(a => ({ ...a, id: crypto.randomUUID(), status: 'pending' as const }))
-      setMessages([...next, { role: 'assistant', content: reply, actions: uiActions.length ? uiActions : undefined }])
+      await streamAgentMessage(history, today, weekStart, {
+        onText: (delta) => {
+          assembled += delta
+          if (!started) {
+            started = true
+            setMessages(prev => [...prev, { role: 'assistant', content: assembled }])
+          } else {
+            setMessages(prev => prev.map((m, i) => i === assistantIdx ? { ...m, content: assembled } : m))
+          }
+        },
+        onActions: (actions) => {
+          const ui: UIAction[] = actions.map(a => ({ ...a, id: crypto.randomUUID(), status: 'pending' as const }))
+          if (!ui.length) return
+          if (!started) {
+            started = true
+            assembled = assembled || 'I’ve proposed the following — approve below.'
+            setMessages(prev => [...prev, { role: 'assistant', content: assembled, actions: ui }])
+          } else {
+            setMessages(prev => prev.map((m, i) => i === assistantIdx ? { ...m, actions: ui } : m))
+          }
+        },
+      })
+      if (!started) setMessages(prev => [...prev, { role: 'assistant', content: '(no response)' }])
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Agent failed')
-      setMessages(messages)
-      setInput(content)
+      if (!started) { setMessages(prevState); setInput(content) } // nothing streamed — roll back and let them retry
     } finally {
       setPending(false)
       taRef.current?.focus()
@@ -256,7 +279,7 @@ export default function Agent({
           </div>
         ))}
 
-        {pending && (
+        {pending && messages[messages.length - 1]?.role !== 'assistant' && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
             <div style={{ padding: '12px 16px', borderRadius: 14, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', display: 'flex', gap: 5 }}>
               {[0, 1, 2].map(i => (

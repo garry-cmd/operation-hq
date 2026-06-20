@@ -129,7 +129,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -141,29 +141,72 @@ export async function POST(req: Request) {
         max_tokens: 1500,
         system: `${PERSONA}\n\n---\n\n${context}`,
         tools: TOOLS,
+        stream: true,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
       }),
     })
 
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '')
-      return NextResponse.json({ error: `agent upstream ${res.status}`, detail: detail.slice(0, 400) }, { status: 502 })
+    if (!upstream.ok || !upstream.body) {
+      const detail = await upstream.text().catch(() => '')
+      return NextResponse.json({ error: `agent upstream ${upstream.status}`, detail: detail.slice(0, 400) }, { status: 502 })
     }
 
-    const data = await res.json()
-    const blocks: Array<{ type?: string; text?: string; name?: string; input?: Record<string, unknown> }> =
-      Array.isArray(data?.content) ? data.content : []
+    // Proxy Anthropic's SSE into a simple NDJSON stream the client can read:
+    //   {"t":"text","d":"…"}  text chunks, forwarded live
+    //   {"t":"actions","a":[…]} proposed tool calls, emitted once assembled
+    //   {"t":"error","e":"…"}  mid-stream failure
+    const encoder = new TextEncoder()
+    const decoder = new TextDecoder()
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = upstream.body!.getReader()
+        const send = (o: unknown) => controller.enqueue(encoder.encode(JSON.stringify(o) + '\n'))
+        const blocks = new Map<number, { type?: string; name?: string; json: string }>()
+        let buf = ''
+        try {
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buf += decoder.decode(value, { stream: true })
+            const events = buf.split('\n\n')
+            buf = events.pop() ?? ''
+            for (const evt of events) {
+              const dataLine = evt.split('\n').find(l => l.startsWith('data:'))
+              if (!dataLine) continue
+              const raw = dataLine.slice(5).trim()
+              if (!raw) continue
+              let p: { type?: string; index?: number; content_block?: { type?: string; name?: string }; delta?: { type?: string; text?: string; partial_json?: string } }
+              try { p = JSON.parse(raw) } catch { continue }
+              if (p.type === 'content_block_start' && typeof p.index === 'number') {
+                blocks.set(p.index, { type: p.content_block?.type, name: p.content_block?.name, json: '' })
+              } else if (p.type === 'content_block_delta' && typeof p.index === 'number') {
+                if (p.delta?.type === 'text_delta' && p.delta.text) {
+                  send({ t: 'text', d: p.delta.text })
+                } else if (p.delta?.type === 'input_json_delta') {
+                  const b = blocks.get(p.index); if (b) b.json += p.delta.partial_json ?? ''
+                }
+              }
+            }
+          }
+          const actions: ProposedAction[] = []
+          for (const b of blocks.values()) {
+            if (b.type === 'tool_use' && b.name) {
+              let input: Record<string, unknown> = {}
+              try { input = b.json ? JSON.parse(b.json) : {} } catch { input = {} }
+              actions.push({ tool: b.name, input })
+            }
+          }
+          if (actions.length) send({ t: 'actions', a: actions })
+          controller.close()
+        } catch {
+          try { send({ t: 'error', e: 'stream interrupted' }) } catch { /* controller may be closed */ }
+          controller.close()
+        }
+      },
+    })
 
-    const reply = blocks.filter(b => b.type === 'text').map(b => b.text ?? '').join('\n').trim()
-    const actions: ProposedAction[] = blocks
-      .filter(b => b.type === 'tool_use' && typeof b.name === 'string')
-      .map(b => ({ tool: b.name as string, input: (b.input ?? {}) as Record<string, unknown> }))
-
-    if (!reply && actions.length === 0) return NextResponse.json({ error: 'empty agent response' }, { status: 502 })
-
-    return NextResponse.json({
-      reply: reply || (actions.length ? 'I’ve proposed the following — approve below.' : ''),
-      actions,
+    return new Response(stream, {
+      headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache, no-transform' },
     })
   } catch {
     return NextResponse.json({ error: 'agent request failed' }, { status: 502 })
