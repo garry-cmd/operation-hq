@@ -21,13 +21,14 @@ export async function streamAgentMessage(
   today: string,
   weekStart: string,
   handlers: { onText: (delta: string) => void; onActions: (actions: ProposedAction[]) => void },
+  opts?: { voice?: boolean },
 ): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token
   const r = await fetch('/api/agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    body: JSON.stringify({ messages, today, weekStart }),
+    body: JSON.stringify({ messages, today, weekStart, mode: opts?.voice ? 'voice' : 'text' }),
   })
   if (!r.ok || !r.body) {
     const msg = (await r.json().catch(() => ({} as { error?: string }))).error || `agent ${r.status}`

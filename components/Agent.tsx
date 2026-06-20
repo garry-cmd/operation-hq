@@ -14,6 +14,7 @@ import { streamAgentMessage, type AgentMessage, type ProposedAction } from '@/li
 import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import { createCalendarEvent } from '@/lib/db/googleApi'
+import { useVoice } from '@/lib/voice/useVoice'
 import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock } from '@/lib/types'
 
 const STARTERS = [
@@ -75,6 +76,7 @@ export default function Agent({
   const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
   const [pending, setPending] = useState(false)
+  const voice = useVoice({ onError: toast })
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
@@ -179,7 +181,7 @@ export default function Agent({
     for (const a of actions) if (a.status === 'pending') await approve(msgIdx, a)
   }
 
-  async function send(text: string) {
+  async function runTurn(text: string, speak: boolean) {
     const content = text.trim()
     if (!content || pending) return
     const prevState = messages
@@ -188,6 +190,7 @@ export default function Agent({
     setMessages(next)
     setInput('')
     setPending(true)
+    if (speak) voice.beginSpeech()
     let started = false
     let assembled = ''
     try {
@@ -201,6 +204,7 @@ export default function Agent({
           } else {
             setMessages(prev => prev.map((m, i) => i === assistantIdx ? { ...m, content: assembled } : m))
           }
+          if (speak) voice.pushSpeech(delta)
         },
         onActions: (actions) => {
           const ui: UIAction[] = actions.map(a => ({ ...a, id: crypto.randomUUID(), status: 'pending' as const }))
@@ -213,14 +217,27 @@ export default function Agent({
             setMessages(prev => prev.map((m, i) => i === assistantIdx ? { ...m, actions: ui } : m))
           }
         },
-      })
+      }, { voice: speak })
       if (!started) setMessages(prev => [...prev, { role: 'assistant', content: '(no response)' }])
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Agent failed')
-      if (!started) { setMessages(prevState); setInput(content) } // nothing streamed — roll back and let them retry
+      if (!started) { setMessages(prevState); if (!speak) setInput(content) } // nothing streamed — roll back
     } finally {
       setPending(false)
+      if (speak) voice.endSpeech()
       taRef.current?.focus()
+    }
+  }
+
+  function send(text: string) { return runTurn(text, false) }
+
+  // Mic button: idle→record, listening→transcribe+send (spoken reply), speaking→stop playback.
+  async function onMic() {
+    if (voice.status === 'speaking') { voice.stopSpeaking(); return }
+    if (voice.status === 'idle') { await voice.startListening(); return }
+    if (voice.status === 'listening') {
+      const text = await voice.stopListening()
+      if (text) await runTurn(text, true)
     }
   }
 
@@ -315,6 +332,38 @@ export default function Agent({
       </div>
 
       <div style={{ flexShrink: 0, marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+        {voice.supported && (() => {
+          const st = voice.status
+          const red = st === 'listening'
+          const busy = st === 'thinking'
+          const speaking = st === 'speaking'
+          const color = red ? 'var(--nw-alarm-text, #ff6452)' : 'var(--accent)'
+          const title = red ? 'Stop & send' : speaking ? 'Stop speaking' : busy ? 'Transcribing…' : 'Speak'
+          return (
+            <button
+              onClick={onMic}
+              disabled={busy || pending && st === 'idle'}
+              title={title}
+              aria-label={title}
+              style={{
+                flexShrink: 0, width: 42, height: 42, borderRadius: 12, display: 'grid', placeItems: 'center',
+                cursor: busy ? 'default' : 'pointer', color,
+                background: red ? 'rgba(255,100,82,0.12)' : 'var(--navy-800)',
+                border: `1px solid ${red ? color : 'var(--navy-600)'}`,
+                animation: red ? 'voicepulse 1.3s ease-in-out infinite' : 'none',
+                opacity: busy ? 0.6 : 1, transition: 'color .15s, border-color .15s, background .15s',
+              }}
+            >
+              {busy ? (
+                <span style={{ width: 15, height: 15, borderRadius: '50%', border: '2px solid var(--navy-500)', borderTopColor: color, animation: 'voicespin .7s linear infinite' }} />
+              ) : speaking ? (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2" /></svg>
+              ) : (
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="2" width="6" height="12" rx="3" /><path d="M5 10a7 7 0 0 0 14 0" /><line x1="12" y1="17" x2="12" y2="21" /></svg>
+              )}
+            </button>
+          )
+        })()}
         <textarea
           ref={taRef}
           value={input}
@@ -339,7 +388,9 @@ export default function Agent({
         >Send</button>
       </div>
 
-      <style>{`@keyframes agentdot { 0%,60%,100% { opacity:.3; transform:translateY(0) } 30% { opacity:1; transform:translateY(-3px) } }`}</style>
+      <style>{`@keyframes agentdot { 0%,60%,100% { opacity:.3; transform:translateY(0) } 30% { opacity:1; transform:translateY(-3px) } }
+@keyframes voicepulse { 0%,100% { box-shadow:0 0 0 0 rgba(255,100,82,0.5) } 50% { box-shadow:0 0 0 6px rgba(255,100,82,0) } }
+@keyframes voicespin { to { transform:rotate(360deg) } }`}</style>
     </div>
   )
 }

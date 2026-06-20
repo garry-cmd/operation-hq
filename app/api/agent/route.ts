@@ -95,7 +95,16 @@ interface ProposedAction { tool: string; input: Record<string, unknown> }
 
 
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
-interface AgentRequest { messages: ChatMessage[]; today: string; weekStart: string }
+interface AgentRequest { messages: ChatMessage[]; today: string; weekStart: string; mode?: 'text' | 'voice' }
+
+const VOICE_STYLE = `
+
+---
+
+You are replying through a VOICE interface — your words will be spoken aloud, not read.
+- Talk the way you'd speak: short natural sentences. No markdown, no bullet points, no headings, no emoji, no URLs, no tables.
+- Lead with the answer in the first sentence. Keep it to 1–4 sentences unless asked for detail.
+- If you propose an action, say what it is and ask for a yes in one sentence (e.g. "I can add dinner with Melissa Sunday at six — want me to?"). The operator can't see a screen, so the spoken proposal must stand on its own.`
 
 const PERSONA = `You are the chief of staff for the operator of "Operation HQ", a solo founder's strategic operating system. You have their complete current state below (spaces = distinct ventures/areas, KRs = quarterly key results with a health status, weekly actions, tasks, calendar, reflections).
 
@@ -158,7 +167,7 @@ export async function POST(req: Request) {
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 1500,
-        system: `${PERSONA}\n\n---\n\n${context}`,
+        system: `${PERSONA}\n\n---\n\n${context}${body.mode === 'voice' ? VOICE_STYLE : ''}`,
         tools: [...TOOLS, WEB_SEARCH_TOOL],
         stream: true,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
