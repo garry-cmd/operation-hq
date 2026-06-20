@@ -128,7 +128,7 @@ export default function Home({
     [tasks, weekMonday, weekEnd])
 
   const backlogCount = useMemo(() =>
-    tasks.filter(t => !t.completed_at && !t.parent_task_id && !t.due_date).length,
+    tasks.filter(t => !t.completed_at && !t.parent_task_id && !t.due_date && !t.list_id).length,
     [tasks])
 
   // ── Overdue tasks (needs attention) ──

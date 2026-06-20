@@ -201,7 +201,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       upcoming: open.filter(t => t.due_date && t.due_date > today).length,
       inbox: open.filter(t => !t.space_id && !t.list_id).length,
       recurring: open.filter(t => t.recurrence_rule != null).length,
-      backlog: open.filter(t => !t.due_date).length,
+      backlog: open.filter(t => !t.due_date && !t.list_id).length,
       all: open.length,
       bySpace: spaces.reduce<Record<string, number>>((acc, s) => {
         acc[s.id] = open.filter(t => t.space_id === s.id).length
@@ -230,7 +230,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       if (scope.view === 'upcoming') pool = pool.filter(t => t.due_date && t.due_date > today)
       if (scope.view === 'inbox')    pool = pool.filter(t => !t.space_id && !t.list_id)
       if (scope.view === 'recurring') pool = pool.filter(t => t.recurrence_rule != null)
-      if (scope.view === 'backlog')   pool = pool.filter(t => !t.due_date)
+      if (scope.view === 'backlog')   pool = pool.filter(t => !t.due_date && !t.list_id)
       // 'all' = no further filter
     } else if (scope.kind === 'space') {
       pool = pool.filter(t => t.space_id === scope.spaceId)
