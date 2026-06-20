@@ -6,13 +6,13 @@
  * greedy planner. Blocks are 'proposed' until committed to Google Calendar.
  *
  * Google read/commit is gated behind a connection state (Stage 2) — until then
- * everything here works natively: define your template, plan the week, nudge
- * blocks. Meetings will overlay and blocks will sync once Google is connected.
+ * everything here works natively. Meetings overlay and blocks sync once Google
+ * is connected.
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useEffect, useRef } from 'react'
 import {
   Space, AnnualObjective, RoadmapItem, WeeklyAction, Task,
-  CapacityBlock, CalendarBlock, CapacityKind,
+  CapacityBlock, CalendarBlock, CapacityKind, NewCapacityBlockInput,
 } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import * as capDb from '@/lib/db/capacityBlocks'
@@ -29,6 +29,10 @@ const KIND_LABEL: Record<CapacityKind, string> = {
   task: 'Tasks',
   both: 'KR + tasks',
 }
+
+// A read-only "busy" overlay item — committed HQ blocks now, Google meetings
+// once connected.
+interface Commitment { date: string; start_minute: number; end_minute: number; title: string; source: 'hq' | 'google' }
 
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -47,9 +51,9 @@ function fmtWeekLabel(weekStart: string): string {
 const minToTop = (m: number) => ((m - GRID_START_H * 60) / 60) * ROW_H
 const durToH = (m: number) => (m / 60) * ROW_H
 
-// Time options for the template form (5:00 → 22:00, every 30 min).
+// Time options for the popup selects (5:00 → 22:00, every 15 min).
 const TIME_OPTS: { v: number; label: string }[] = []
-for (let m = 5 * 60; m <= 22 * 60; m += 30) TIME_OPTS.push({ v: m, label: minutesToLabel(m) })
+for (let m = 5 * 60; m <= 22 * 60; m += 15) TIME_OPTS.push({ v: m, label: minutesToLabel(m) })
 
 type Props = {
   spaces: Space[]
@@ -85,7 +89,6 @@ export default function Calendar({
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
   const colorFor = (spaceId: string | null) => spaceId ? (spaceById.get(spaceId)?.color ?? 'var(--navy-500)') : 'var(--navy-500)'
 
-  // Blocks placed in the visible week.
   const weekBlocks = useMemo(
     () => calendarBlocks.filter(b => b.block_date >= viewWeek && b.block_date <= weekEnd),
     [calendarBlocks, viewWeek, weekEnd],
@@ -95,6 +98,15 @@ export default function Calendar({
     for (const b of weekBlocks) s.add(b.task_id ? `task:${b.task_id}` : `action:${b.weekly_action_id}`)
     return s
   }, [weekBlocks])
+
+  // Committed HQ blocks read as fixed commitments (Google meetings merge here
+  // in Stage 2). Used by the planner as busy time and shown on the template.
+  const commitments = useMemo<Commitment[]>(
+    () => weekBlocks.filter(b => b.status === 'committed').map(b => ({
+      date: b.block_date, start_minute: b.start_minute, end_minute: b.end_minute, title: b.title, source: 'hq' as const,
+    })),
+    [weekBlocks],
+  )
 
   // Schedulable items for this week (not already placed). Items without a real
   // estimate default to 30m so they're still plannable.
@@ -131,13 +143,12 @@ export default function Calendar({
     return m
   }, [items])
 
-  // Capacity windows for the week, by date.
   const capacityByDate = useMemo(() => {
-    const m = new Map<string, { c: CapacityBlock; date: string }[]>()
+    const m = new Map<string, CapacityBlock[]>()
     for (const c of capacityBlocks) {
       const date = dateForDow(viewWeek, c.day_of_week)
       const arr = m.get(date) ?? []
-      arr.push({ c, date }); m.set(date, arr)
+      arr.push(c); m.set(date, arr)
     }
     return m
   }, [capacityBlocks, viewWeek])
@@ -150,9 +161,7 @@ export default function Calendar({
     try {
       const removedIds = await calDb.removeProposedInRange(viewWeek, weekEnd)
       const removed = new Set(removedIds)
-      // committed blocks stay and count as busy
-      const committed = weekBlocks.filter(b => b.status === 'committed')
-      const existing: BusyInterval[] = committed.map(b => ({ date: b.block_date, start_minute: b.start_minute, end_minute: b.end_minute }))
+      const existing: BusyInterval[] = commitments.map(c => ({ date: c.date, start_minute: c.start_minute, end_minute: c.end_minute }))
       const { placed, unplaced } = planWeek({
         weekStart: viewWeek, capacity: capacityBlocks, items, busy: [], existing,
       })
@@ -197,7 +206,6 @@ export default function Calendar({
     if (!selectedItemKey || busy) return
     const item = itemByKey.get(selectedItemKey)
     if (!item) return
-    // snap to 15-min, clamp inside the grid
     let start = Math.round(minute / 15) * 15
     start = Math.max(GRID_START_H * 60, Math.min(start, GRID_END_H * 60 - item.duration))
     const end = start + item.duration
@@ -235,7 +243,6 @@ export default function Calendar({
   // ── render ───────────────────────────────────────────────────────
   return (
     <div style={{ padding: '22px 26px 60px', maxWidth: 1320, margin: '0 auto', width: '100%' }}>
-      {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
         <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-.01em', margin: 0 }}>Calendar</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -249,7 +256,6 @@ export default function Calendar({
           <button onClick={() => setMode('template')} style={segBtn(mode === 'template')}>Template</button>
         </div>
         <div style={{ flex: 1 }} />
-        {/* Google status — gated until OAuth is wired */}
         <span style={{
           display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
           border: '1px solid var(--navy-600)', borderRadius: 8, padding: '4px 10px',
@@ -272,9 +278,57 @@ export default function Calendar({
           />
         : <TemplateView
             spaces={spaces} capacityBlocks={capacityBlocks} setCapacityBlocks={setCapacityBlocks}
-            colorFor={colorFor} toast={toast}
+            colorFor={colorFor} spaceById={spaceById}
+            weekDates={weekDates} todayStr={todayStr}
+            commitments={commitments} googleConnected={googleConnected} toast={toast}
           />
       }
+    </div>
+  )
+}
+
+/* ── shared grid scaffolding ───────────────────────────────────── */
+function HourGutter() {
+  const hours = Array.from({ length: GRID_END_H - GRID_START_H }, (_, i) => GRID_START_H + i)
+  return (
+    <div style={{ borderRight: '1px solid var(--navy-600)' }}>
+      {hours.map(h => (
+        <div key={h} style={{ height: ROW_H, fontSize: 10, color: 'var(--navy-400)', textAlign: 'right', paddingRight: 8, position: 'relative', top: -6 }}>
+          {minutesToLabel(h * 60)}
+        </div>
+      ))}
+    </div>
+  )
+}
+function HourLines() {
+  const hours = Array.from({ length: GRID_END_H - GRID_START_H }, (_, i) => GRID_START_H + i)
+  return <>{hours.map(h => <div key={h} style={{ height: ROW_H, borderBottom: '1px solid var(--navy-700)' }} />)}</>
+}
+function DayHeaders({ weekDates, todayStr }: { weekDates: string[]; todayStr: string }) {
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `52px repeat(7, 1fr)`, borderBottom: '1px solid var(--navy-600)' }}>
+      <div style={{ borderRight: '1px solid var(--navy-600)' }} />
+      {weekDates.map(d => {
+        const { dow, dnum } = fmtDay(d); const today = d === todayStr
+        return (
+          <div key={d} style={{ padding: '9px 8px', textAlign: 'center', borderRight: '1px solid var(--navy-600)' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: today ? 'var(--accent)' : 'var(--navy-400)' }}>{dow}</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: today ? 'var(--accent)' : 'var(--navy-100)', marginTop: 2 }}>{dnum}</div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+function CommitmentBlock({ c }: { c: Commitment }) {
+  return (
+    <div title={`${c.title} (${c.source === 'google' ? 'Google' : 'committed'})`} style={{
+      position: 'absolute', left: 3, right: 3, top: minToTop(c.start_minute), height: Math.max(durToH(c.end_minute - c.start_minute) - 2, 14),
+      borderRadius: 6, padding: '2px 6px', overflow: 'hidden', zIndex: 2, pointerEvents: 'none',
+      background: 'repeating-linear-gradient(45deg, var(--navy-700), var(--navy-700) 5px, var(--navy-600) 5px, var(--navy-600) 10px)',
+      border: '1px dashed var(--navy-500)', color: 'var(--navy-200)',
+    }}>
+      <div style={{ fontSize: 10.5, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
     </div>
   )
 }
@@ -282,7 +336,7 @@ export default function Calendar({
 /* ── Week view ──────────────────────────────────────────────────── */
 function WeekView(props: {
   weekDates: string[]; todayStr: string
-  blocks: CalendarBlock[]; capacityByDate: Map<string, { c: CapacityBlock; date: string }[]>
+  blocks: CalendarBlock[]; capacityByDate: Map<string, CapacityBlock[]>
   items: SchedulableItem[]; selectedItemKey: string | null; setSelectedItemKey: (k: string | null) => void
   spaceById: Map<string, Space>; colorFor: (id: string | null) => string
   onPlace: (date: string, minute: number) => void; onRemoveBlock: (b: CalendarBlock) => void
@@ -290,13 +344,11 @@ function WeekView(props: {
 }) {
   const { weekDates, todayStr, blocks, capacityByDate, items, selectedItemKey, setSelectedItemKey,
     spaceById, colorFor, onPlace, onRemoveBlock, onPlan, onClear, busy, googleConnected } = props
-  const hours = Array.from({ length: GRID_END_H - GRID_START_H }, (_, i) => GRID_START_H + i)
   const gridH = (GRID_END_H - GRID_START_H) * ROW_H
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
 
   return (
     <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-      {/* rail */}
       <aside style={{ width: 248, flexShrink: 0, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: 14 }}>
         <h3 style={nwLabel}>Unscheduled · this week</h3>
         <p style={{ fontSize: 11, color: 'var(--navy-400)', margin: '4px 0 12px', lineHeight: 1.45 }}>
@@ -331,38 +383,16 @@ function WeekView(props: {
         })}
       </aside>
 
-      {/* grid */}
       <div style={{ flex: 1, minWidth: 0, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, overflow: 'hidden' }}>
         {!googleConnected && (
           <div style={{ padding: '7px 14px', fontSize: 11, color: 'var(--navy-400)', borderBottom: '1px solid var(--navy-600)', background: 'var(--navy-900)' }}>
             Showing HQ blocks only. Your Google meetings will overlay here, and committing blocks will sync, once Google is connected.
           </div>
         )}
-        {/* day headers */}
-        <div style={{ display: 'grid', gridTemplateColumns: `52px repeat(7, 1fr)`, borderBottom: '1px solid var(--navy-600)' }}>
-          <div style={{ borderRight: '1px solid var(--navy-600)' }} />
-          {weekDates.map(d => {
-            const { dow, dnum } = fmtDay(d); const today = d === todayStr
-            return (
-              <div key={d} style={{ padding: '9px 8px', textAlign: 'center', borderRight: '1px solid var(--navy-600)' }}>
-                <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: today ? 'var(--accent)' : 'var(--navy-400)' }}>{dow}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: today ? 'var(--accent)' : 'var(--navy-100)', marginTop: 2 }}>{dnum}</div>
-              </div>
-            )
-          })}
-        </div>
-        {/* scrollable grid body */}
+        <DayHeaders weekDates={weekDates} todayStr={todayStr} />
         <div style={{ maxHeight: 620, overflowY: 'auto' }}>
           <div style={{ display: 'grid', gridTemplateColumns: `52px repeat(7, 1fr)`, position: 'relative' }}>
-            {/* gutter */}
-            <div style={{ borderRight: '1px solid var(--navy-600)' }}>
-              {hours.map(h => (
-                <div key={h} style={{ height: ROW_H, fontSize: 10, color: 'var(--navy-400)', textAlign: 'right', paddingRight: 8, position: 'relative', top: -6 }}>
-                  {minutesToLabel(h * 60)}
-                </div>
-              ))}
-            </div>
-            {/* day columns */}
+            <HourGutter />
             {weekDates.map(date => {
               const today = date === todayStr
               const caps = capacityByDate.get(date) ?? []
@@ -372,8 +402,7 @@ function WeekView(props: {
                   key={date}
                   onClick={selectedItemKey ? (e) => {
                     const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-                    const y = e.clientY - rect.top
-                    const minute = GRID_START_H * 60 + (y / ROW_H) * 60
+                    const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
                     onPlace(date, minute)
                   } : undefined}
                   style={{
@@ -382,10 +411,8 @@ function WeekView(props: {
                     cursor: selectedItemKey ? 'copy' : 'default',
                   }}
                 >
-                  {/* hour lines */}
-                  {hours.map(h => <div key={h} style={{ height: ROW_H, borderBottom: '1px solid var(--navy-700)' }} />)}
-                  {/* capacity bands (faint) */}
-                  {caps.map(({ c }) => (
+                  <HourLines />
+                  {caps.map(c => (
                     <div key={c.id} title={`${c.space_id ? spaceById.get(c.space_id)?.name : 'Any space'} · ${KIND_LABEL[c.kind]}`} style={{
                       position: 'absolute', left: 0, right: 0, top: minToTop(c.start_minute), height: durToH(c.end_minute - c.start_minute),
                       background: `color-mix(in srgb, ${colorFor(c.space_id)} 9%, transparent)`,
@@ -393,11 +420,9 @@ function WeekView(props: {
                       pointerEvents: 'none',
                     }} />
                   ))}
-                  {/* now line */}
                   {today && nowMin >= GRID_START_H * 60 && nowMin <= GRID_END_H * 60 && (
                     <div style={{ position: 'absolute', left: 0, right: 0, top: minToTop(nowMin), height: 0, borderTop: '2px solid var(--red-text)', zIndex: 5 }} />
                   )}
-                  {/* scheduled blocks */}
                   {dayBlocks.map(b => {
                     const proposed = b.status === 'proposed'
                     const col = colorFor(b.space_id)
@@ -424,124 +449,220 @@ function WeekView(props: {
   )
 }
 
-/* ── Template view ──────────────────────────────────────────────── */
+/* ── Template view — drag-to-create week grid ───────────────────── */
 function TemplateView(props: {
-  spaces: Space[]; capacityBlocks: CapacityBlock[]
+  spaces: Space[]
+  capacityBlocks: CapacityBlock[]
   setCapacityBlocks: (fn: (p: CapacityBlock[]) => CapacityBlock[]) => void
-  colorFor: (id: string | null) => string; toast: (m: string) => void
+  colorFor: (id: string | null) => string
+  spaceById: Map<string, Space>
+  weekDates: string[]
+  todayStr: string
+  commitments: Commitment[]
+  googleConnected: boolean
+  toast: (m: string) => void
 }) {
-  const { spaces, capacityBlocks, setCapacityBlocks, colorFor, toast } = props
-  const [dow, setDow] = useState(0)
-  const [spaceId, setSpaceId] = useState<string>('') // '' = any
-  const [kind, setKind] = useState<CapacityKind>('both')
-  const [start, setStart] = useState(8 * 60)
-  const [end, setEnd] = useState(10 * 60)
-  const [saving, setSaving] = useState(false)
+  const { spaces, capacityBlocks, setCapacityBlocks, colorFor, spaceById, weekDates, todayStr, commitments, googleConnected, toast } = props
+  const gridH = (GRID_END_H - GRID_START_H) * ROW_H
 
-  async function add() {
-    if (saving) return
-    if (end <= start) { toast('End must be after start'); return }
-    setSaving(true)
+  const dragRef = useRef<{ dayIndex: number; date: string; rectTop: number; startMin: number; curMin: number } | null>(null)
+  const [drag, setDrag] = useState<{ dayIndex: number; date: string; rectTop: number; startMin: number; curMin: number } | null>(null)
+  const [draft, setDraft] = useState<{ dayIndex: number; date: string; start: number; end: number } | null>(null)
+
+  const snap = (m: number) => Math.round(m / 15) * 15
+  const clampMin = (m: number) => Math.max(GRID_START_H * 60, Math.min(GRID_END_H * 60, m))
+  const minFromY = (clientY: number, rectTop: number) => clampMin(GRID_START_H * 60 + ((clientY - rectTop) / ROW_H) * 60)
+
+  useEffect(() => {
+    function move(e: MouseEvent) {
+      const d = dragRef.current; if (!d) return
+      d.curMin = snap(minFromY(e.clientY, d.rectTop))
+      setDrag({ ...d })
+    }
+    function up() {
+      const d = dragRef.current; if (!d) return
+      const a = Math.min(d.startMin, d.curMin)
+      let b = Math.max(d.startMin, d.curMin)
+      if (b - a < 30) b = Math.min(a + 30, GRID_END_H * 60)
+      dragRef.current = null
+      setDrag(null)
+      if (b > a) setDraft({ dayIndex: d.dayIndex, date: d.date, start: a, end: b })
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    return () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
+  }, [])
+
+  function startDrag(dayIndex: number, date: string, e: React.MouseEvent<HTMLDivElement>) {
+    if (draft) return
+    const rectTop = e.currentTarget.getBoundingClientRect().top
+    const m = snap(minFromY(e.clientY, rectTop))
+    const d = { dayIndex, date, rectTop, startMin: m, curMin: m }
+    dragRef.current = d; setDrag({ ...d })
+  }
+
+  async function saveDraft(input: NewCapacityBlockInput) {
     try {
-      const created = await capDb.create({
-        space_id: spaceId || null, kind, day_of_week: dow, start_minute: start, end_minute: end,
-      })
+      const created = await capDb.create(input)
       setCapacityBlocks(prev => [...prev, created])
+      setDraft(null)
     } catch {
       toast('Could not add block')
-    } finally {
-      setSaving(false)
     }
   }
   async function del(id: string) {
-    try {
-      await capDb.remove(id)
-      setCapacityBlocks(prev => prev.filter(b => b.id !== id))
-    } catch {
-      toast('Could not delete')
-    }
+    try { await capDb.remove(id); setCapacityBlocks(prev => prev.filter(b => b.id !== id)) }
+    catch { toast('Could not delete') }
   }
-
-  const byDay = (d: number) => capacityBlocks.filter(b => b.day_of_week === d).sort((a, b) => a.start_minute - b.start_minute)
 
   return (
     <div>
-      <p style={{ fontSize: 12.5, color: 'var(--navy-300)', margin: '0 0 16px', lineHeight: 1.5, maxWidth: 720 }}>
-        Your standing weekly template — reserve recurring windows for a kind of work, scoped to a space (or any).
-        The planner packs each week&apos;s KR actions and due tasks into matching windows, around your meetings.
+      <p style={{ fontSize: 12.5, color: 'var(--navy-300)', margin: '0 0 12px', lineHeight: 1.5, maxWidth: 760 }}>
+        Your standing weekly template. <b style={{ color: 'var(--navy-100)' }}>Drag on a day</b> to reserve a window, then set the space and work kind.
+        The planner packs each week&apos;s KR actions and due tasks into matching windows, around your commitments.
       </p>
-
-      {/* add form */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, flexWrap: 'wrap', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, padding: 14, marginBottom: 20 }}>
-        <Field label="Day">
-          <select value={dow} onChange={e => setDow(Number(e.target.value))} style={selStyle}>
-            {DOW_LABELS.map((l, i) => <option key={i} value={i}>{l}</option>)}
-          </select>
-        </Field>
-        <Field label="Space">
-          <select value={spaceId} onChange={e => setSpaceId(e.target.value)} style={selStyle}>
-            <option value="">Any space</option>
-            {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-        </Field>
-        <Field label="Work">
-          <select value={kind} onChange={e => setKind(e.target.value as CapacityKind)} style={selStyle}>
-            <option value="both">KR + tasks</option>
-            <option value="kr_action">KR actions</option>
-            <option value="task">Tasks</option>
-          </select>
-        </Field>
-        <Field label="Start">
-          <select value={start} onChange={e => setStart(Number(e.target.value))} style={selStyle}>
-            {TIME_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
-          </select>
-        </Field>
-        <Field label="End">
-          <select value={end} onChange={e => setEnd(Number(e.target.value))} style={selStyle}>
-            {TIME_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
-          </select>
-        </Field>
-        <button onClick={add} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.6 : 1 }}>Add block</button>
+      <div style={{ padding: '7px 12px', fontSize: 11, color: 'var(--navy-400)', background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, marginBottom: 14 }}>
+        {googleConnected
+          ? 'Hatched blocks are committed time / Google meetings — draw capacity around them.'
+          : 'Hatched blocks are your committed HQ time. Your Google meetings will appear here once connected — for now, the week shown is ' + fmtWeekLabel(weekDates[0]) + '.'}
       </div>
 
-      {/* week-of-blocks list */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 10 }}>
-        {DOW_LABELS.map((label, d) => (
-          <div key={d} style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, padding: 12, minHeight: 90 }}>
-            <div style={{ ...nwLabel, marginBottom: 10 }}>{label}</div>
-            {byDay(d).length === 0 && <div style={{ fontSize: 11, color: 'var(--navy-500)' }}>—</div>}
-            {byDay(d).map(b => (
-              <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 8px', borderRadius: 8, background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 6 }}>
-                <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 3, background: colorFor(b.space_id), flexShrink: 0 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--navy-100)', fontWeight: 600 }}>{minutesToLabel(b.start_minute)}–{minutesToLabel(b.end_minute)}</div>
-                  <div style={{ fontSize: 10, color: 'var(--navy-400)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {b.space_id ? props.spaces.find(s => s.id === b.space_id)?.name : 'Any'} · {KIND_LABEL[b.kind]}
+      <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, overflow: 'hidden', userSelect: 'none' }}>
+        <DayHeaders weekDates={weekDates} todayStr={todayStr} />
+        <div style={{ display: 'grid', gridTemplateColumns: `52px repeat(7, 1fr)`, position: 'relative' }}>
+          <HourGutter />
+          {weekDates.map((date, dayIndex) => {
+            const today = date === todayStr
+            const caps = capacityBlocks.filter(c => c.day_of_week === dayIndex).sort((a, b) => a.start_minute - b.start_minute)
+            const dayCommits = commitments.filter(c => c.date === date)
+            const showDrag = drag && drag.dayIndex === dayIndex
+            const dragA = showDrag ? Math.min(drag!.startMin, drag!.curMin) : 0
+            const dragB = showDrag ? Math.max(drag!.startMin, drag!.curMin) : 0
+            return (
+              <div
+                key={date}
+                onMouseDown={(e) => startDrag(dayIndex, date, e)}
+                style={{
+                  position: 'relative', borderRight: '1px solid var(--navy-700)', height: gridH,
+                  background: today ? 'rgba(74,143,255,.04)' : 'transparent', cursor: 'crosshair',
+                }}
+              >
+                <HourLines />
+                {/* commitments (read-only, behind capacity) */}
+                {dayCommits.map((c, i) => <CommitmentBlock key={i} c={c} />)}
+                {/* existing capacity bands */}
+                {caps.map(c => (
+                  <div key={c.id} style={{
+                    position: 'absolute', left: 0, right: 0, top: minToTop(c.start_minute), height: durToH(c.end_minute - c.start_minute),
+                    background: `color-mix(in srgb, ${colorFor(c.space_id)} 16%, transparent)`,
+                    borderLeft: `2px solid ${colorFor(c.space_id)}`, zIndex: 3,
+                    pointerEvents: 'none', padding: '2px 6px', overflow: 'hidden',
+                  }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--navy-100)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {c.space_id ? spaceById.get(c.space_id)?.name : 'Any'}
+                    </div>
+                    <div style={{ fontSize: 9, color: 'var(--navy-400)' }}>{KIND_LABEL[c.kind]}</div>
+                    <button
+                      onMouseDown={(e) => { e.stopPropagation() }}
+                      onClick={(e) => { e.stopPropagation(); del(c.id) }}
+                      title="Delete"
+                      style={{ position: 'absolute', top: 2, right: 4, pointerEvents: 'auto', background: 'none', border: 'none', color: 'var(--navy-300)', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0 }}
+                    >×</button>
                   </div>
-                </div>
-                <button onClick={() => del(b.id)} title="Delete" style={{ background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0, flexShrink: 0 }}>×</button>
+                ))}
+                {/* live drag selection */}
+                {showDrag && dragB > dragA && (
+                  <div style={{
+                    position: 'absolute', left: 0, right: 0, top: minToTop(dragA), height: durToH(dragB - dragA),
+                    background: 'color-mix(in srgb, var(--accent) 22%, transparent)', border: '1px solid var(--accent)',
+                    zIndex: 6, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)' }}>{minutesToLabel(dragA)}–{minutesToLabel(dragB)}</span>
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        ))}
+            )
+          })}
+        </div>
       </div>
+
+      {draft && (
+        <CapacityDraftPopup
+          draft={draft} spaces={spaces}
+          onCancel={() => setDraft(null)}
+          onSave={saveDraft}
+        />
+      )}
     </div>
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/* ── popup to designate a drawn capacity block ──────────────────── */
+function CapacityDraftPopup(props: {
+  draft: { dayIndex: number; date: string; start: number; end: number }
+  spaces: Space[]
+  onCancel: () => void
+  onSave: (input: NewCapacityBlockInput) => void
+}) {
+  const { draft, spaces, onCancel, onSave } = props
+  const [spaceId, setSpaceId] = useState('')
+  const [kind, setKind] = useState<CapacityKind>('both')
+  const [start, setStart] = useState(draft.start)
+  const [end, setEnd] = useState(draft.end)
+
+  function save() {
+    if (end <= start) return
+    onSave({ space_id: spaceId || null, kind, day_of_week: draft.dayIndex, start_minute: start, end_minute: end })
+  }
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={nwLabel}>{label}</span>
-      {children}
+    <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 320, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: 18, boxShadow: '0 20px 60px rgba(0,0,0,.5)' }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: 'var(--navy-50)' }}>Reserve capacity</h3>
+        <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 14 }}>{DOW_LABELS[draft.dayIndex]} · {minutesToLabel(start)}–{minutesToLabel(end)}</div>
+
+        <label style={fieldLabel}>Space</label>
+        <select value={spaceId} onChange={e => setSpaceId(e.target.value)} style={{ ...selStyle, width: '100%', marginBottom: 12 }}>
+          <option value="">Any space</option>
+          {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+
+        <label style={fieldLabel}>Work</label>
+        <select value={kind} onChange={e => setKind(e.target.value as CapacityKind)} style={{ ...selStyle, width: '100%', marginBottom: 12 }}>
+          <option value="both">KR + tasks</option>
+          <option value="kr_action">KR actions</option>
+          <option value="task">Tasks</option>
+        </select>
+
+        <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
+          <div style={{ flex: 1 }}>
+            <label style={fieldLabel}>Start</label>
+            <select value={start} onChange={e => setStart(Number(e.target.value))} style={{ ...selStyle, width: '100%' }}>
+              {TIME_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={fieldLabel}>End</label>
+            <select value={end} onChange={e => setEnd(Number(e.target.value))} style={{ ...selStyle, width: '100%' }}>
+              {TIME_OPTS.map(o => <option key={o.v} value={o.v}>{o.label}</option>)}
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onCancel} style={{ ...ghostBtn, flex: 1 }}>Cancel</button>
+          <button onClick={save} disabled={end <= start} style={{ ...primaryBtn, flex: 1, opacity: end <= start ? 0.5 : 1 }}>Reserve</button>
+        </div>
+      </div>
     </div>
   )
 }
 
 /* ── styles ─────────────────────────────────────────────────────── */
 const nwLabel: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', margin: 0 }
+const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', marginBottom: 5 }
 const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-300)', fontSize: 14, cursor: 'pointer' }
 const ghostBtn: React.CSSProperties = { border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-200)', fontSize: 12, fontWeight: 600, borderRadius: 8, padding: '6px 11px', cursor: 'pointer' }
 const primaryBtn: React.CSSProperties = { border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12.5, fontWeight: 700, borderRadius: 8, padding: '7px 13px', cursor: 'pointer' }
 const segBtn = (on: boolean): React.CSSProperties => ({ background: on ? 'var(--accent-dim)' : 'var(--navy-800)', border: 'none', color: on ? 'var(--accent)' : 'var(--navy-400)', fontSize: 12, fontWeight: 600, padding: '6px 13px', cursor: 'pointer' })
-const selStyle: React.CSSProperties = { background: 'var(--navy-900)', border: '1px solid var(--navy-500)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, color: 'var(--navy-50)', fontFamily: 'inherit', outline: 'none', minWidth: 96 }
+const selStyle: React.CSSProperties = { background: 'var(--navy-900)', border: '1px solid var(--navy-500)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, color: 'var(--navy-50)', fontFamily: 'inherit', outline: 'none' }
