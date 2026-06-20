@@ -27,7 +27,7 @@ import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Summary from '@/components/Summary'
 import Home from '@/components/Home'
-import Agent from '@/components/Agent'
+import Agent, { type ChatMsg } from '@/components/Agent'
 import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
 import Calendar from '@/components/Calendar'
@@ -101,6 +101,10 @@ export default function HQPage() {
   // note titles and body text. Same pattern as the Tasks lift (May 18).
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
   const [notes, setNotes] = useState<Note[]>([])
+  // Chief of Staff conversation — lifted here so the thread + any in-flight
+  // streamed reply persist across navigating away from the agent screen.
+  const [agentMessages, setAgentMessages] = useState<ChatMsg[]>([])
+  const [agentPending, setAgentPending] = useState(false)
   const [tagsByNote, setTagsByNote] = useState<Map<string, string[]>>(new Map())
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
@@ -805,6 +809,10 @@ export default function HQPage() {
           setCalendarBlocks={setCalendarBlocks}
           setNotes={setNotes}
           onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
+          messages={agentMessages}
+          setMessages={setAgentMessages}
+          pending={agentPending}
+          setPending={setAgentPending}
           toast={setToast}
         />
       ) : screen === 'tags' && !loading ? (

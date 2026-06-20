@@ -23,9 +23,9 @@ const STARTERS = [
   "What have I been dropping?",
 ]
 
-type ActionStatus = 'pending' | 'approved' | 'dismissed' | 'failed'
-interface UIAction extends ProposedAction { id: string; status: ActionStatus }
-interface ChatMsg { role: 'user' | 'assistant'; content: string; actions?: UIAction[] }
+export type ActionStatus = 'pending' | 'approved' | 'dismissed' | 'failed'
+export interface UIAction extends ProposedAction { id: string; status: ActionStatus }
+export interface ChatMsg { role: 'user' | 'assistant'; content: string; actions?: UIAction[] }
 
 const nwLabel: React.CSSProperties = {
   fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase',
@@ -53,6 +53,7 @@ function renderContent(text: string): React.ReactNode {
 
 export default function Agent({
   tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, setNotes, onOpenNote, toast,
+  messages, setMessages, pending, setPending,
 }: {
   tasks: Task[]
   setTasks: (fn: (p: Task[]) => Task[]) => void
@@ -63,10 +64,15 @@ export default function Agent({
   setNotes: (fn: (p: Note[]) => Note[]) => void
   onOpenNote?: (noteId: string) => void
   toast: (m: string) => void
+  // Conversation state lives in page.tsx so the thread (and any in-flight
+  // streamed reply, which keeps writing through these setters) survives
+  // navigating away from the Chief of Staff screen.
+  messages: ChatMsg[]
+  setMessages: React.Dispatch<React.SetStateAction<ChatMsg[]>>
+  pending: boolean
+  setPending: React.Dispatch<React.SetStateAction<boolean>>
 }) {
-  const [messages, setMessages] = useState<ChatMsg[]>([])
   const [input, setInput] = useState('')
-  const [pending, setPending] = useState(false)
   const voice = useVoice({ onError: toast })
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
