@@ -41,6 +41,50 @@ column doesn't exist. This bit us once (commit route 500'd on a phantom `user_id
 
 ## Current state — shipped
 
+### Jun 20 (late) — Tasks: Backlog smart view
+
+`components/Tasks.tsx`: new `'backlog'` SmartView = **undated open tasks** (`!due_date`,
+non-subtask, not completed) across all spaces + lists. Sidebar row (stacked-bars
+`BacklogIcon`) between Recurring and All open, with live count. Pure filter, no schema
+change. This is the triage destination the planned **Home deck**'s "Backlog" action targets.
+(Undated tasks bucket under "Later" in the list view — minor wart, acceptable.)
+
+### Planned next — Unified "Home" weekly command deck (DESIGN APPROVED, mockups locked)
+
+The big one. Focus becomes the **all-spaces home page** (top of NavRail, default landing
+screen); the existing all-spaces **Overview/`Summary` screen gets deleted** (this replaces it).
+Design approved over 7 mockup iterations (`hq-home-week-deck-mockup-v7.html`). Shape:
+
+- **Color = space** everywhere (5 space dots; legibility pass on space colors still TODO —
+  Keeply `#0B1E3F` is invisible on dark, needs a display variant).
+- **Daily quote** under the header — curated public-domain pool (stoics · sailors · Franklin),
+  rotated by day-of-year, no external API. (`lib/quotes.ts`.)
+- **Space filter chips** (All + per-space) filter the whole board.
+- **Shape-of-week ribbon** — calendar only (meetings · all-day · holidays), Mon–Sun, today
+  highlighted. Needs the all-day-events fetch (currently skipped — see follow-ups).
+- **Key actions** — all spaces, flat, grouped by space (2 levels, not 3); each row has a
+  completion bubble + obj/KR pill. Click pill → loads that KR's notes.
+- **Right rail** — Tasks-due-this-week (completable, space-dotted, "Backlog ↗" link) ·
+  Habits (all-spaces compact grid) · Notes (contextual, click-a-KR-to-load, click-to-open editor).
+- **Needs attention** — moved **below the fold** (no crisis-first). **Overdue tasks ONLY**
+  (off-track/blocked KRs are handled in planning, NOT here). Inline actions: complete ·
+  **Backlog** (clear due date → backlog view) · **Snooze** (→ tomorrow) · **Kill** (hard delete).
+- **FAB** bottom-right — quick-add task / key action / note / event.
+
+**Build sequence (staged, each independently deployable):**
+1. ✅ Backlog smart view in Tasks (shipped Jun 20).
+2. Schema: `notes.roadmap_item_id` nullable migration (mirrors `tasks.roadmap_item_id`) + verify.
+3. Notes↔KR: link picker in Notes editor header + `lib/db/notes` helper.
+4. All-day Google events: surface in the fetch (currently skipped) for the ribbon.
+5. `lib/quotes.ts` daily-quote module (curated array + day-of-year selector).
+6. The Home deck itself — new all-spaces screen; make it default landing + top NavRail entry.
+7. Delete the Overview/`Summary` screen + its route once Home covers it.
+8. Inline handlers: complete / Backlog / Snooze→tomorrow / Kill (hard delete) + FAB quick-add.
+
+Decisions locked: notes = click-to-open (not inline edit); Backlog lives in Tasks; Kill =
+hard delete (no confirm); attention = overdue tasks only; quote pool = public-domain
+sailors/stoics/Franklin.
+
 ### This session (Jun 19/20) — Calendar + Google Calendar integration
 
 **Calendar module** — a first-class all-spaces time-blocking view (own NavRail entry).
@@ -122,13 +166,12 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-1. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Options: delete it
-   (~10min), point at wizard with `closingWeek=current` (~30min), or add `mode:'close'|'replan'`
-   starting at step 2 (~1.5hr, leaky). **Open question: do you actually use Re-plan? If not, delete it + PlanWeek.**
-2. **KR linker UI on tasks** — `tasks.roadmap_item_id` exists; add a "Link to KR" picker +
-   surface linked tasks on the OKRs tab. ~1–2hr.
+1. **★ Unified Home weekly command deck** — DESIGN APPROVED, build sequence in "Current state →
+   Planned next" above. Multi-deploy: notes↔KR schema, all-day events, quote module, the deck,
+   kill Overview, inline handlers. Step 1 (Backlog view) done. This is the priority.
+2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+   `PlanWeek` (~10min). Confirm Re-plan is unused first.
 3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
-4. **Notes Tier 2** — `[[ ]]` link parsing at render, deeper notebook nesting UI (schema allows; UI caps at depth 2).
 
 ### 🟡 Feature backlog
 5. `useSpaceData` hook (audit #4). ~1hr.
