@@ -43,7 +43,7 @@ export async function fetchEvents(from: string, to: string): Promise<GoogleBusyE
  *  Home week ribbon (busy meetings + all-day/holiday markers). The Calendar
  *  overlay keeps using fetchEvents (busy only). */
 export async function fetchCalendarEvents(from: string, to: string): Promise<{ events: GoogleBusyEvent[]; allDayEvents: GoogleAllDayEvent[] }> {
-  const r = await authedFetch(`/api/google/events?from=${from}&to=${to}`)
+  const r = await authedFetch(`/api/google/events?from=${from}&to=${to}&exclude_hq=1`)
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `events ${r.status}`)
   const j = await r.json()
   return { events: (j.events ?? []) as GoogleBusyEvent[], allDayEvents: (j.allDayEvents ?? []) as GoogleAllDayEvent[] }

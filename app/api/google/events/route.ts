@@ -15,10 +15,11 @@ export async function GET(req: Request) {
   const url = new URL(req.url)
   const from = url.searchParams.get('from')
   const to = url.searchParams.get('to')
+  const excludeHq = url.searchParams.get('exclude_hq') === '1'
   if (!from || !to) return NextResponse.json({ error: 'from and to required' }, { status: 400 })
 
   try {
-    const { accessToken, readCalendarIds } = await getValidAccessToken(userId)
+    const { accessToken, readCalendarIds, hqCalendarId } = await getValidAccessToken(userId)
     if (readCalendarIds.length === 0) return NextResponse.json({ events: [], allDayEvents: [] })
 
     const min = new Date(`${from}T00:00:00Z`); min.setUTCDate(min.getUTCDate() - 1)
@@ -26,11 +27,16 @@ export async function GET(req: Request) {
     const timeMinISO = min.toISOString()
     const timeMaxISO = max.toISOString()
 
+    // The "HQ" calendar holds HQ's own committed task/action blocks. The Home
+    // ribbon (exclude_hq=1) drops it so it shows real meetings + all-day only,
+    // not HQ time-blocks. The Calendar screen leaves it in (no param).
+    const keepCal = (id: string) => !(excludeHq && hqCalendarId && id === hqCalendarId)
+
     const batches = await Promise.all(
       readCalendarIds.map((id) => listEvents(accessToken, id, timeMinISO, timeMaxISO)),
     )
-    const events: GoogleBusyEvent[] = batches.flatMap((b) => b.busy).filter((e) => e.date >= from && e.date <= to)
-    const allDayEvents: GoogleAllDayEvent[] = batches.flatMap((b) => b.allDay).filter((e) => e.date >= from && e.date <= to)
+    const events: GoogleBusyEvent[] = batches.flatMap((b) => b.busy).filter((e) => keepCal(e.calendarId) && e.date >= from && e.date <= to)
+    const allDayEvents: GoogleAllDayEvent[] = batches.flatMap((b) => b.allDay).filter((e) => keepCal(e.calendarId) && e.date >= from && e.date <= to)
     return NextResponse.json({ events, allDayEvents })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'error'

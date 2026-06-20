@@ -402,11 +402,11 @@ export default function Home({
           <div className="ahead"><span className="label">Needs attention</span><span className="cap">overdue tasks only</span></div>
           {overdue.map(t => (
             <div key={t.id} className="arow">
+              <button className="cb" onClick={() => toggleTask(t)} title="Complete" />
               <span className="dot" style={{ background: colorForSpace(t.space_id) }} />
               <span className="at">{t.title}</span>
               <span className="od">{daysBetween(t.due_date!, todayStr)}d overdue</span>
               <span className="acts">
-                <button className="abtn primary" onClick={() => toggleTask(t)}>✓ Complete</button>
                 <button className="abtn" onClick={() => backlogTask(t)}>Backlog</button>
                 <button className="abtn" onClick={() => snoozeTask(t)}>Snooze</button>
                 <button className="abtn kill" onClick={() => killTask(t)}>Kill</button>
@@ -515,16 +515,16 @@ export default function Home({
 
         .attn{margin-top:30px;}
         .attn .ahead{display:flex;align-items:center;gap:11px;margin-bottom:12px;}
-        .attn .ahead .label{color:var(--nw-alarm-text,#ff6452);}
         .attn .ahead .cap{font-size:12px;color:var(--navy-400);}
-        .arow{display:flex;align-items:center;gap:14px;padding:12px 16px;background:var(--navy-800);border:1px solid var(--navy-700);border-left:3px solid var(--nw-alarm-text,#ff6452);border-radius:11px;margin-bottom:10px;}
-        .arow .at{flex:1;font-size:15px;color:var(--navy-100);}
-        .arow .od{font-size:11px;font-weight:700;color:var(--nw-alarm-text,#ff6452);white-space:nowrap;}
+        .arow{display:flex;align-items:center;gap:13px;padding:11px 16px;background:var(--navy-800);border:1px solid var(--navy-700);border-radius:11px;margin-bottom:8px;}
+        .arow .cb{width:20px;height:20px;border-radius:50%;border:2px solid var(--navy-500);background:none;flex-shrink:0;cursor:pointer;padding:0;}
+        .arow .at{flex:1;font-size:14.5px;color:var(--navy-100);}
+        .arow .od{font-size:11px;font-weight:600;color:var(--navy-400);white-space:nowrap;}
         .acts{display:flex;gap:7px;}
-        .abtn{font-size:12px;padding:6px 12px;border-radius:7px;border:1px solid var(--navy-600);background:var(--navy-700);color:var(--navy-200);cursor:pointer;font-family:inherit;}
-        .abtn:hover{background:var(--navy-600);}
-        .abtn.primary{background:var(--accent-dim);color:var(--accent);border-color:var(--accent);}
-        .abtn.kill{color:var(--nw-alarm-text,#ff6452);border-color:#3a1512;}
+        .abtn{font-size:12px;padding:6px 12px;border-radius:7px;border:1px solid var(--navy-600);background:var(--navy-700);color:var(--navy-300);cursor:pointer;font-family:inherit;}
+        .abtn:hover{background:var(--navy-600);color:var(--navy-100);}
+        .abtn.kill{color:var(--navy-300);}
+        .abtn.kill:hover{color:var(--nw-alarm-text,#ff6452);border-color:#3a1512;}
       `}</style>
     </div>
   )
