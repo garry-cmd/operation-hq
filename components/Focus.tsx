@@ -376,12 +376,6 @@ export default function Focus({
               {taskTotal === 0 ? 'No actions planned yet' : allDone ? '✓ All actions done!' : `${taskDone} of ${taskTotal} actions done`}
             </span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {taskTotal > 0 && (
-                <button onClick={() => setPlanning(true)}
-                  style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'none', border: '1px solid var(--accent-dim)', borderRadius: 8, padding: '4px 10px', cursor: 'pointer' }}>
-                  Re-plan
-                </button>
-              )}
               <button style={navBtn} onClick={() => goToWeek(-1)}>‹</button>
               <button style={navBtn} onClick={() => goToWeek(1)}>›</button>
             </div>

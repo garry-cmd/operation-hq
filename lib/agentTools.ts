@@ -186,6 +186,30 @@ export const TOOLS = [
   },
 ]
 
+// Server-executed READ tools. Unlike TOOLS (propose-first mutations surfaced as
+// approval cards) and unlike web_search (an Anthropic server tool), these are
+// OUR custom tools that the /api/agent route runs server-side mid-turn and feeds
+// back to the model as a tool_result, so the model can reason over the result in
+// the same logical turn. Read-only — no approval card. Kept OUT of TOOLS so the
+// briefing generator and the client-side proposal executor never see them.
+export const READ_TOOLS = [
+  {
+    name: 'read_note',
+    description:
+      'Read the full current contents of a note by its [note:…] id. Returns the note\u2019s title and its complete text. Use this BEFORE append_note or update_note when you need to see what the note already contains (so you rewrite/extend it accurately rather than blindly), and whenever the operator asks what a note says, to summarize it, or to pull something out of it. The result comes back to you in the same turn — read first, then answer or propose.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        note_id: { type: 'string', description: 'The note id from [note:…] (the value after note:, or the whole [note:…] token).' },
+      },
+      required: ['note_id'],
+    },
+  },
+]
+
+/** Names of the server-executed read tools — the route runs these in-turn rather than proposing them. */
+export const READ_TOOL_NAMES = new Set(READ_TOOLS.map(t => t.name))
+
 // Anthropic-executed server tool: web search. Runs inside the model's turn
 // (read-only, no approval needed) so the agent can pull real, current info.
 export const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 5 }
