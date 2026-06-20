@@ -1,4 +1,10 @@
 # Operation HQ — Session Pickup Notes
+
+> ⚠️ **Superseded by [`/CONTEXT.md`](../CONTEXT.md)** (root) as of Jun 19, 2026 — that is now
+> the single source of truth for current state, backlog/roadmap, conventions, deploy workflow,
+> spaces/IDs, and schema. This file is **retained for history** (session-by-session detail)
+> and is no longer maintained.
+
 *Last updated: Jun 19, 2026 (end of day) · The May 18 starter below is retained for history; read the Jun 19 block first.*
 
 ---
