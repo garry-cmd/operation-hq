@@ -18,6 +18,7 @@ import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
 import * as capacityDb from '@/lib/db/capacityBlocks'
 import * as calBlocksDb from '@/lib/db/calendarBlocks'
+import * as googleTokensDb from '@/lib/db/googleTokens'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -91,6 +92,7 @@ export default function HQPage() {
   const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
   const [capacityBlocks, setCapacityBlocks] = useState<CapacityBlock[]>([])
   const [calendarBlocks, setCalendarBlocks] = useState<CalendarBlock[]>([])
+  const [googleConnected, setGoogleConnected] = useState(false)
   // Notes state (Jun 2026). Lifted from Notes.tsx so global search can match
   // note titles and body text. Same pattern as the Tasks lift (May 18).
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
@@ -206,6 +208,36 @@ export default function HQPage() {
     return () => subscription.unsubscribe()
   }, [])
 
+  // Connect / disconnect Google. Connect fetches the consent URL (with our
+  // Bearer so the route can identify us) then redirects the browser to Google.
+  const connectGoogle = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const res = await fetch('/api/google/connect', { headers: { Authorization: `Bearer ${session.access_token}` } })
+    if (!res.ok) { setToast('Could not start Google connect'); return }
+    const { url } = await res.json()
+    window.location.href = url
+  }, [])
+
+  const disconnectGoogle = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    const res = await fetch('/api/google/disconnect', { method: 'POST', headers: { Authorization: `Bearer ${session.access_token}` } })
+    if (res.ok) { setGoogleConnected(false); setToast('Google disconnected') }
+    else setToast('Could not disconnect')
+  }, [])
+
+  // Surface the OAuth round-trip result (callback redirects to /hq?google=...).
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const g = params.get('google')
+    if (!g) return
+    if (g === 'connected') { setGoogleConnected(true); setToast('Google Calendar connected') }
+    else if (g === 'denied') setToast('Google connection cancelled')
+    else if (g === 'error') setToast('Google connection failed — try again')
+    window.history.replaceState({}, '', '/hq')
+  }, [])
+
   const loadAll = useCallback(async () => {
     setLoading(true)
     // Per-call fallbacks preserve the original behavior: if a single table
@@ -216,7 +248,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt, cap, calb] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt, cap, calb, gstat] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -235,6 +267,7 @@ export default function HQPage() {
       notesDb.listAll().catch(fallback('notes', [] as Note[])),
       capacityDb.listAll().catch(fallback('calendar_capacity_blocks', [] as CapacityBlock[])),
       calBlocksDb.listAll().catch(fallback('calendar_blocks', [] as CalendarBlock[])),
+      googleTokensDb.getStatus().catch(fallback('google_status', { connected: false, hqCalendarId: null, readCalendarIds: [] })),
     ])
     setObjectives(o)
     setRoadmapItems(r)
@@ -254,6 +287,7 @@ export default function HQPage() {
     setNotes(nt)
     setCapacityBlocks(cap)
     setCalendarBlocks(calb)
+    setGoogleConnected(gstat.connected)
     // Tags follow tasks — a second query keyed by the loaded task ids. If
     // it fails we silently fall back to empty (tag-driven UI degrades to
     // "no tags," which is preferable to blocking task load).
@@ -718,7 +752,9 @@ export default function HQPage() {
           setCapacityBlocks={setCapacityBlocks}
           calendarBlocks={calendarBlocks}
           setCalendarBlocks={setCalendarBlocks}
-          googleConnected={false}
+          googleConnected={googleConnected}
+          onConnectGoogle={connectGoogle}
+          onDisconnectGoogle={disconnectGoogle}
           toast={setToast}
         />
       ) : screen === 'tags' && !loading ? (

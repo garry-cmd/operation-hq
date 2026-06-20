@@ -66,13 +66,15 @@ type Props = {
   calendarBlocks: CalendarBlock[]
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   googleConnected: boolean
+  onConnectGoogle: () => void
+  onDisconnectGoogle: () => void
   toast: (m: string) => void
 }
 
 export default function Calendar({
   spaces, roadmapItems, actions, tasks,
   capacityBlocks, setCapacityBlocks, calendarBlocks, setCalendarBlocks,
-  googleConnected, toast,
+  googleConnected, onConnectGoogle, onDisconnectGoogle, toast,
 }: Props) {
   const [viewWeek, setViewWeek] = useState<string>(getMonday())
   const [mode, setMode] = useState<'week' | 'template'>('week')
@@ -267,14 +269,24 @@ export default function Calendar({
           <button onClick={() => setMode('template')} style={segBtn(mode === 'template')}>Template</button>
         </div>
         <div style={{ flex: 1 }} />
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
-          border: '1px solid var(--navy-600)', borderRadius: 8, padding: '4px 10px',
-          color: googleConnected ? 'var(--teal-text)' : 'var(--navy-400)', background: 'var(--navy-800)',
-        }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: googleConnected ? 'var(--teal-text)' : 'var(--navy-500)' }} />
-          {googleConnected ? 'Google connected' : 'Google not connected'}
-        </span>
+        {googleConnected ? (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
+              border: '1px solid var(--navy-600)', borderRadius: 8, padding: '4px 10px',
+              color: 'var(--teal-text)', background: 'var(--navy-800)',
+            }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--teal-text)' }} />
+              Google connected
+            </span>
+            <button onClick={onDisconnectGoogle} style={ghostBtn}>Disconnect</button>
+          </div>
+        ) : (
+          <button onClick={onConnectGoogle} style={{ ...primaryBtn, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff' }} />
+            Connect Google Calendar
+          </button>
+        )}
       </div>
 
       {mode === 'week'
