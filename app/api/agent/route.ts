@@ -211,7 +211,10 @@ export async function POST(req: Request) {
                   if (pendingBoundary) {
                     pendingBoundary = false
                     const prevWs = !lastChar || /\s/.test(lastChar)
-                    if (!prevWs && !/^\s/.test(text)) text = ' ' + text // bridge only when neither side has a space
+                    // Bridge only a genuine word collision ("hours.Perfect"): prev
+                    // has no trailing space and the next block starts with a letter
+                    // or digit. Never before punctuation (avoids "Townsend ,").
+                    if (!prevWs && /^[\p{L}\p{N}]/u.test(text)) text = ' ' + text
                   }
                   send({ t: 'text', d: text })
                   emittedText = true; lastChar = text.slice(-1)
