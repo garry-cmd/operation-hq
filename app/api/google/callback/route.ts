@@ -17,17 +17,22 @@ export async function GET(req: Request) {
   const error = url.searchParams.get('error')
 
   if (error) return NextResponse.redirect(`${origin}/hq?google=denied`)
-  if (!code || !state) return NextResponse.redirect(`${origin}/hq?google=error`)
+  if (!code || !state) return NextResponse.redirect(`${origin}/hq?google=error&reason=missing_params`)
 
   const userId = verifyState(state)
-  if (!userId) return NextResponse.redirect(`${origin}/hq?google=error`)
+  if (!userId) return NextResponse.redirect(`${origin}/hq?google=error&reason=bad_state`)
 
+  // Track which step fails so the error is diagnosable from logs + the redirect.
+  let step = 'exchange'
   try {
     const tokens = await exchangeCode(code)
+    step = 'calendar'
     const hqCalendarId = await ensureHqCalendar(tokens.access_token)
+    step = 'save'
     await saveTokens(userId, tokens, hqCalendarId)
     return NextResponse.redirect(`${origin}/hq?google=connected`)
-  } catch {
-    return NextResponse.redirect(`${origin}/hq?google=error`)
+  } catch (e) {
+    console.error(`[google callback] failed at step "${step}":`, e instanceof Error ? e.message : e)
+    return NextResponse.redirect(`${origin}/hq?google=error&reason=${step}`)
   }
 }

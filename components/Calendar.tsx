@@ -18,6 +18,8 @@ import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import * as capDb from '@/lib/db/capacityBlocks'
 import * as calDb from '@/lib/db/calendarBlocks'
 import { planWeek, minutesToLabel, SchedulableItem, BusyInterval, dateForDow } from '@/lib/calendarPlan'
+import * as gcal from '@/lib/db/googleApi'
+import type { GoogleBusyEvent } from '@/lib/db/googleApi'
 
 const GRID_START_H = 6           // 6 AM
 const GRID_END_H = 22            // 10 PM
@@ -80,11 +82,39 @@ export default function Calendar({
   const [mode, setMode] = useState<'week' | 'template'>('week')
   const [busy, setBusy] = useState(false)
 
+  // Stage 2 — Google read state. Meetings for the current week, the user's
+  // calendar list, and which calendars feed the meetings overlay.
+  const [googleEvents, setGoogleEvents] = useState<GoogleBusyEvent[]>([])
+  const [calendars, setCalendars] = useState<gcal.GoogleCalendarMeta[]>([])
+  const [selectedCalIds, setSelectedCalIds] = useState<string[]>([])
+  const [calsLoaded, setCalsLoaded] = useState(false)
+  const [showCals, setShowCals] = useState(false)
+
   const weekEnd = useMemo(() => {
     const d = parseDateLocal(viewWeek); d.setDate(d.getDate() + 6); return ymd(d)
   }, [viewWeek])
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(viewWeek, i)), [viewWeek])
   const todayStr = ymd(new Date())
+
+  // Fetch Google meetings for the visible week (re-runs on week change).
+  useEffect(() => {
+    if (!googleConnected) { setGoogleEvents([]); return }
+    let cancelled = false
+    gcal.fetchEvents(viewWeek, weekEnd)
+      .then(evs => { if (!cancelled) setGoogleEvents(evs) })
+      .catch(() => { if (!cancelled) setGoogleEvents([]) })
+    return () => { cancelled = true }
+  }, [googleConnected, viewWeek, weekEnd])
+
+  // Load the calendar list + current read selection once per connection.
+  useEffect(() => {
+    if (!googleConnected) { setCalendars([]); setSelectedCalIds([]); setCalsLoaded(false); return }
+    let cancelled = false
+    gcal.listCalendars()
+      .then(({ calendars, selected }) => { if (!cancelled) { setCalendars(calendars); setSelectedCalIds(selected); setCalsLoaded(true) } })
+      .catch(() => { if (!cancelled) setCalsLoaded(true) })
+    return () => { cancelled = true }
+  }, [googleConnected])
 
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
@@ -100,13 +130,25 @@ export default function Calendar({
     return s
   }, [weekBlocks])
 
-  // Committed HQ blocks read as fixed commitments (Google meetings merge here
-  // in Stage 2). Used by the planner as busy time and shown on the template.
-  const commitments = useMemo<Commitment[]>(
-    () => weekBlocks.filter(b => b.status === 'committed').map(b => ({
-      date: b.block_date, start_minute: b.start_minute, end_minute: b.end_minute, title: b.title, source: 'hq' as const,
+  // Google meetings as read-only commitments (week grid overlay).
+  const meetings = useMemo<Commitment[]>(
+    () => googleEvents.map(e => ({
+      date: e.date, start_minute: e.startMinute, end_minute: e.endMinute, title: e.title, source: 'google' as const,
     })),
-    [weekBlocks],
+    [googleEvents],
+  )
+
+  // Committed HQ blocks + Google meetings read as fixed commitments. Used by the
+  // planner as busy time and shown on the template. (Week grid renders committed
+  // HQ blocks as real blocks already, so it overlays only `meetings`.)
+  const commitments = useMemo<Commitment[]>(
+    () => [
+      ...weekBlocks.filter(b => b.status === 'committed').map(b => ({
+        date: b.block_date, start_minute: b.start_minute, end_minute: b.end_minute, title: b.title, source: 'hq' as const,
+      })),
+      ...meetings,
+    ],
+    [weekBlocks, meetings],
   )
 
   // Schedulable items for this week (not already placed). Items without a real
@@ -225,6 +267,7 @@ export default function Calendar({
   }
 
   // Drag an existing block to a new slot — keeps its duration, optimistic.
+  // Committed blocks sync the move to Google; proposed blocks are local.
   async function moveBlockAt(blockId: string, date: string, start: number) {
     if (busy) return
     const b = calendarBlocks.find(x => x.id === blockId)
@@ -234,9 +277,12 @@ export default function Calendar({
     const end = start + dur
     setCalendarBlocks(prev => prev.map(x => x.id === blockId ? { ...x, block_date: date, start_minute: start, end_minute: end } : x))
     try {
-      await calDb.update(blockId, { block_date: date, start_minute: start, end_minute: end })
+      if (b.status === 'committed') await gcal.moveCommittedBlock(blockId, date, start)
+      else await calDb.update(blockId, { block_date: date, start_minute: start, end_minute: end })
     } catch {
       toast('Could not move block')
+      setCalendarBlocks(prev => prev.map(x => x.id === blockId
+        ? { ...x, block_date: b.block_date, start_minute: b.start_minute, end_minute: b.end_minute } : x))
     }
   }
 
@@ -244,12 +290,46 @@ export default function Calendar({
     if (busy) return
     setBusy(true)
     try {
-      await calDb.remove(b.id)
+      if (b.status === 'committed') await gcal.deleteCommittedBlock(b.id) // also deletes the Google event
+      else await calDb.remove(b.id)
       setCalendarBlocks(prev => prev.filter(x => x.id !== b.id))
     } catch {
       toast('Could not remove block')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Push this week's proposed blocks to the HQ Google calendar → committed.
+  async function commitWeek() {
+    if (busy) return
+    const proposed = weekBlocks.filter(b => b.status === 'proposed')
+    if (proposed.length === 0) { toast('No proposed blocks to commit'); return }
+    setBusy(true)
+    try {
+      const { committed, failed } = await gcal.commitWeek(viewWeek, weekEnd)
+      const byId = new Map(committed.map(b => [b.id, b]))
+      setCalendarBlocks(prev => prev.map(b => byId.get(b.id) ?? b))
+      toast(failed.length === 0
+        ? `Committed ${committed.length} to Google`
+        : `Committed ${committed.length} · ${failed.length} failed`)
+    } catch {
+      toast('Commit failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Toggle a read-source calendar, persist, and refresh the meetings overlay.
+  async function toggleCal(id: string) {
+    const next = selectedCalIds.includes(id) ? selectedCalIds.filter(x => x !== id) : [...selectedCalIds, id]
+    setSelectedCalIds(next)
+    try {
+      await gcal.saveReadCalendars(next)
+      const evs = await gcal.fetchEvents(viewWeek, weekEnd)
+      setGoogleEvents(evs)
+    } catch {
+      toast('Could not update calendars')
     }
   }
 
@@ -271,6 +351,33 @@ export default function Calendar({
         <div style={{ flex: 1 }} />
         {googleConnected ? (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowCals(s => !s)} style={ghostBtn}>
+                Calendars{selectedCalIds.length ? ` · ${selectedCalIds.length}` : ''} ▾
+              </button>
+              {showCals && (
+                <>
+                  <div onClick={() => setShowCals(false)} style={{ position: 'fixed', inset: 0, zIndex: 55 }} />
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 60, width: 286, maxHeight: 340, overflowY: 'auto',
+                    background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, padding: 10, boxShadow: '0 16px 50px rgba(0,0,0,.5)',
+                  }}>
+                    <div style={{ ...nwLabel, margin: '2px 4px 8px' }}>Read meetings from</div>
+                    {!calsLoaded && <div style={{ fontSize: 12, color: 'var(--navy-400)', padding: '8px 4px' }}>Loading…</div>}
+                    {calsLoaded && calendars.length === 0 && <div style={{ fontSize: 12, color: 'var(--navy-400)', padding: '8px 4px' }}>No calendars found.</div>}
+                    {calendars.map(c => (
+                      <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '6px 4px', cursor: 'pointer', fontSize: 12.5, color: 'var(--navy-100)' }}>
+                        <input type="checkbox" checked={selectedCalIds.includes(c.id)} onChange={() => toggleCal(c.id)} />
+                        <span style={{ width: 9, height: 9, borderRadius: 3, background: c.backgroundColor || 'var(--navy-500)', flexShrink: 0 }} />
+                        <span style={{ flex: 1, minWidth: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {c.summary}{c.primary ? ' · primary' : ''}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
             <span style={{
               display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 600,
               border: '1px solid var(--navy-600)', borderRadius: 8, padding: '4px 10px',
@@ -293,11 +400,12 @@ export default function Calendar({
         ? <WeekView
             weekDates={weekDates} todayStr={todayStr}
             blocks={weekBlocks} capacityByDate={capacityByDate}
-            items={items}
+            items={items} meetings={meetings}
             spaceById={spaceById} colorFor={colorFor}
             onPlaceItem={placeItemAt} onMoveBlock={moveBlockAt} onRemoveBlock={removeBlock}
-            onPlan={runPlanner} onClear={clearProposed} busy={busy}
-            googleConnected={googleConnected} toast={toast}
+            onPlan={runPlanner} onClear={clearProposed} onCommit={commitWeek}
+            proposedCount={weekBlocks.filter(b => b.status === 'proposed').length}
+            busy={busy} googleConnected={googleConnected} toast={toast}
           />
         : <TemplateView
             spaces={spaces} capacityBlocks={capacityBlocks} setCapacityBlocks={setCapacityBlocks}
@@ -360,16 +468,18 @@ function CommitmentBlock({ c }: { c: Commitment }) {
 function WeekView(props: {
   weekDates: string[]; todayStr: string
   blocks: CalendarBlock[]; capacityByDate: Map<string, CapacityBlock[]>
-  items: SchedulableItem[]
+  items: SchedulableItem[]; meetings: Commitment[]
   spaceById: Map<string, Space>; colorFor: (id: string | null) => string
   onPlaceItem: (itemKey: string, date: string, start: number) => void
   onMoveBlock: (blockId: string, date: string, start: number) => void
   onRemoveBlock: (b: CalendarBlock) => void
-  onPlan: () => void; onClear: () => void; busy: boolean; googleConnected: boolean
+  onPlan: () => void; onClear: () => void; onCommit: () => void
+  proposedCount: number; busy: boolean; googleConnected: boolean
   toast: (m: string) => void
 }) {
-  const { weekDates, todayStr, blocks, capacityByDate, items,
-    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onClear, busy, googleConnected, toast } = props
+  const { weekDates, todayStr, blocks, capacityByDate, items, meetings,
+    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onClear, onCommit,
+    proposedCount, busy, googleConnected, toast } = props
   const gridH = (GRID_END_H - GRID_START_H) * ROW_H
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
   const [over, setOver] = useState<{ date: string; valid: boolean } | null>(null)
@@ -444,6 +554,16 @@ function WeekView(props: {
           <button onClick={onPlan} disabled={busy} style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>Plan week</button>
           <button onClick={onClear} disabled={busy} style={{ ...ghostBtn, opacity: busy ? 0.6 : 1 }}>Clear</button>
         </div>
+        {googleConnected && (
+          <button
+            onClick={onCommit}
+            disabled={busy || proposedCount === 0}
+            title={proposedCount === 0 ? 'No proposed blocks this week' : 'Write proposed blocks to your HQ Google calendar'}
+            style={{ ...ghostBtn, width: '100%', marginBottom: 12, opacity: busy || proposedCount === 0 ? 0.5 : 1 }}
+          >
+            Commit {proposedCount > 0 ? `${proposedCount} ` : ''}to Google
+          </button>
+        )}
         {items.length === 0 && (
           <p style={{ fontSize: 12, color: 'var(--navy-500)', textAlign: 'center', padding: '14px 0' }}>Nothing left to schedule.</p>
         )}
@@ -487,6 +607,7 @@ function WeekView(props: {
               const today = date === todayStr
               const caps = capacityByDate.get(date) ?? []
               const dayBlocks = blocks.filter(b => b.block_date === date)
+              const dayMeetings = meetings.filter(m => m.date === date)
               const overThis = over?.date === date
               return (
                 <div
@@ -500,6 +621,8 @@ function WeekView(props: {
                   }}
                 >
                   <HourLines />
+                  {/* Google meetings (read-only, behind HQ blocks) */}
+                  {dayMeetings.map((m, i) => <CommitmentBlock key={`m${i}`} c={m} />)}
                   {caps.map(c => {
                     const lit = dragCtx ? accepts(c, dragCtx.kind, dragCtx.spaceId) : false
                     return (

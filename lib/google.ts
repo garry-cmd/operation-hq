@@ -155,3 +155,135 @@ export async function ensureHqCalendar(accessToken: string): Promise<string> {
   const cal = await createR.json()
   return cal.id
 }
+
+// ════════════════════════════════════════════════════════════════════
+// STAGE 2 — calendar list, events read, event write/patch/delete,
+//           read-calendar selection, local⇄RFC3339 conversion.
+// ════════════════════════════════════════════════════════════════════
+
+/** App working timezone. Blocks + capacity are stored as wall-clock minutes
+ *  and interpreted here. Garry splits PNW/Mexico — Pacific is the safe default
+ *  for now; make this per-user configurable later if it matters. */
+export const APP_TZ = 'America/Los_Angeles'
+
+const pad2 = (n: number) => String(n).padStart(2, '0')
+
+/** RFC3339 local-datetime string (no offset) for a wall-clock date+minute.
+ *  Paired with `timeZone: APP_TZ` so Google interprets it in our tz. */
+export function localDateTime(date: string, minute: number): string {
+  return `${date}T${pad2(Math.floor(minute / 60))}:${pad2(minute % 60)}:00`
+}
+
+/** Convert any instant (RFC3339 w/ offset, or 'Z') to APP_TZ wall-clock
+ *  { date:'YYYY-MM-DD', minute:0..1439 }. */
+export function toLocalParts(iso: string, tz: string = APP_TZ): { date: string; minute: number } {
+  const d = new Date(iso)
+  const f = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  })
+  const p: Record<string, string> = {}
+  for (const part of f.formatToParts(d)) p[part.type] = part.value
+  let hour = parseInt(p.hour, 10)
+  if (hour === 24) hour = 0 // some engines emit 24 for midnight
+  return { date: `${p.year}-${p.month}-${p.day}`, minute: hour * 60 + parseInt(p.minute, 10) }
+}
+
+export interface GoogleCalendarMeta { id: string; summary: string; primary: boolean; backgroundColor: string | null; accessRole: string }
+
+/** All calendars on the user's list (for the read-source selector). */
+export async function listCalendars(accessToken: string): Promise<GoogleCalendarMeta[]> {
+  const r = await fetch(`${CAL_API}/users/me/calendarList?minAccessRole=reader&maxResults=250`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!r.ok) throw new Error(`calendarList failed: ${r.status} ${await r.text()}`)
+  const j = await r.json()
+  return (j.items ?? []).map((c: Record<string, unknown>) => ({
+    id: c.id as string,
+    summary: (c.summaryOverride as string) || (c.summary as string) || (c.id as string),
+    primary: Boolean(c.primary),
+    backgroundColor: (c.backgroundColor as string) ?? null,
+    accessRole: (c.accessRole as string) ?? 'reader',
+  }))
+}
+
+export interface GoogleBusyEvent { id: string; calendarId: string; title: string; date: string; startMinute: number; endMinute: number }
+
+/** Timed, non-free events from one calendar within [timeMinISO, timeMaxISO].
+ *  All-day events and transparency:'transparent' (free) are skipped. Times are
+ *  converted to APP_TZ wall-clock for grid rendering + planner busy intervals. */
+export async function listEvents(accessToken: string, calendarId: string, timeMinISO: string, timeMaxISO: string): Promise<GoogleBusyEvent[]> {
+  const p = new URLSearchParams({
+    timeMin: timeMinISO, timeMax: timeMaxISO,
+    singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
+  })
+  const r = await fetch(`${CAL_API}/calendars/${encodeURIComponent(calendarId)}/events?${p.toString()}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  if (!r.ok) {
+    // A single unreadable calendar shouldn't kill the whole overlay.
+    console.error(`events fetch failed for ${calendarId}: ${r.status} ${await r.text()}`)
+    return []
+  }
+  const j = await r.json()
+  const out: GoogleBusyEvent[] = []
+  for (const ev of (j.items ?? []) as Record<string, any>[]) {
+    if (ev.status === 'cancelled') continue
+    if (ev.transparency === 'transparent') continue // marked Free
+    const start = ev.start?.dateTime
+    const end = ev.end?.dateTime
+    if (!start || !end) continue // all-day (start.date) — skipped in v1
+    const s = toLocalParts(start)
+    const e = toLocalParts(end)
+    const endMinute = e.date === s.date ? e.minute : 22 * 60 // clamp overnight to grid end
+    if (endMinute <= s.minute) continue
+    out.push({
+      id: ev.id, calendarId, title: ev.summary || '(busy)',
+      date: s.date, startMinute: s.minute, endMinute,
+    })
+  }
+  return out
+}
+
+/** Create a timed event; returns the new event id. */
+export async function createEvent(accessToken: string, calendarId: string, e: { summary: string; date: string; startMinute: number; endMinute: number }): Promise<string> {
+  const r = await fetch(`${CAL_API}/calendars/${encodeURIComponent(calendarId)}/events`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      summary: e.summary,
+      start: { dateTime: localDateTime(e.date, e.startMinute), timeZone: APP_TZ },
+      end: { dateTime: localDateTime(e.date, e.endMinute), timeZone: APP_TZ },
+    }),
+  })
+  if (!r.ok) throw new Error(`create event failed: ${r.status} ${await r.text()}`)
+  return (await r.json()).id
+}
+
+export async function patchEvent(accessToken: string, calendarId: string, eventId: string, e: { date: string; startMinute: number; endMinute: number }): Promise<void> {
+  const r = await fetch(`${CAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
+    method: 'PATCH',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      start: { dateTime: localDateTime(e.date, e.startMinute), timeZone: APP_TZ },
+      end: { dateTime: localDateTime(e.date, e.endMinute), timeZone: APP_TZ },
+    }),
+  })
+  if (!r.ok) throw new Error(`patch event failed: ${r.status} ${await r.text()}`)
+}
+
+export async function deleteEvent(accessToken: string, calendarId: string, eventId: string): Promise<void> {
+  const r = await fetch(`${CAL_API}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  // 404/410 = already gone; treat as success (idempotent delete).
+  if (!r.ok && r.status !== 404 && r.status !== 410) throw new Error(`delete event failed: ${r.status} ${await r.text()}`)
+}
+
+/** Persist the user's chosen read-source calendars. */
+export async function setReadCalendarIds(userId: string, ids: string[]): Promise<void> {
+  const admin = getSupabaseAdmin()
+  const { error } = await admin.from('user_google_tokens').update({ read_calendar_ids: ids }).eq('user_id', userId)
+  if (error) throw error
+}
