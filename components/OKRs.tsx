@@ -152,14 +152,15 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
 
   return (
     <div>
-      <div style={{ marginBottom: 18 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', margin: 0 }}>{spaceName}</h1>
+      <div style={{ marginBottom: 22 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 6 }}>Strategic · OKRs</div>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', margin: 0, letterSpacing: '-.02em' }}>{spaceName}</h1>
       </div>
 
       {/* KPI Dashboard */}
       {(activeKRs.filter(kr => kr.is_habit).length > 0 || activeKRs.filter(kr => kr.is_metric).length > 0) && (
         <div style={{ marginBottom: 20 }}>
-          <h2 style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Key metrics</h2>
+          <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Key metrics</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
             {/* Habit KPIs */}
             {activeKRs
@@ -185,16 +186,17 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
                   <div key={kr.id}
                     title={`${aggregate.sessions}/${aggregate.expected} sessions`}
                     style={{
-                    background: 'var(--navy-800)',
-                    border: '1px solid var(--navy-700)',
+                    background: 'var(--surface)',
+                    border: '1px solid var(--line)',
                     borderLeft: `3px solid ${borderAccent}`,
-                    borderRadius: 8,
+                    borderRadius: 14,
+                    boxShadow: 'var(--card-shadow)',
                     padding: '14px 16px',
                   }}>
                     <p style={{ fontSize: 12, color: 'var(--nw-cream)', fontWeight: 500, margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {kr.title}
                     </p>
-                    <p style={{ fontSize: 28, fontWeight: 700, color: heroColor, margin: 0, letterSpacing: '-.01em', lineHeight: 1, fontFeatureSettings: '"tnum"' }}>
+                    <p style={{ fontFamily: 'var(--font-mono)', fontSize: 28, fontWeight: 600, color: heroColor, margin: 0, letterSpacing: '-.01em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                       {aggregate.percent}<span style={{ fontSize: 16 }}>%</span>
                     </p>
                   </div>
@@ -231,7 +233,7 @@ export default function OKRs({ objectives, roadmapItems, setObjectives, setRoadm
           state above doesn't get crowded by a dangling header. */}
       {objectives.some(o => o.status !== 'abandoned') && (
       <div style={{ borderTop: '1px solid var(--navy-700)', paddingTop: 18, marginTop: 4 }}>
-        <h2 style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Objectives</h2>
+        <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Objectives</h2>
         {/* Two-column layout: card list on the left, ObjectivePanel sticky
             on the right when an objective is selected. Mirrors Focus.tsx's
             push-aside pattern for ActionPanel. <main> in page.tsx widens to
@@ -594,8 +596,8 @@ function MetricKPICard({
   const [flipped, setFlipped] = useState(false)
   const faceBase: CSSProperties = {
     position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden',
-    background: 'var(--navy-800)', border: '1px solid var(--navy-700)',
-    borderLeft: `3px solid ${borderAccent}`, borderRadius: 8, display: 'flex', flexDirection: 'column',
+    background: 'var(--surface)', border: '1px solid var(--line)',
+    borderLeft: `3px solid ${borderAccent}`, borderRadius: 14, boxShadow: 'var(--card-shadow)', display: 'flex', flexDirection: 'column',
   }
   const fmtRowVal = (v: number) => `${isPrefixCurrency(unit) ? unit.trim() : ''}${formatMetricNumber(v)}`
   const fmtShortDate = (d: string) => {
@@ -622,7 +624,7 @@ function MetricKPICard({
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
             {current != null ? (
               <>
-                <span style={{ fontSize: 28, fontWeight: 700, color: heroColor, lineHeight: 1, letterSpacing: '-.01em', fontFeatureSettings: '"tnum"' }}>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 28, fontWeight: 600, color: heroColor, lineHeight: 1, letterSpacing: '-.01em', fontVariantNumeric: 'tabular-nums' }}>
                   {isPrefixCurrency(unit) && unit.trim()}{formatMetricNumber(current)}
                 </span>
                 {isMeaningfulUnit(unit) && !isPrefixCurrency(unit) && <span style={{ fontSize: 13, color: 'var(--nw-label-dim)' }}>{unit.trim()}</span>}

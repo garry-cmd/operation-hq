@@ -83,7 +83,6 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const onTrack    = krs.filter(k => k.health_status === 'on_track').length
   const waiting    = krs.filter(k => k.health_status === 'waiting').length
   const pending    = krs.filter(k => k.health_status === 'not_started' || k.health_status === 'backlog').length
-  const progress = krs.length > 0 ? Math.round((doneKRs / krs.length) * 100) : 0
 
   // Avoid using `setObjectives` here so its prop stays unused but kept for
   // future panel-driven mutations (e.g. renaming an objective from the panel
@@ -212,7 +211,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
 
   return (
     <>
-      <div style={{ borderRadius: 10, overflow: 'hidden', marginBottom: 12, border: `1px solid var(--navy-700)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--navy-800)', transition: 'border-color .12s' }}>
+      <div style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 14, border: `1px solid var(--line)`, borderLeft: `3px solid ${accentColor}`, background: 'var(--surface)', boxShadow: 'var(--card-shadow)', transition: 'border-color .12s' }}>
 
         {/* Objective header — three-row layout (May 21 tighten pass):
             Row 1: title (left) · "N wk remain" (right)
@@ -231,12 +230,12 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                 onMouseLeave={() => setTitleHover(false)}
                 style={{
                   width: '100%', minWidth: 0,
-                  fontSize: 16, fontWeight: 500,
+                  fontSize: 18, fontWeight: 600,
                   color: isActive || titleHover ? 'var(--accent)' : 'var(--nw-cream)',
-                  lineHeight: 1.3,
+                  lineHeight: 1.25,
                   background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                  textAlign: 'left', fontFamily: 'inherit',
-                  letterSpacing: '-.005em',
+                  textAlign: 'left', fontFamily: 'var(--font-display)',
+                  letterSpacing: '-.015em',
                   transition: 'color .12s',
                 }}>
                 {obj.name}
@@ -330,10 +329,23 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
             </div>
           </div>
 
-          {/* Row 3 — progress bar (full width, bottom of header) */}
-          <div style={{ height: 5, background: 'var(--navy-700)', borderRadius: 99, overflow: 'hidden' }}>
-            <div style={{ height: '100%', width: `${Math.max(progress, krs.length > 0 ? 2 : 0)}%`, background: 'var(--nw-nominal-text)', borderRadius: 99, boxShadow: `0 0 6px var(--nw-glow-green)`, transition: 'width .4s ease' }} />
-          </div>
+          {/* Row 3 — segmented status bar: done · on track · off track · blocked · waiting · pending.
+              Encodes the full status mix as proportional segments (the instrument
+              "gauge" treatment) instead of a single done-percentage fill. */}
+          {krs.length > 0 && (
+            <div style={{ display: 'flex', gap: 2, height: 6, borderRadius: 4, overflow: 'hidden', background: 'var(--surface-2)' }}>
+              {([
+                [doneKRs,  'var(--nw-nominal-text)', 1],
+                [onTrack,  'var(--nw-nominal-text)', 0.5],
+                [offTrack, 'var(--nw-alarm-text)',   1],
+                [blocked,  'var(--nw-caution-text)', 1],
+                [waiting,  'var(--indigo-text)',     1],
+                [pending,  'var(--line-strong)',     1],
+              ] as [number, string, number][]).map(([n, c, op], idx) => n > 0 ? (
+                <span key={idx} style={{ flex: n, background: c, opacity: op }} />
+              ) : null)}
+            </div>
+          )}
         </div>
 
         {/* Body — hidden when collapsed */}
@@ -380,14 +392,14 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                       {kr.title}
                     </button>
                     {kr.is_metric && (
-                      <span title="Metric KR" style={{ fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '.5px' }}>metric</span>
+                      <span title="Metric KR" style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent-2)', textTransform: 'uppercase', letterSpacing: '.08em' }}>metric</span>
                     )}
                   </div>
                   {metricCtx ? (
                     <div style={{ fontSize: 11, color: 'var(--nw-label-dim)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       {metricCtx.latest ? (
                         <span>
-                          Latest: <span style={{ color: 'var(--nw-cream)', fontWeight: 600 }}>{metricCtx.latest.value}{metricCtx.unit && ` ${metricCtx.unit}`}</span>
+                          Latest: <span style={{ fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums', color: 'var(--nw-cream)', fontWeight: 600 }}>{metricCtx.latest.value}{metricCtx.unit && ` ${metricCtx.unit}`}</span>
                         </span>
                       ) : (
                         <span style={{ fontStyle: 'italic' }}>No readings yet</span>
@@ -418,7 +430,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                     Add action
                   </button>
                   <button onClick={() => cycleStatus(kr)}
-                    style={{ fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 3, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all .12s' }}>
+                    style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6, border: 'none', cursor: 'pointer', background: hs.bg, color: hs.color, letterSpacing: '.08em', textTransform: 'uppercase', whiteSpace: 'nowrap', display: 'inline-flex', alignItems: 'center', gap: 5, transition: 'all .12s' }}>
                     <span style={{ width: 4, height: 4, borderRadius: 99, background: 'currentColor' }} />
                     {hs.label}
                   </button>
@@ -544,10 +556,10 @@ function StatusPill({
   if (count === 0) return null
   return (
     <span style={{
-      fontSize: 11, fontWeight: 500,
+      fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 500,
       color: 'var(--navy-200)',
       display: 'inline-flex', alignItems: 'center', gap: 5,
-      whiteSpace: 'nowrap',
+      whiteSpace: 'nowrap', letterSpacing: '.02em',
       fontVariantNumeric: 'tabular-nums',
       padding: '2px 6px',
       lineHeight: 1.3,
