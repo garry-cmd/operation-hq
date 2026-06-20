@@ -341,3 +341,67 @@ export interface NoteVersion {
   body_format: string
   created_at: string
 }
+
+// ── Calendar / time-blocking ────────────────────────────────────────
+// Capacity blocks = the standing weekly TEMPLATE: recurring windows you
+// reserve for a kind of work, scoped to a space (or any). The auto-fill
+// planner packs the week's KR actions + due tasks into these windows,
+// working around committed Google meetings. (Migration:
+// calendar_capacity_blocks_and_scheduled_blocks, Jun 2026.)
+
+export type CapacityKind = 'kr_action' | 'task' | 'both'
+export type CalendarBlockStatus = 'proposed' | 'committed'
+
+export interface CapacityBlock {
+  id: string
+  space_id: string | null   // null = any space
+  kind: CapacityKind
+  label: string | null
+  day_of_week: number       // 0=Mon … 6=Sun (matches Focus week)
+  start_minute: number      // minutes from local midnight
+  end_minute: number
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export interface NewCapacityBlockInput {
+  space_id?: string | null
+  kind?: CapacityKind
+  label?: string | null
+  day_of_week: number
+  start_minute: number
+  end_minute: number
+  sort_order?: number
+}
+
+// A concrete placement of one HQ item (task XOR weekly_action) on a date/time.
+// status 'proposed' until committed (written to the HQ Google calendar).
+export interface CalendarBlock {
+  id: string
+  task_id: string | null
+  weekly_action_id: string | null
+  space_id: string | null
+  capacity_block_id: string | null
+  title: string
+  block_date: string        // YYYY-MM-DD (local)
+  start_minute: number
+  end_minute: number
+  google_event_id: string | null
+  google_calendar_id: string | null
+  status: CalendarBlockStatus
+  created_at: string
+  updated_at: string
+}
+
+export interface NewCalendarBlockInput {
+  task_id?: string | null
+  weekly_action_id?: string | null
+  space_id?: string | null
+  capacity_block_id?: string | null
+  title: string
+  block_date: string
+  start_minute: number
+  end_minute: number
+  status?: CalendarBlockStatus
+}

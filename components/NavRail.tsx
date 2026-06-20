@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'focus' | 'tasks' | 'notes' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
+export type Screen = 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
 
 interface Props {
   screen: Screen
@@ -66,6 +66,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
       { id: 'focus', label: 'Focus', icon: <FocusIcon /> },
       { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
+      { id: 'calendar', label: 'Calendar', icon: <CalendarIcon /> },
     ],
   },
   {
@@ -311,6 +312,16 @@ export default function NavRail(props: Props) {
 
 /* ----- icons -------------------------------------------------------- */
 
+function CalendarIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="17" rx="2" />
+      <line x1="3" y1="9" x2="21" y2="9" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+    </svg>
+  )
+}
 function FocusIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg>
 }

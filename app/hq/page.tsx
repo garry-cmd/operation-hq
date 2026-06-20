@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note, CapacityBlock, CalendarBlock } from '@/lib/types'
 import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
@@ -16,6 +16,8 @@ import * as taskListsDb from '@/lib/db/taskLists'
 import * as taskSectionsDb from '@/lib/db/taskSections'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
+import * as capacityDb from '@/lib/db/capacityBlocks'
+import * as calBlocksDb from '@/lib/db/calendarBlocks'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -25,6 +27,7 @@ import ParkingLot from '@/components/ParkingLot'
 import Summary from '@/components/Summary'
 import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
+import Calendar from '@/components/Calendar'
 import Tags from '@/components/Tags'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
@@ -36,7 +39,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'tags'
+type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags'
 
 
 export default function HQPage() {
@@ -86,6 +89,8 @@ export default function HQPage() {
   const [taskLists, setTaskLists] = useState<TaskList[]>([])
   const [taskSections, setTaskSections] = useState<TaskSection[]>([])
   const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
+  const [capacityBlocks, setCapacityBlocks] = useState<CapacityBlock[]>([])
+  const [calendarBlocks, setCalendarBlocks] = useState<CalendarBlock[]>([])
   // Notes state (Jun 2026). Lifted from Notes.tsx so global search can match
   // note titles and body text. Same pattern as the Tasks lift (May 18).
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
@@ -211,7 +216,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt, cap, calb] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -228,6 +233,8 @@ export default function HQPage() {
       taskSectionsDb.listAll().catch(fallback('task_sections', [] as TaskSection[])),
       notebooksDb.listAll().catch(fallback('notebooks', [] as Notebook[])),
       notesDb.listAll().catch(fallback('notes', [] as Note[])),
+      capacityDb.listAll().catch(fallback('calendar_capacity_blocks', [] as CapacityBlock[])),
+      calBlocksDb.listAll().catch(fallback('calendar_blocks', [] as CalendarBlock[])),
     ])
     setObjectives(o)
     setRoadmapItems(r)
@@ -245,6 +252,8 @@ export default function HQPage() {
     setTaskSections(ts)
     setNotebooks(nb)
     setNotes(nt)
+    setCapacityBlocks(cap)
+    setCalendarBlocks(calb)
     // Tags follow tasks — a second query keyed by the loaded task ids. If
     // it fails we silently fall back to empty (tag-driven UI degrades to
     // "no tags," which is preferable to blocking task load).
@@ -696,6 +705,20 @@ export default function HQPage() {
           onConsumeInitialNoteId={() => setNotesInitialId(null)}
           onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
           onFocusChange={setNotesFocus}
+          toast={setToast}
+        />
+      ) : screen === 'calendar' && !loading ? (
+        <Calendar
+          spaces={spaces}
+          objectives={objectives}
+          roadmapItems={roadmapItems}
+          actions={actions}
+          tasks={tasks}
+          capacityBlocks={capacityBlocks}
+          setCapacityBlocks={setCapacityBlocks}
+          calendarBlocks={calendarBlocks}
+          setCalendarBlocks={setCalendarBlocks}
+          googleConnected={false}
           toast={setToast}
         />
       ) : screen === 'tags' && !loading ? (
