@@ -27,6 +27,7 @@ import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Summary from '@/components/Summary'
 import Home from '@/components/Home'
+import Agent from '@/components/Agent'
 import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
 import Calendar from '@/components/Calendar'
@@ -41,7 +42,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'home' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags'
+type Screen = 'home' | 'agent' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags'
 
 
 export default function HQPage() {
@@ -785,6 +786,8 @@ export default function HQPage() {
           onDisconnectGoogle={disconnectGoogle}
           toast={setToast}
         />
+      ) : screen === 'agent' && !loading ? (
+        <Agent toast={setToast} />
       ) : screen === 'tags' && !loading ? (
         <Tags
           spaces={spaces}

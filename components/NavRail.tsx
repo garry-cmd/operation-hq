@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
+export type Screen = 'home' | 'agent' | 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
 
 interface Props {
   screen: Screen
@@ -65,6 +65,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
     label: 'Daily',
     items: [
       { id: 'home', label: 'Home', icon: <HomeIcon /> },
+      { id: 'agent', label: 'Chief of Staff', icon: <AgentIcon /> },
       { id: 'focus', label: 'Focus', icon: <FocusIcon /> },
       { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
@@ -314,6 +315,15 @@ export default function NavRail(props: Props) {
 // React import shim removed — useState now imported at top with useEffect/useRef.
 
 /* ----- icons -------------------------------------------------------- */
+
+function AgentIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      <path d="M12 7.5 12.9 10l2.6.6-2 1.7.4 2.7-1.9-1.2-1.9 1.2.4-2.7-2-1.7L11.1 10z" fill="currentColor" stroke="none" />
+    </svg>
+  )
+}
 
 function CalendarIcon() {
   return (
