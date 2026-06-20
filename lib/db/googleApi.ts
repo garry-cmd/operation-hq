@@ -10,6 +10,7 @@ import type { CalendarBlock } from '@/lib/types'
 
 export interface GoogleCalendarMeta { id: string; summary: string; primary: boolean; backgroundColor: string | null; accessRole: string }
 export interface GoogleBusyEvent { id: string; calendarId: string; title: string; date: string; startMinute: number; endMinute: number }
+export interface GoogleAllDayEvent { id: string; calendarId: string; title: string; date: string }
 
 async function authedFetch(path: string, init?: RequestInit): Promise<Response> {
   const { data: { session } } = await supabase.auth.getSession()
@@ -36,6 +37,16 @@ export async function fetchEvents(from: string, to: string): Promise<GoogleBusyE
   const r = await authedFetch(`/api/google/events?from=${from}&to=${to}`)
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `events ${r.status}`)
   return (await r.json()).events as GoogleBusyEvent[]
+}
+
+/** Both timed-busy and all-day events for a range, in one request. Used by the
+ *  Home week ribbon (busy meetings + all-day/holiday markers). The Calendar
+ *  overlay keeps using fetchEvents (busy only). */
+export async function fetchCalendarEvents(from: string, to: string): Promise<{ events: GoogleBusyEvent[]; allDayEvents: GoogleAllDayEvent[] }> {
+  const r = await authedFetch(`/api/google/events?from=${from}&to=${to}`)
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `events ${r.status}`)
+  const j = await r.json()
+  return { events: (j.events ?? []) as GoogleBusyEvent[], allDayEvents: (j.allDayEvents ?? []) as GoogleAllDayEvent[] }
 }
 
 export async function commitWeek(from: string, to: string): Promise<{ committed: CalendarBlock[]; failed: { id: string; error: string }[] }> {

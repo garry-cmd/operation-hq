@@ -208,11 +208,22 @@ export async function listCalendars(accessToken: string): Promise<GoogleCalendar
 }
 
 export interface GoogleBusyEvent { id: string; calendarId: string; title: string; date: string; startMinute: number; endMinute: number }
+export interface GoogleAllDayEvent { id: string; calendarId: string; title: string; date: string }
 
-/** Timed, non-free events from one calendar within [timeMinISO, timeMaxISO].
- *  All-day events and transparency:'transparent' (free) are skipped. Times are
- *  converted to APP_TZ wall-clock for grid rendering + planner busy intervals. */
-export async function listEvents(accessToken: string, calendarId: string, timeMinISO: string, timeMaxISO: string): Promise<GoogleBusyEvent[]> {
+/** Add n days to a 'YYYY-MM-DD' string via UTC, avoiding local-tz drift. */
+function addDaysStr(dateStr: string, n: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** Events from one calendar within [timeMinISO, timeMaxISO], split into timed
+ *  "busy" events (grid + planner) and all-day events (week ribbon). Timed
+ *  transparency:'transparent' (free) events are dropped from busy. All-day
+ *  events are kept regardless of transparency — holiday calendars mark their
+ *  entries free, and the ribbon wants holidays. Multi-day all-day spans expand
+ *  to one entry per covered day, clamped to the fetch window. */
+export async function listEvents(accessToken: string, calendarId: string, timeMinISO: string, timeMaxISO: string): Promise<{ busy: GoogleBusyEvent[]; allDay: GoogleAllDayEvent[] }> {
   const p = new URLSearchParams({
     timeMin: timeMinISO, timeMax: timeMaxISO,
     singleEvents: 'true', orderBy: 'startTime', maxResults: '250',
@@ -223,26 +234,42 @@ export async function listEvents(accessToken: string, calendarId: string, timeMi
   if (!r.ok) {
     // A single unreadable calendar shouldn't kill the whole overlay.
     console.error(`events fetch failed for ${calendarId}: ${r.status} ${await r.text()}`)
-    return []
+    return { busy: [], allDay: [] }
   }
   const j = await r.json()
-  const out: GoogleBusyEvent[] = []
+  const busy: GoogleBusyEvent[] = []
+  const allDay: GoogleAllDayEvent[] = []
+  // Window bounds (date strings) to clamp multi-day all-day expansion.
+  const winStart = timeMinISO.slice(0, 10)
+  const winEndExcl = addDaysStr(timeMaxISO.slice(0, 10), 1)
   for (const ev of (j.items ?? []) as Record<string, any>[]) {
     if (ev.status === 'cancelled') continue
-    if (ev.transparency === 'transparent') continue // marked Free
     const start = ev.start?.dateTime
     const end = ev.end?.dateTime
-    if (!start || !end) continue // all-day (start.date) — skipped in v1
+    if (!start || !end) {
+      // All-day: start.date inclusive, end.date exclusive (may be absent → 1 day).
+      const sd = ev.start?.date as string | undefined
+      if (!sd) continue
+      const endExcl = (ev.end?.date as string | undefined) || addDaysStr(sd, 1)
+      const title = ev.summary || '(all-day)'
+      const from = sd < winStart ? winStart : sd
+      const toExcl = endExcl > winEndExcl ? winEndExcl : endExcl
+      for (let d = from; d < toExcl; d = addDaysStr(d, 1)) {
+        allDay.push({ id: `${ev.id}:${d}`, calendarId, title, date: d })
+      }
+      continue
+    }
+    if (ev.transparency === 'transparent') continue // timed + Free → not busy
     const s = toLocalParts(start)
     const e = toLocalParts(end)
     const endMinute = e.date === s.date ? e.minute : 22 * 60 // clamp overnight to grid end
     if (endMinute <= s.minute) continue
-    out.push({
+    busy.push({
       id: ev.id, calendarId, title: ev.summary || '(busy)',
       date: s.date, startMinute: s.minute, endMinute,
     })
   }
-  return out
+  return { busy, allDay }
 }
 
 /** Create a timed event; returns the new event id. */
