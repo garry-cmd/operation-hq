@@ -9,11 +9,15 @@ import { supabase } from '@/lib/supabase'
 
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 
+export interface ProposedAction { tool: string; input: Record<string, unknown> }
+
+export interface AgentReply { reply: string; actions: ProposedAction[] }
+
 export async function sendAgentMessage(
   messages: AgentMessage[],
   today: string,
   weekStart: string,
-): Promise<string> {
+): Promise<AgentReply> {
   const { data: { session } } = await supabase.auth.getSession()
   const token = session?.access_token
   const r = await fetch('/api/agent', {
@@ -25,5 +29,6 @@ export async function sendAgentMessage(
     const msg = (await r.json().catch(() => ({} as { error?: string }))).error || `agent ${r.status}`
     throw new Error(msg)
   }
-  return (await r.json()).reply as string
+  const data = await r.json()
+  return { reply: data.reply as string, actions: Array.isArray(data.actions) ? data.actions : [] }
 }

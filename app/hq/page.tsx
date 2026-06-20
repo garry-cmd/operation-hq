@@ -787,7 +787,14 @@ export default function HQPage() {
           toast={setToast}
         />
       ) : screen === 'agent' && !loading ? (
-        <Agent toast={setToast} />
+        <Agent
+          tasks={tasks}
+          setTasks={setTasks}
+          roadmapItems={roadmapItems}
+          setRoadmapItems={setRoadmapItems}
+          spaces={spaces}
+          toast={setToast}
+        />
       ) : screen === 'tags' && !loading ? (
         <Tags
           spaces={spaces}

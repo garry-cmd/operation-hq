@@ -111,7 +111,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     const spaceTasks = (tasksBySpace.get(sid) ?? [])
     if (spaceKrs.length === 0 && spaceTasks.length === 0) continue
 
-    lines.push(`## ${str(s.name)}`)
+    lines.push(`## ${str(s.name)} [space:${sid}]`)
 
     for (const k of spaceKrs) {
       const flavor = k.is_habit ? 'habit' : k.is_metric ? 'metric' : 'outcome'
@@ -128,7 +128,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
       }
       const q = str(k.quarter) ? ` · ${str(k.quarter)}` : ''
       const window = str(k.end_date) ? ` · ends ${str(k.end_date)}${str(k.end_date) < today ? ' (OVERDUE)' : ''}` : ''
-      lines.push(`- KR (${flavor}, ${health})${metricBit}: ${str(k.title)}${q}${window}`)
+      lines.push(`- KR [kr:${str(k.id)}] (${flavor}, ${health})${metricBit}: ${str(k.title)}${q}${window}`)
 
       const acts = actionsByKr.get(str(k.id)) ?? []
       for (const a of acts) {
@@ -145,7 +145,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
         const dl = str(t.deadline_date) ? ` ⚑deadline ${str(t.deadline_date)}` : ''
         const pr = num(t.priority)
         const prBit = pr != null && pr <= 2 ? ` P${pr}` : ''
-        lines.push(`    · ${str(t.title)}${due ? ` (due ${due}${overdue})` : ''}${dl}${prBit}`)
+        lines.push(`    · [task:${str(t.id)}] ${str(t.title)}${due ? ` (due ${due}${overdue})` : ''}${dl}${prBit}`)
       }
       if (spaceTasks.length > 20) lines.push(`    · …and ${spaceTasks.length - 20} more`)
     }
@@ -159,7 +159,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     for (const t of noSpace.slice(0, 15)) {
       const due = str(t.due_date)
       const overdue = due && due < today ? ' ⚠OVERDUE' : ''
-      lines.push(`    · ${str(t.title)}${due ? ` (due ${due}${overdue})` : ''}`)
+      lines.push(`    · [task:${str(t.id)}] ${str(t.title)}${due ? ` (due ${due}${overdue})` : ''}`)
     }
     lines.push('')
   }
