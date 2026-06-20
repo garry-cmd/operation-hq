@@ -15,6 +15,7 @@ import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import { createCalendarEvent } from '@/lib/db/googleApi'
 import { useVoice } from '@/lib/voice/useVoice'
+import PushSetup from '@/components/PushSetup'
 import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock } from '@/lib/types'
 
 const STARTERS = [
@@ -252,6 +253,7 @@ export default function Agent({
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-400)' }}>
           Knows your whole operation — spaces, KRs, tasks, calendar, reflections. It can also propose actions; nothing changes until you approve.
         </p>
+        <PushSetup />
       </div>
 
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 4 }}>
