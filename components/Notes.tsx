@@ -454,7 +454,7 @@ export default function Notes({ spaces, activeSpaceId, roadmapItems, notebooks, 
 
         {/* SMART VIEWS — unified Inbox + All notes, mirroring Tasks. */}
         <div style={{ padding: '0 6px 4px' }}>
-          <div style={{ padding: '0 8px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Smart views</div>
+          <div style={{ padding: '0 8px 4px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Smart views</div>
           <TreeRow
             indent={0}
             icon="📥"
@@ -474,7 +474,7 @@ export default function Notes({ spaces, activeSpaceId, roadmapItems, notebooks, 
         </div>
 
         {/* SPACES section header — matches Tasks. */}
-        <div style={{ padding: '14px 14px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Spaces</div>
+        <div style={{ padding: '14px 14px 4px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Spaces</div>
 
         {spaces.map(space => {
           const isExpanded = expandedSpaces.has(space.id)
@@ -542,7 +542,7 @@ export default function Notes({ spaces, activeSpaceId, roadmapItems, notebooks, 
         {/* TAGS — global, cross-space */}
         {allTags.length > 0 && (
           <div style={{ marginTop: 18, padding: '0 6px' }}>
-            <div style={{ padding: '0 8px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Tags</div>
+            <div style={{ padding: '0 8px 4px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Tags</div>
             {allTags.map(tag => (
               <TreeRow
                 key={tag}
@@ -921,7 +921,7 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
         {preview || <span style={{ color: 'var(--navy-400)', fontStyle: 'italic' }}>No content yet</span>}
       </div>
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 10.5, color: 'var(--navy-400)' }}>{formatRelative(note.updated_at)}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>{formatRelative(note.updated_at)}</span>
         {tags.map(t => (
           <span key={t}
             onClick={e => { if (onTagClick) { e.stopPropagation(); onTagClick(t) } }}
@@ -1256,8 +1256,8 @@ function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullscreen, o
             placeholder="Untitled"
             style={{
               width: '100%', border: 'none', background: 'transparent',
-              fontSize: 22, fontWeight: 700, color: 'var(--navy-50)',
-              outline: 'none', fontFamily: 'inherit', padding: '2px 0',
+              fontSize: 24, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.02em',
+              outline: 'none', fontFamily: 'var(--font-display)', padding: '2px 0',
             }} />
         </div>
       </div>
@@ -1566,7 +1566,7 @@ const panelStyle: React.CSSProperties = {
   borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
 }
 const panelHeaderStyle: React.CSSProperties = {
-  padding: '8px 12px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em',
+  padding: '8px 12px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em',
   textTransform: 'uppercase', color: 'var(--nw-label)', borderBottom: '1px solid var(--navy-700)',
 }
 const panelEmptyStyle: React.CSSProperties = {
@@ -1647,7 +1647,7 @@ function LinkKRPanel({ spaces, roadmapItems, note, onLink, onClose }: {
           <div style={panelEmptyStyle}>No active KRs to link. Create a KR on the Roadmap first.</div>
         ) : groups.map(({ space, krs }) => (
           <div key={space.id}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px 4px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>
               <span style={{ width: 7, height: 7, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
               {space.name}
             </div>
@@ -1762,7 +1762,7 @@ function TableToolbar({ editor }: { editor: Editor }) {
   const div = <span style={{ width: 1, height: 14, background: 'var(--navy-700)', margin: '0 4px' }} />
   return (
     <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, padding: '5px 18px 8px', borderBottom: '1px solid var(--navy-700)' }}>
-      <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', color: 'var(--nw-label)', textTransform: 'uppercase', marginRight: 6 }}>Table</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', color: 'var(--nw-label)', textTransform: 'uppercase', marginRight: 6 }}>Table</span>
       {tbtn(() => editor.chain().focus().addRowBefore().run(), '+Row↑', 'Add row above')}
       {tbtn(() => editor.chain().focus().addRowAfter().run(), '+Row↓', 'Add row below')}
       {tbtn(() => editor.chain().focus().deleteRow().run(), '−Row', 'Delete row')}
