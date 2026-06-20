@@ -825,7 +825,8 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       {/* ── Main task list ── */}
       <main style={{ overflowY: 'auto', padding: isMobile ? '14px 14px 80px' : '20px 24px 60px' }}>
         <header style={{ marginBottom: 14 }}>
-          <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0, color: 'var(--navy-50)' }}>{heading.title}</h1>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Daily · Tasks</div>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, margin: 0, color: 'var(--navy-50)', letterSpacing: '-.02em' }}>{heading.title}</h1>
           {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
         </header>
 
@@ -846,7 +847,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
                 return (
                   <section key="__ungrouped" style={{ marginTop: hasRealSections ? 20 : 8 }}>
                     {hasRealSections && (
-                      <h2 style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label-dim)', letterSpacing: '.12em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+                      <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label-dim)', letterSpacing: '.18em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
                         No section · {group.tasks.length}
                       </h2>
                     )}
@@ -876,10 +877,10 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
                           if (e.key === 'Escape') setRenamingSectionId(null)
                         }}
                         onBlur={() => { if (sectionRenameDraft.trim() && sectionRenameDraft.trim() !== s.name) onRenameSection(s.id, sectionRenameDraft); setRenamingSectionId(null) }}
-                        style={{ fontSize: 11, fontWeight: 600, letterSpacing: '.10em', textTransform: 'uppercase', color: 'var(--nw-cream)', background: 'var(--navy-700)', border: '1px solid var(--accent)', borderRadius: 4, padding: '2px 6px', fontFamily: 'inherit', outline: 'none' }} />
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--nw-cream)', background: 'var(--navy-700)', border: '1px solid var(--accent)', borderRadius: 4, padding: '2px 6px', outline: 'none' }} />
                     ) : (
                       <h2 onClick={() => toggleSectionCollapse(s.id)}
-                        style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-cream)', letterSpacing: '.10em', textTransform: 'uppercase', margin: 0, cursor: 'pointer' }}>
+                        style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--nw-cream)', letterSpacing: '.12em', textTransform: 'uppercase', margin: 0, cursor: 'pointer' }}>
                         {s.name}
                       </h2>
                     )}
@@ -930,11 +931,10 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
                   <button onClick={toggleShowDone}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontSize: 10, fontWeight: 500, color: 'var(--nw-label-dim)',
-                      letterSpacing: '.16em', textTransform: 'uppercase',
+                      fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label-dim)',
+                      letterSpacing: '.18em', textTransform: 'uppercase',
                       margin: '0 0 8px', padding: '0 12px',
                       background: 'none', border: 'none', cursor: 'pointer',
-                      fontFamily: 'inherit',
                     }}>
                     <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
                       style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .15s' }}>
@@ -943,7 +943,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
                     {section.name} · {section.tasks.length}
                   </button>
                 ) : (
-                  <h2 style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+                  <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', letterSpacing: '.18em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
                     {section.name} · {section.tasks.length}
                   </h2>
                 )}
@@ -1007,7 +1007,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
 function SidebarSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div style={{ padding: '14px 18px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>{label}</div>
+      <div style={{ padding: '14px 18px 4px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>{label}</div>
       {children}
     </div>
   )
@@ -1401,7 +1401,7 @@ function DetailPanel({ task, tags, spaces, lists, sections, objectives, roadmapI
   return (
     <aside style={{ background: 'var(--navy-800)', borderLeft: '1px solid var(--navy-600)', overflowY: 'auto', padding: '20px 18px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Task detail</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>Task detail</span>
         <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 18, lineHeight: 1, padding: 0 }}>×</button>
       </div>
 
