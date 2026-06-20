@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
+export type Screen = 'home' | 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
 
 interface Props {
   screen: Screen
@@ -33,6 +33,7 @@ interface Props {
   onSpaceUpdated: (s: Space) => void
 
   // Badges on nav rows. All optional / zero-friendly.
+  homeAttentionCount?: number
   focusOpenCount?: number
   tasksOverdueCount?: number
   parkedCount?: number
@@ -63,6 +64,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
   {
     label: 'Daily',
     items: [
+      { id: 'home', label: 'Home', icon: <HomeIcon /> },
       { id: 'focus', label: 'Focus', icon: <FocusIcon /> },
       { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
@@ -108,6 +110,7 @@ export default function NavRail(props: Props) {
   }, [avatarOpen])
 
   function badge(id: Screen): number | undefined {
+    if (id === 'home') return props.homeAttentionCount
     if (id === 'focus') return props.focusOpenCount
     if (id === 'tasks') return props.tasksOverdueCount
     if (id === 'park') return props.parkedCount
@@ -321,6 +324,9 @@ function CalendarIcon() {
       <line x1="16" y1="2" x2="16" y2="6" />
     </svg>
   )
+}
+function HomeIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 7L8 2.5 13.5 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.7 6.4V13h8.6V6.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
 }
 function FocusIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg>

@@ -26,6 +26,7 @@ import Focus from '@/components/Focus'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Summary from '@/components/Summary'
+import Home from '@/components/Home'
 import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
 import Calendar from '@/components/Calendar'
@@ -40,12 +41,12 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags'
+type Screen = 'home' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags'
 
 
 export default function HQPage() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [screen, setScreen] = useState<Screen>('okr')
+  const [screen, setScreen] = useState<Screen>('home')
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState<string | null>(null)
   // Per-space Focus week. Each space tracks its own active week so closing
@@ -649,6 +650,11 @@ export default function HQPage() {
         onSpaceSelect={switchSpace}
         onSpaceCreated={space => setSpaces(prev => [...prev, space])}
         onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
+        homeAttentionCount={(() => {
+          const td = new Date()
+          const today = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, '0')}-${String(td.getDate()).padStart(2, '0')}`
+          return tasks.filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date < today).length
+        })()}
         focusOpenCount={spaceActions.filter(a => a.week_start === weekStart && !a.completed).length}
         tasksOverdueCount={(() => {
           // Matches the Tasks "Today" smart view filter: open tasks with a
@@ -706,7 +712,28 @@ export default function HQPage() {
       {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}
-      {screen === 'tasks' && !loading ? (
+      {screen === 'home' && !loading ? (
+        <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', width: '100%' }}>
+          <Home
+            spaces={spaces}
+            objectives={objectives}
+            roadmapItems={roadmapItems}
+            actions={actions}
+            setActions={setActions}
+            tasks={tasks}
+            setTasks={setTasks}
+            habitCheckins={habitCheckins}
+            setHabitCheckins={setHabitCheckins}
+            notes={notes}
+            googleConnected={googleConnected}
+            onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
+            onOpenTasks={() => setScreen('tasks')}
+            onOpenBacklog={() => setScreen('tasks')}
+            onOpenCalendar={() => setScreen('calendar')}
+            toast={setToast}
+          />
+        </main>
+      ) : screen === 'tasks' && !loading ? (
         <Tasks
           spaces={spaces}
           activeSpaceId={activeSpaceId}
