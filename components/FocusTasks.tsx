@@ -100,12 +100,12 @@ export default function FocusTasks({ tasks, roadmapItems, weekStart, setTasks, o
       {/* Section label — matches Focus's night-watch pattern */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
         <h2 style={{
-          fontSize: 10, fontWeight: 500, color: 'var(--nw-label)',
-          textTransform: 'uppercase', letterSpacing: '.16em', margin: 0,
+          fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)',
+          textTransform: 'uppercase', letterSpacing: '.18em', margin: 0,
         }}>
           This week&apos;s tasks
         </h2>
-        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-400)' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>
           {inWeek.length}
         </span>
       </div>
@@ -170,8 +170,8 @@ export default function FocusTasks({ tasks, roadmapItems, weekStart, setTasks, o
 
               {/* Due pill */}
               <span style={{
-                fontSize: 10, fontWeight: 700, padding: '1px 8px',
-                borderRadius: 99, flexShrink: 0,
+                fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, padding: '1px 8px',
+                borderRadius: 99, flexShrink: 0, letterSpacing: '.02em',
                 background: pill.bg, color: pill.color,
               }}>
                 {pill.text}

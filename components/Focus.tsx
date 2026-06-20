@@ -255,8 +255,9 @@ export default function Focus({
       <div>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 16 }}>
           <div style={{ minWidth: 0 }}>
-            <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 2 }}>Focus this week</h1>
-            <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: 0 }}>Week of {formatWeek(weekStart)}</p>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Daily · Focus</div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.02em', marginBottom: 2 }}>Focus this week</h1>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--navy-400)', margin: 0, letterSpacing: '.01em' }}>Week of {formatWeek(weekStart)}</p>
           </div>
           <button onClick={() => onRequestCloseWeek(weekStart)}
             title="Close this week — reflect, then plan the next one"
@@ -271,7 +272,7 @@ export default function Focus({
             row above bubbles), which was ~3x taller for the same info. */}
         {habitProgress.length > 0 && (
           <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '12px 16px', marginBottom: 16 }}>
-            <h3 style={{ margin: '0 0 10px', fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em' }}>Habits</h3>
+            <h3 style={{ margin: '0 0 10px', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em' }}>Habits</h3>
 
             {/* Grid wrapped in an overflow-x container so the 7-day strip
                 can horizontally scroll on narrow viewports (mobile < ~520px
@@ -289,6 +290,7 @@ export default function Focus({
                 const isToday = dateStr === today
                 return (
                   <div key={dayLabel} style={{
+                    fontFamily: 'var(--font-mono)',
                     fontSize: 9,
                     textAlign: 'center',
                     color: isToday ? 'var(--accent)' : 'var(--navy-400)',
@@ -417,8 +419,8 @@ export default function Focus({
         {taskTotal > 0 && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <h3 style={{ margin: 0, fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em' }}>This Week's Actions</h3>
-              <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.08em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>
+              <h3 style={{ margin: 0, fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em' }}>This Week&apos;s Actions</h3>
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', fontVariantNumeric: 'tabular-nums' }}>
                 {taskDone}/{taskTotal} complete
               </div>
             </div>
@@ -444,7 +446,7 @@ export default function Focus({
                     {krGroup.kr && (
                       <div style={{ padding: '0 4px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
                         <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--navy-200)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{krGroup.kr.title}</div>
-                        <div style={{ fontSize: 11, color: 'var(--navy-400)', fontWeight: 500, flexShrink: 0 }}>{groupDone}/{groupTotal}</div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--navy-400)', fontWeight: 500, flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>{groupDone}/{groupTotal}</div>
                       </div>
                     )}
                     {krGroup.actions.map(action => (
