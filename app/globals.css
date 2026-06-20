@@ -1,150 +1,161 @@
 @import "tailwindcss";
 
 /* ═══════════════════════════════════════════════════════════════
-   OPERATION HQ — COBALT THEME
-   Dark  : Off-black + cool slate. Cobalt accent lights up the panel.
-   Light : Paper white + cool slate. Deeper cobalt for contrast.
-   Semantic warnings (red/amber) stay warm — deliberate friction
-   against the cool neutral base so they read as alerts, not chrome.
+   OPERATION HQ — EVOLVE
+   Night-watch instrument-panel identity, executed with craft.
+   • Type: Space Grotesk (display) · Inter (body) · JetBrains Mono (readouts)
+   • Signature: tabular-mono readouts under amber instrument labels.
+   • Dark stays near-black + phosphor. Light is a cool slate "desk" that
+     lets white instruments lift off it — no more washed-out pastel.
+   Legacy tokens (--navy-*, --teal/red/amber/slate-*, --nw-*) are kept and
+   re-pointed so existing components inherit the refresh untouched.
 ═══════════════════════════════════════════════════════════════ */
+
+/* theme-independent tokens. The --font-display/body/mono variables are
+   provided by next/font (layout.tsx) on the <html> element, each with a
+   built-in self-hosted fallback — do not redefine them here. */
+:root {
+  --radius-sm: 7px;
+  --radius:    10px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+}
 
 /* ── DARK (default) ── */
 :root,
 [data-theme="dark"] {
-  --navy-900: #08090c;   /* page bg */
-  --navy-800: #131519;   /* card */
-  --navy-700: #1b1e24;   /* elevated surface / hover */
-  --navy-600: #262a32;   /* visible border */
-  --navy-500: #383d47;   /* strong border */
-  --navy-400: #6c7280;   /* dim text */
-  --navy-300: #9aa0ad;   /* secondary text */
-  --navy-200: #c4c8d2;   /* body text */
-  --navy-100: #dde0e8;   /* readable text */
-  --navy-50:  #eef0f4;   /* primary text */
+  /* legacy navy ladder (unchanged — dark was already right) */
+  --navy-900: #08090c;
+  --navy-800: #131519;
+  --navy-700: #1b1e24;
+  --navy-600: #262a32;
+  --navy-500: #383d47;
+  --navy-400: #6c7280;
+  --navy-300: #9aa0ad;
+  --navy-200: #c4c8d2;
+  --navy-100: #dde0e8;
+  --navy-50:  #eef0f4;
 
-  /* Cobalt — the one that lights up. INTERACTIVE color: kept for buttons,
-     links, search focus, active nav. Night-watch is for STATUS DISPLAY.
-     Mixing is intentional — instrument panels have blue indicator lights. */
   --accent:     #4a8fff;
   --accent-dim: #0e1a2e;
 
-  /* ── Semantic status tokens, re-pointed to night-watch values (May 18)
-     to unify the palette across the whole app. ObjectiveCard already used
-     --nw-* tokens; other surfaces (Focus, Roadmap, CloseWeekWizard, Tasks
-     status chips, etc.) reference --teal-bg/text, --red-bg/text, etc., so
-     re-pointing here propagates the look without touching every component.
-     Saturated alarm red and phosphor green make off-track and on-track
-     readouts pop against the cool navy chrome. */
+  /* legacy status (unchanged in dark) */
+  --teal:      #1a3e2a;  --teal-bg:   #0a2014;  --teal-text: #7fe27a;
+  --red:       #5a2a1a;  --red-bg:    #2e0a08;  --red-text:  #ff6452;
+  --amber:     #5a4810;  --amber-bg:  #251a08;  --amber-text:#f5b840;
+  --indigo-bg: #1e1830;  --indigo-text:#c8a8e8;
+  --slate-bg:  #15191f;  --slate-text:#8e96a8;
 
-  /* Nominal / on track — phosphor green */
-  --teal:      #1a3e2a;
-  --teal-bg:   #0a2014;
-  --teal-text: #7fe27a;
-
-  /* Alarm / off track — saturated red (was soft peach, now reads as an alert) */
-  --red:      #5a2a1a;
-  --red-bg:   #2e0a08;
-  --red-text: #ff6452;
-
-  /* Caution / blocked — golden amber */
-  --amber:      #5a4810;
-  --amber-bg:   #251a08;
-  --amber-text: #f5b840;
-
-  /* Waiting/tag — lavender, kept distinct from the warm status colors */
-  --indigo-bg:   #1e1830;
-  --indigo-text: #c8a8e8;
-
-  /* Standby / not started — cool slate. Stays subtle: should feel calm. */
-  --slate-bg:   #15191f;
-  --slate-text: #8e96a8;
-
-  /* ── Night Watch identity tokens (May 17) ──────────────────────────
-     Aircraft-carrier-bridge palette for the OKR card surface. Amber
-     instrument-panel labels, warm cream readouts, alarm/caution/nominal
-     status colors with subtle phosphor glow on critical readouts.
-     Used by ObjectiveCard. Other surfaces keep cobalt for now. */
-  --nw-label:        #c89642;  /* amber instrument label */
-  --nw-label-dim:    #7a6840;  /* dim amber secondary */
-  --nw-cream:        #e8e0d0;  /* warm cream primary text */
-  --nw-hero-amber:   #e8c878;  /* hero readout when in-progress */
-  --nw-alarm-bg:     #2e0a08;
-  --nw-alarm-text:   #ff6452;
-  --nw-caution-bg:   #251a08;
-  --nw-caution-text: #f5b840;
-  --nw-nominal-bg:   #0a2014;
-  --nw-nominal-text: #7fe27a;  /* phosphor green, also progress fill + done hero */
-  --nw-standby-bg:   #15191f;
-  --nw-standby-text: #8e96a8;
+  /* legacy night-watch identity tokens (unchanged) */
+  --nw-label:        #c89642;
+  --nw-label-dim:    #7a6840;
+  --nw-cream:        #e8e0d0;
+  --nw-hero-amber:   #e8c878;
+  --nw-alarm-bg:     #2e0a08;  --nw-alarm-text:   #ff6452;
+  --nw-caution-bg:   #251a08;  --nw-caution-text: #f5b840;
+  --nw-nominal-bg:   #0a2014;  --nw-nominal-text: #7fe27a;
+  --nw-standby-bg:   #15191f;  --nw-standby-text: #8e96a8;
   --nw-glow-red:     rgba(255, 100, 82, 0.5);
   --nw-glow-green:   rgba(127, 226, 122, 0.45);
+
+  /* ── evolved vocabulary (going-forward) ── */
+  --bg:        #08090c;
+  --bg-rail:   #0b0d11;
+  --surface:   #14161b;
+  --surface-2: #1b1e24;
+  --hover:     #1f232b;
+  --line:      #23272f;
+  --line-2:    #2e333d;
+  --line-strong:#3a4049;
+
+  --t-0: #f1f3f7;
+  --t-1: #c7ccd6;
+  --t-2: #969cab;
+  --t-3: #686e7c;
+
+  --accent-2:    #6ea3ff;
+  --accent-bg:   rgba(74,143,255,.13);
+  --accent-line: rgba(74,143,255,.32);
+
+  --label:     #c89642;
+  --label-dim: #8a7448;
+
+  --ok:     #7fe27a;  --ok-bg:     #0d2114;  --ok-glow:    rgba(127,226,122,.40);
+  --warn:   #f5b840;  --warn-bg:   #241a08;
+  --alarm:  #ff6452;  --alarm-bg:  #2c0c09;  --alarm-glow: rgba(255,100,82,.38);
+  --standby:#8e96a8;  --standby-bg:#15191f;
+
+  --card-shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.55);
+  --card-inset:  inset 0 1px 0 rgba(255,255,255,.035);
 
   color-scheme: dark;
 }
 
-/* ── LIGHT ── */
+/* ── LIGHT (de-washed: cool slate desk, crisp white instruments) ── */
 [data-theme="light"] {
-  --navy-900: #f7f8fb;   /* page bg */
+  /* legacy navy ladder — re-pointed for separation + visible hairlines */
+  --navy-900: #e7ebf2;   /* page bg (was #f7f8fb) */
   --navy-800: #ffffff;   /* card */
-  --navy-700: #f0f2f6;   /* elevated / hover */
-  --navy-600: #d8dde6;   /* border */
-  --navy-500: #b4bbc8;   /* strong border */
-  --navy-400: #71778a;   /* muted text */
-  --navy-300: #4a5063;   /* secondary text */
-  --navy-200: #2a2f3e;   /* body text */
-  --navy-100: #181c28;   /* readable text */
-  --navy-50:  #08090c;   /* primary text */
+  --navy-700: #eef2f8;   /* elevated / hover */
+  --navy-600: #d2d9e5;   /* border (was #d8dde6) */
+  --navy-500: #b1b9c6;   /* strong border */
+  --navy-400: #71778a;
+  --navy-300: #4a5063;
+  --navy-200: #2a2f3e;
+  --navy-100: #181c28;
+  --navy-50:  #08090c;
 
-  /* Cobalt — deeper for light-bg contrast */
   --accent:     #2563eb;
   --accent-dim: #e0eaff;
 
-  /* ── Semantic status tokens, re-pointed to night-watch-light (May 18). */
+  /* legacy status — saturated so indicators read as alerts, not pastel */
+  --teal:  #1a4a36;  --teal-bg:  #d7efdd;  --teal-text: #168a3e;
+  --red:   #5a2a18;  --red-bg:   #fbe1e0;  --red-text:  #c42f27;
+  --amber: #5a4010;  --amber-bg: #f9e9c8;  --amber-text:#936308;
+  --indigo-bg: #d8c8ec;  --indigo-text:#4a3070;
+  --slate-bg:  #e5e9f0;  --slate-text:#576070;
 
-  /* Nominal / on track */
-  --teal:      #1a4a36;
-  --teal-bg:   #d6f0dc;
-  --teal-text: #1a7a3a;
+  /* legacy night-watch — light counterparts re-pointed to match */
+  --nw-label:        #9a6710;
+  --nw-label-dim:    #a98a52;
+  --nw-cream:        #2a2418;
+  --nw-hero-amber:   #bf7a14;
+  --nw-alarm-bg:     #fbe1e0;  --nw-alarm-text:   #c42f27;
+  --nw-caution-bg:   #f9e9c8;  --nw-caution-text: #936308;
+  --nw-nominal-bg:   #d7efdd;  --nw-nominal-text: #168a3e;
+  --nw-standby-bg:   #e5e9f0;  --nw-standby-text: #576070;
+  --nw-glow-red:     rgba(196,47,39,.18);
+  --nw-glow-green:   rgba(22,138,62,.20);
 
-  /* Alarm / off track — readable red on a soft pink bg, replaces the
-     peach-on-coral that was reading as "warm and pleasant" instead of
-     "alarm." */
-  --red:      #5a2a18;
-  --red-bg:   #fbeaea;
-  --red-text: #a8302b;
+  /* ── evolved vocabulary ── */
+  --bg:        #e7ebf2;
+  --bg-rail:   #ffffff;
+  --surface:   #ffffff;
+  --surface-2: #e9edf4;
+  --hover:     #eef2f8;
+  --line:      #d2d9e5;
+  --line-2:    #c0c9d7;
+  --line-strong:#96a0b2;
 
-  /* Caution / blocked — golden amber, kept distinct from alarm red */
-  --amber:      #5a4010;
-  --amber-bg:   #fcf0d4;
-  --amber-text: #8a5e08;
+  --t-0: #0f131b;
+  --t-1: #283040;
+  --t-2: #515a6b;
+  --t-3: #78808f;
 
-  /* Waiting/tag */
-  --indigo-bg:   #d8c8ec;
-  --indigo-text: #4a3070;
+  --accent-2:    #1d4fd0;
+  --accent-bg:   rgba(37,99,235,.11);
+  --accent-line: rgba(37,99,235,.36);
 
-  /* Standby / not started — cool slate, breaks the warm dashboard for
-     early/no-data KRs */
-  --slate-bg:   #eef0f4;
-  --slate-text: #5f6478;
+  --label:     #9a6710;
+  --label-dim: #a98a52;
 
-  /* ── Night Watch identity tokens (May 17) ──────────────────────────
-     Light-mode counterparts. Less "instrument panel," more "warm
-     operational" — deeper amber labels that still read warm against
-     white, darker phosphor green for readouts on a light bg. */
-  --nw-label:        #8a6314;  /* deeper amber label */
-  --nw-label-dim:    #b39450;  /* dim amber secondary */
-  --nw-cream:        #2a2418;  /* warm dark — primary text on light bg */
-  --nw-hero-amber:   #bf7a14;  /* hero readout when in-progress */
-  --nw-alarm-bg:     #fbeaea;
-  --nw-alarm-text:   #a8302b;
-  --nw-caution-bg:   #fcf0d4;
-  --nw-caution-text: #8a5e08;
-  --nw-nominal-bg:   #d6f0dc;
-  --nw-nominal-text: #1a7a3a;
-  --nw-standby-bg:   #eef0f4;
-  --nw-standby-text: #5f6478;
-  --nw-glow-red:     rgba(168, 48, 43, 0.18);
-  --nw-glow-green:   rgba(26, 122, 58, 0.18);
+  --ok:     #168a3e;  --ok-bg:     #d7efdd;  --ok-glow:    rgba(22,138,62,.22);
+  --warn:   #936308;  --warn-bg:   #f9e9c8;
+  --alarm:  #c42f27;  --alarm-bg:  #fbe1e0;  --alarm-glow: rgba(196,47,39,.18);
+  --standby:#576070;  --standby-bg:#e5e9f0;
+
+  --card-shadow: 0 1px 2px rgba(22,32,60,.06), 0 14px 32px -18px rgba(22,32,60,.24);
+  --card-inset:  inset 0 1px 0 rgba(255,255,255,.7);
 
   color-scheme: light;
 }
@@ -152,12 +163,14 @@
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: var(--font-body);
   background: var(--navy-900);
   color: var(--navy-50);
   min-height: 100vh;
   font-size: 14px;
   line-height: 1.5;
+  letter-spacing: -0.003em;
+  -webkit-font-smoothing: antialiased;
 }
 
 input, textarea, select, button { font-family: inherit; font-size: 14px; }
@@ -181,10 +194,11 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   padding: 10px 18px; border-radius: 10px; border: none; min-height: 44px;
   background: var(--accent); color: #fff; font-size: 14px; font-weight: 700;
-  cursor: pointer; transition: opacity .15s; white-space: nowrap;
+  cursor: pointer; transition: background .15s, opacity .15s; white-space: nowrap;
+  box-shadow: 0 1px 0 rgba(255,255,255,.12) inset;
 }
 [data-theme="light"] .btn-primary { color: #fff; }
-.btn-primary:hover { opacity: .88; }
+.btn-primary:hover { background: var(--accent-2); }
 .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 
 .add-row-btn {
@@ -232,10 +246,53 @@ input, textarea, select, button { font-family: inherit; font-size: 14px; }
 .input option { background: var(--navy-800); }
 textarea.input { resize: vertical; min-height: 84px; }
 
-/* ── Status pills ── */
+/* ── Status pills (legacy) ── */
 .pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 700; padding: 3px 10px; border-radius: 99px; letter-spacing: .3px; }
 .pill-green  { background: var(--teal-bg);   color: var(--teal-text); }
 .pill-red    { background: var(--red-bg);    color: var(--red-text); }
 .pill-amber  { background: var(--amber-bg);  color: var(--amber-text); }
 .pill-gray   { background: var(--navy-700);  color: var(--navy-300); }
 .pill-done   { background: var(--teal-bg);   color: var(--teal-text); }
+
+/* ═══════════════════════════════════════════════════════════════
+   EVOLVE primitives — canonical going-forward vocabulary
+═══════════════════════════════════════════════════════════════ */
+
+/* amber mono instrument label — the one section-eyebrow everywhere */
+.label {
+  font-family: var(--font-mono);
+  font-size: 10.5px; font-weight: 600;
+  letter-spacing: .18em; text-transform: uppercase;
+  color: var(--label);
+}
+
+/* tabular-mono readout helper */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* status chip — small uppercase mono with a colored indicator dot */
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+  padding: 3px 9px 3px 7px; border-radius: 6px; white-space: nowrap;
+}
+.chip .chip-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.chip-ok      { color: var(--ok);      background: var(--ok-bg); }
+.chip-ok .chip-dot      { background: var(--ok);      box-shadow: 0 0 6px var(--ok-glow); }
+.chip-warn    { color: var(--warn);    background: var(--warn-bg); }
+.chip-warn .chip-dot    { background: var(--warn); }
+.chip-alarm   { color: var(--alarm);   background: var(--alarm-bg); }
+.chip-alarm .chip-dot   { background: var(--alarm);   box-shadow: 0 0 6px var(--alarm-glow); }
+.chip-standby { color: var(--standby); background: var(--standby-bg); }
+.chip-standby .chip-dot { background: var(--standby); }
+
+/* canonical card surface */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--card-shadow), var(--card-inset);
+}
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
