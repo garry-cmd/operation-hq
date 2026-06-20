@@ -65,3 +65,16 @@ export async function moveCommittedBlock(blockId: string, blockDate: string, sta
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `move ${r.status}`)
   return (await r.json()).block as CalendarBlock
 }
+
+/** Create a free-form calendar event (Google + a committed HQ block). Used by
+ *  the agent's create_calendar_event tool on approval. Returns the new block. */
+export async function createCalendarEvent(
+  title: string, blockDate: string, startMinute: number, endMinute: number,
+): Promise<CalendarBlock> {
+  const r = await authedFetch('/api/google/block', {
+    method: 'POST',
+    body: JSON.stringify({ title, blockDate, startMinute, endMinute }),
+  })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `create event ${r.status}`)
+  return (await r.json()).block as CalendarBlock
+}

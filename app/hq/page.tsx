@@ -793,6 +793,7 @@ export default function HQPage() {
           roadmapItems={roadmapItems}
           setRoadmapItems={setRoadmapItems}
           spaces={spaces}
+          setCalendarBlocks={setCalendarBlocks}
           toast={setToast}
         />
       ) : screen === 'tags' && !loading ? (

@@ -13,7 +13,8 @@ import { getMonday } from '@/lib/utils'
 import { streamAgentMessage, type AgentMessage, type ProposedAction } from '@/lib/db/agentApi'
 import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
-import type { Task, RoadmapItem, Space, HealthStatus } from '@/lib/types'
+import { createCalendarEvent } from '@/lib/db/googleApi'
+import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock } from '@/lib/types'
 
 const STARTERS = [
   "What's slipping right now?",
@@ -36,6 +37,11 @@ function stripId(v: unknown, prefix: string): string {
   return s.startsWith(prefix + ':') ? s.slice(prefix.length + 1) : s
 }
 
+function hhmmToMin(v: unknown): number {
+  const [h, m] = String(v ?? '').split(':').map(Number)
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
+}
+
 // Minimal inline render: **bold** + preserved line breaks, leading "- " → "• ".
 function renderContent(text: string): React.ReactNode {
   return text.split('\n').map((line, li) => {
@@ -56,13 +62,14 @@ function renderContent(text: string): React.ReactNode {
 }
 
 export default function Agent({
-  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, toast,
+  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, toast,
 }: {
   tasks: Task[]
   setTasks: (fn: (p: Task[]) => Task[]) => void
   roadmapItems: RoadmapItem[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   spaces: Space[]
+  setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   toast: (m: string) => void
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
@@ -98,6 +105,9 @@ export default function Agent({
     if (a.tool === 'set_kr_health') {
       const id = stripId(input.kr_id, 'kr'); const k = roadmapItems.find(x => x.id === id)
       return `Set “${k?.title ?? id}” → ${String(input.health ?? '').replace('_', ' ')}`
+    }
+    if (a.tool === 'create_calendar_event') {
+      return `Add to calendar: “${String(input.title ?? '')}” · ${String(input.date ?? '')} ${String(input.start_time ?? '')}–${String(input.end_time ?? '')}`
     }
     return a.tool
   }
@@ -135,6 +145,16 @@ export default function Agent({
       if (!roadmapItems.some(k => k.id === id)) throw new Error('KR not found')
       await krsDb.update(id, { health_status: health })
       setRoadmapItems(prev => prev.map(k => k.id === id ? { ...k, health_status: health } : k))
+      return
+    }
+    if (a.tool === 'create_calendar_event') {
+      const title = String(input.title ?? '').trim()
+      const date = String(input.date ?? '')
+      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Bad event')
+      const startMin = hhmmToMin(input.start_time); const endMin = hhmmToMin(input.end_time)
+      if (endMin <= startMin) throw new Error('Bad time range')
+      const block = await createCalendarEvent(title, date, startMin, endMin)
+      setCalendarBlocks(prev => [...prev, block])
       return
     }
     throw new Error('Unknown action')

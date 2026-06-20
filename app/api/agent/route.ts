@@ -71,7 +71,25 @@ const TOOLS = [
       required: ['kr_id', 'health'],
     },
   },
+  {
+    name: 'create_calendar_event',
+    description: 'Propose adding an event to the calendar (writes to the HQ Google calendar on approval). Use for meetings, plans, social events, appointments, or time blocks. Pick a sensible time if the user didn\u2019t specify one.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Event title, e.g. "Dinner with Melissa — Sirens Pub".' },
+        date: { type: 'string', description: 'Event date, YYYY-MM-DD.' },
+        start_time: { type: 'string', description: '24-hour start time HH:MM, e.g. "18:00".' },
+        end_time: { type: 'string', description: '24-hour end time HH:MM, e.g. "20:00".' },
+      },
+      required: ['title', 'date', 'start_time', 'end_time'],
+    },
+  },
 ]
+
+// Anthropic-executed server tool: web search. Runs inside the model's turn
+// (read-only, no approval needed) so the agent can pull real, current info.
+const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 5 }
 
 interface ProposedAction { tool: string; input: Record<string, unknown> }
 
@@ -84,8 +102,9 @@ const PERSONA = `You are the chief of staff for the operator of "Operation HQ", 
 Your job is to be a sharp, trusted chief of staff: know the whole operation cold, surface what's slipping before it's a fire, prioritize ruthlessly, and answer with specifics — always reference real KRs, tasks, and spaces by name, never in the abstract. When the operator asks "what should I focus on" or "what's at risk", lead with the highest-leverage thing (off-track or blocked KRs, overdue commitments, an overloaded week), not a flat list.
 
 Hard rules:
-- You can PROPOSE actions with your tools: complete a task, reschedule a task, add a task, set a KR's health. Calling a tool does NOT execute it — it surfaces a confirmation card the operator approves with one tap. Propose freely when an action is clearly warranted and specific, but always say in plain text what you're proposing and why, and never claim something is done — say you've proposed it / queued it for approval.
-- For anything you have no tool for (moving calendar blocks, unblocking a KR, planning the week), advise instead: tell the operator exactly what to do and where — e.g. "run Plan My Week on the Calendar", "this Stellar KR is blocked — decide the unblock".
+- You can PROPOSE actions with your tools: complete a task, reschedule a task, add a task, add a calendar event, set a KR's health. Calling a tool does NOT execute it — it surfaces a confirmation card the operator approves with one tap. Propose freely when an action is clearly warranted and specific, but always say in plain text what you're proposing and why, and never claim something is done — say you've proposed it / queued it for approval.
+- You can SEARCH THE WEB. Use it whenever the answer depends on real, current, real-world facts you can't get from the state below — venues, hours, prices, addresses, news, people, products. Never invent specifics like business names, addresses, or hours; search and cite what you find, or say you couldn't confirm it.
+- For anything you have no tool for (moving existing calendar blocks, unblocking a KR, planning the week), advise instead: tell the operator exactly what to do and where — e.g. "run Plan My Week on the Calendar".
 - Don't over-propose. One clear ask beats five speculative ones. When unsure, ask or advise rather than firing a proposal.
 - Be direct and concise. Skip preamble. Match the operator's energy and length. Use short paragraphs or simple dashed lists; no heavy formatting.
 - Ground every claim in the state below. If something isn't in the state, say you don't see it rather than inventing it.
@@ -140,7 +159,7 @@ export async function POST(req: Request) {
         model: MODEL,
         max_tokens: 1500,
         system: `${PERSONA}\n\n---\n\n${context}`,
-        tools: TOOLS,
+        tools: [...TOOLS, WEB_SEARCH_TOOL],
         stream: true,
         messages: messages.map(m => ({ role: m.role, content: m.content })),
       }),
