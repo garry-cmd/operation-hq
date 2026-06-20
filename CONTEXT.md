@@ -10,9 +10,10 @@
 ## What this is
 
 A single-user life-management + OKR system. Desktop-first, used many times a day.
-Modules: **OKRs + Roadmap** (strategic), **Focus + Tasks + Notes + Calendar** (daily),
-**Reflect + Parking** (archive). Garry is the sole user (Mel/multi-user is deferred
-indefinitely — see Backlog).
+Modules: **Home** (all-spaces weekly deck, default landing) · **Chief of Staff** (AI agent, voice) ·
+**OKRs + Roadmap** (strategic) · **Focus + Tasks + Notes + Calendar** (daily) · **Settings** ·
+**Reflect + Parking** (archive). Proactive web-push briefings layer on top. Garry is the sole user
+(Mel/multi-user is deferred indefinitely — see Backlog).
 
 ---
 
@@ -37,9 +38,55 @@ column** on app tables (e.g. `calendar_blocks`). `spaces` has RLS disabled. The 
 touch the DB with the service-role client must **not** filter app tables by `user_id` — the
 column doesn't exist. This bit us once (commit route 500'd on a phantom `user_id` filter).
 
+**Env (Vercel Production):** `ANTHROPIC_API_KEY` (agent + briefs) · `DEEPGRAM_API_KEY` +
+`ELEVENLABS_API_KEY` (+ optional `ELEVENLABS_VOICE_ID`) for voice · `VAPID_PUBLIC_KEY` +
+`NEXT_PUBLIC_VAPID_PUBLIC_KEY` (same value) + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT`
+(`mailto:garry@keeply.boats`) for web push · `CRON_SECRET` (Vercel Cron Bearer for `/api/cron/brief`)
+· Supabase URL/anon/service-role. **`NEXT_PUBLIC_*` are inlined at BUILD time** — set them before
+the build, and force a clean rebuild (`git commit --allow-empty`) when an env value changes but the
+running deployment can't see it.
+
 ---
 
 ## Current state — shipped
+
+### Jun 20 (evening) — Voice LIVE · Proactive briefings (web push) · Settings screen
+
+**Voice is live end-to-end.** Deepgram nova-3 STT + ElevenLabs flash_v2_5 TTS keys are in Vercel
+Production. ElevenLabs is on the **Starter ($6/mo)** plan — the free tier 402'd on the default Rachel
+"library" voice; paid unblocked it. Round-trip verified live (TTS a phrase → feed mp3 to STT →
+verbatim transcript) and the in-app talk→hear loop works. Routes auth-gate (401) before key-check
+(503); the Bearer is the Supabase session JWT. (Mic gotcha: macOS Continuity can grab the iPhone as
+input + Chrome notifications/mic must be enabled at the OS level.)
+
+**Proactive briefings (web push) — Stage 1 shipped.** A scheduled, read-only morning brief grounded
+in live HQ state. The autonomy ladder: **Stage 1 = read-only briefings (DONE)** → Stage 2 actionable
+proposals → Stage 3 autonomous acting.
+- `lib/briefing.ts` `generateBrief({today, weekStart})` reuses `buildAgentContext` headless
+  (service-role, no token) + a non-stream `claude-sonnet-4-6` call → `{title, body}` JSON. `saveBrief`
+  persists each brief to the `briefings` table.
+- Push plumbing: `public/sw.js` (push + notificationclick → focuses/navigates an open HQ tab to the
+  brief, else opens it), `lib/push.ts` (web-push VAPID sender), `lib/db/pushSubscriptions.ts` (admin
+  store/list/delete/markSent, upsert on endpoint).
+- `app/api/push/subscribe` (save/remove a sub) · `app/api/push/test` (user-authed on-demand trigger —
+  generates, persists, pushes) · `app/api/cron/brief` (CRON_SECRET-authed; `vercel.json` cron
+  `0 14 * * *` = 7am PDT; pushes to all subs as the known owner).
+- **In-app feed:** `components/BriefingsFeed.tsx` renders the latest brief + an "N earlier" expander
+  in the Chief of Staff screen; reloads on a `hq:brief-saved` window event. Notifications deep-link to
+  `/hq?screen=agent` (handled in `page.tsx`'s query-param effect).
+
+**Settings screen + persistent push (the friction fix).** Enabling briefings was resetting every
+Chrome restart because the subscription wasn't re-established on load. Fix: `lib/push/ensurePush.ts`
+(`ensurePushSubscription` — idempotent re-register+subscribe+sync, `enablePush`, `disablePush`,
+`currentPushState`) is called **on every app load** in `page.tsx` (effect above the auth early-returns)
+when permission is already granted — so "Turn on" is a genuine one-time action per device. New
+**Settings** screen (`components/Settings.tsx`, NavRail Meta group, gear icon, `screen==='settings'`)
+owns the briefings toggle + status + Send-test. The old enable button was removed from the Chief of
+Staff header (`BriefingsFeed` stays there). `components/PushSetup.tsx` is now **orphaned dead code**
+(nothing imports it) — delete when convenient.
+
+Migrations (Supabase MCP, not repo files): `create_push_subscriptions`, `create_briefings`.
+New deps: `web-push`, `@types/web-push`. New env: VAPID_* / CRON_SECRET (see Stack & infra).
 
 ### Jun 20 — AI Chief of Staff agent + Voice (Step 1)
 
@@ -78,12 +125,9 @@ via `/api/voice/speak` (ElevenLabs **eleven_flash_v2_5**, streamed mp3, queued p
 first sentence speaks while the rest generates. Markdown stripped before TTS; starting the mic
 barges in on playback. Scope is talk→hear; proposed actions still show a tap-Approve card (verbal
 "yes" is Step 2).
-**BLOCKED:** `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` (optional `ELEVENLABS_VOICE_ID`, default
-Rachel `21m00Tcm4TlvDq8ikWAM`) must hold **real values**, scoped Vercel **Production**, **then a
-redeploy** (env changes don't retro-apply to existing deployments). Both routes verified live
-returning a graceful 503 "not configured" until keys land. Free tiers (Deepgram $200 credit,
-ElevenLabs 10k chars/mo) are enough to test. **NEXT SESSION:** real keys → redeploy → round-trip
-verify (TTS a phrase, feed the mp3 to STT, expect the transcript back) → live speak test.
+**Status: LIVE** as of Jun 20 evening — keys in place, ElevenLabs on Starter plan, round-trip
+verified. See the Jun 20 (evening) section above. Routes still return a graceful 503 if a key is
+ever missing.
 
 
 ### Jun 20 (late) — Tasks: Backlog smart view
@@ -94,11 +138,12 @@ non-subtask, not completed) across all spaces + lists. Sidebar row (stacked-bars
 change. This is the triage destination the planned **Home deck**'s "Backlog" action targets.
 (Undated tasks bucket under "Later" in the list view — minor wart, acceptable.)
 
-### Planned next — Unified "Home" weekly command deck (DESIGN APPROVED, mockups locked)
+### Jun 20 — Unified "Home" weekly command deck (SHIPPED, default landing)
 
-The big one. Focus becomes the **all-spaces home page** (top of NavRail, default landing
-screen); the existing all-spaces **Overview/`Summary` screen gets deleted** (this replaces it).
-Design approved over 7 mockup iterations (`hq-home-week-deck-mockup-v7.html`). Shape:
+Focus's all-spaces concept shipped as a dedicated **Home** screen (`components/Home.tsx`), now the
+**default landing** (top of NavRail, `screen==='home'`). Built over 7 mockup iterations
+(`hq-home-week-deck-mockup-v7.html`). **The old Overview/`Summary` screen still exists** — it was NOT
+deleted (planned step 7), so there's some overlap to resolve later. Shape:
 
 - **Color = space** everywhere (5 space dots; legibility pass on space colors still TODO —
   Keeply `#0B1E3F` is invisible on dark, needs a display variant).
@@ -116,15 +161,15 @@ Design approved over 7 mockup iterations (`hq-home-week-deck-mockup-v7.html`). S
   **Backlog** (clear due date → backlog view) · **Snooze** (→ tomorrow) · **Kill** (hard delete).
 - **FAB** bottom-right — quick-add task / key action / note / event.
 
-**Build sequence (staged, each independently deployable):**
-1. ✅ Backlog smart view in Tasks (shipped Jun 20).
-2. Schema: `notes.roadmap_item_id` nullable migration (mirrors `tasks.roadmap_item_id`) + verify.
-3. Notes↔KR: link picker in Notes editor header + `lib/db/notes` helper.
-4. All-day Google events: surface in the fetch (currently skipped) for the ribbon.
-5. `lib/quotes.ts` daily-quote module (curated array + day-of-year selector).
-6. The Home deck itself — new all-spaces screen; make it default landing + top NavRail entry.
-7. Delete the Overview/`Summary` screen + its route once Home covers it.
-8. Inline handlers: complete / Backlog / Snooze→tomorrow / Kill (hard delete) + FAB quick-add.
+**Build sequence — shipped except Overview deletion:**
+1. ✅ Backlog smart view in Tasks.
+2. ✅ `notes.roadmap_item_id` nullable (mirrors `tasks.roadmap_item_id`).
+3. ✅ Notes↔KR link picker + `lib/db/notes` helper.
+4. ✅ All-day Google events surfaced for the ribbon. *(superseded earlier follow-up — verify still holds)*
+5. ✅ `lib/quotes.ts` daily-quote module.
+6. ✅ Home deck — new all-spaces screen, default landing + top NavRail entry.
+7. ⬜ **Delete the Overview/`Summary` screen** — NOT done; Home + Overview currently coexist.
+8. ✅ Inline handlers: complete / Backlog / Snooze→tomorrow / Kill + FAB quick-add.
 
 Decisions locked: notes = click-to-open (not inline edit); Backlog lives in Tasks; Kill =
 hard delete (no confirm); attention = overdue tasks only; quote pool = public-domain
@@ -199,12 +244,20 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
-- **Voice keys (BLOCKER for voice).** `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` are placeholder/empty
-  in Vercel — need real values from the provider dashboards, scoped Production, then a redeploy.
-  Until then `/api/voice/*` return 503. First thing next session.
-- **Migrations applied via Supabase MCP aren't repo files.** This session's
-  `relax_calendar_block_source_for_freeform_events` (and prior ones) live in Supabase's migration
-  history, not as tracked files in the repo. Fine operationally; capture as files only if/when
+- **Push: dedupe subscriptions.** Same machine can leave multiple `push_subscriptions` rows over time;
+  `ensurePushSubscription` upserts on endpoint so it self-heals for one browser, but a server-side
+  dedupe/cleanup pass would be tidier. Stale endpoints already get pruned on send ('gone' → delete).
+- **iOS web push** needs the PWA added to the Home Screen first (Safari limitation) — desktop Chrome
+  works as-is.
+- **7am cron not yet verified unattended** — `/api/cron/brief` works on-demand; first natural 14:00 UTC
+  fire hasn't been observed. Confirm a brief lands + persists without manual trigger.
+- **Orphaned `components/PushSetup.tsx`** — superseded by Settings + `ensurePush`; nothing imports it.
+  Delete when convenient.
+- **Rotate voice keys** — `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` transited a chat session during
+  setup. Rotate in the provider dashboards + update Vercel when convenient. (Low priority.)
+- **Migrations applied via Supabase MCP aren't repo files.** This session's `create_push_subscriptions`
+  + `create_briefings` (and earlier `relax_calendar_block_source_for_freeform_events`) live in
+  Supabase's migration history, not as tracked files. Fine operationally; capture as files only if
   repo-side migration tracking is wanted.
 - **Streaming cosmetic (minor):** voice persona keeps replies terse, but long screen replies can
   still run a sentence together at a web-search boundary in rare punctuation cases — current bridge
@@ -224,17 +277,22 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-1. **★ Voice — finish Step 1 + build Step 2.** First: real Deepgram/ElevenLabs keys → redeploy →
-   verify the loop live. Then **Step 2 — verbal action confirmation:** the agent speaks a proposal,
-   you say "yes"/"do it", it executes (replaces the tap-Approve when hands-free). Same proposed-action
-   objects; just a spoken confirm/deny turn. Later: **Step 3** quality/voice tuning, **Step 4**
-   hands-free wake-word host (Picovoice Porcupine, docked phone + Bluetooth speaker — the endgame).
-2. **★ Unified Home weekly command deck** — DESIGN APPROVED, build sequence in "Current state →
-   Planned next" above. Multi-deploy: notes↔KR schema, all-day events, quote module, the deck,
-   kill Overview, inline handlers. Step 1 (Backlog view) done.
-3. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+1. **★ Make the AI Agent more proactive (Stage 2 — actionable proposals).** START HERE next session.
+   Stage 1 (read-only scheduled briefings) shipped. Stage 2 = the brief/agent surfaces **suggested
+   actions** you can act on — approve a proposal straight from the brief or notification, not just read
+   it. Reuse the propose-first tool objects (`complete_task`, `reschedule_task`, `add_task`,
+   `set_kr_health`, `create_calendar_event`). Open design Qs: where proposals live (in the brief body?
+   a dedicated review surface? actionable notification?), and how approval flows when arriving cold from
+   a push. Stage 3 (autonomous acting) is later.
+2. **Voice Step 2 — verbal action confirmation.** Step 1 (talk→hear) is LIVE. Step 2: the agent speaks
+   a proposal, you say "yes"/"do it", it executes (replaces tap-Approve when hands-free). Same proposed-
+   action objects; just a spoken confirm/deny turn. Later: Step 3 quality/voice tuning, Step 4 wake-word
+   host (Picovoice Porcupine, docked phone + Bluetooth speaker).
+3. **Home deck cleanup — delete the Overview/`Summary` screen.** Home shipped as the default landing but
+   Overview still coexists (planned step 7). Remove Overview + its route once confirmed Home covers it.
+4. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-4. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
+5. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
 
 ### 🟡 Feature backlog
 5. `useSpaceData` hook (audit #4). ~1hr.
@@ -291,6 +349,12 @@ Share-page query optimization · PWA install prompt · keyboard shortcuts (⌘En
     tool, runs in-turn). The NDJSON stream parser ignores non-`text`/non-custom-`tool_use` blocks.
 12. **Reuse the canonical mutation path in the agent**, not a re-implementation — e.g. `complete_task`
     must call `tasksDb.toggleComplete` so recurring tasks roll forward instead of being hard-completed.
+13. **Persistent web push = re-ensure on load, don't re-prompt.** When permission is already granted,
+    silently re-register the SW + re-subscribe + sync to server on every app load (idempotent, upsert
+    on endpoint). The "enable" button is then a true one-time opt-in per device, not a per-session chore.
+14. **Build-time env + paid-tier gotchas.** `NEXT_PUBLIC_*` inline at build → set before building, and
+    force a clean rebuild (`git commit --allow-empty`) when a running deployment can't see a changed
+    value. ElevenLabs "library" voices (e.g. Rachel) 402 on the free tier — needs a paid plan.
 
 Earlier (May 14): desktop-first; SECURITY DEFINER RPCs for anon validation; NULL as "applies
 broadly" sentinel; paired text+structured forms; rolling state over event logs for recurrence;
@@ -378,6 +442,10 @@ calendar_blocks — scheduled placements. **at most one** of task_id/weekly_acti
   google_event_id, google_calendar_id, status 'proposed'|'committed'.  RLS USING(true), NO user_id.
 user_google_tokens — user_id (UNIQUE, FK auth.users), access_token, refresh_token,
   expires_at, scope, read_calendar_ids text[], hq_calendar_id.  RLS auth.uid()=user_id.
+push_subscriptions — id, user_id, endpoint (UNIQUE), p256dh, auth, user_agent, created_at,
+  last_sent_at.  RLS owner_all. Web-push subscriptions (one row per browser/endpoint).
+briefings — id, user_id, title, body, for_date (date), source 'manual'|'cron', created_at.
+  RLS owner_all. Persisted Chief-of-Staff morning briefs (read in BriefingsFeed).
 
 (root) task_tags (task_id, tag) · note_tags (note_id, tag) — global tag namespaces
 ```
