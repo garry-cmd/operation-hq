@@ -680,6 +680,7 @@ export default function HQPage() {
         })()}
         parkedCount={parkedCount}
         reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}
+        agentWorking={agentPending}
         onOpenSearch={() => setPaletteOpen(true)}
         initials={initials}
         email={user?.email ?? ''}

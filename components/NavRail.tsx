@@ -39,6 +39,10 @@ interface Props {
   parkedCount?: number
   reviewsCount?: number
 
+  // True while the Chief of Staff is mid-turn — shows a pulsing dot on the
+  // agent nav row so an in-progress reply is visible from any screen.
+  agentWorking?: boolean
+
   // Search — the rail renders a trigger that opens the command palette
   // (owned by page.tsx, which holds the searchable data).
   onOpenSearch: () => void
@@ -191,6 +195,7 @@ export default function NavRail(props: Props) {
 
       {/* Nav groups */}
       <nav style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+        <style>{`@keyframes hqPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}`}</style>
         {NAV_GROUPS.map(group => (
           <div key={group.label}>
             <div style={{
@@ -219,6 +224,12 @@ export default function NavRail(props: Props) {
                     {item.icon}
                   </span>
                   <span style={{ flex: 1 }}>{item.label}</span>
+                  {item.id === 'agent' && props.agentWorking && (
+                    <span title="Working…" style={{
+                      width: 7, height: 7, borderRadius: 99, flexShrink: 0,
+                      background: 'var(--accent)', animation: 'hqPulse 1.4s ease-in-out infinite',
+                    }} />
+                  )}
                   {b != null && b > 0 && (
                     <span style={{
                       fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
