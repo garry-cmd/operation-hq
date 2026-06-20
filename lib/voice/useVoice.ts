@@ -199,5 +199,6 @@ export function useVoice(opts?: { onError?: (m: string) => void }) {
     status, supported,
     startListening, stopListening,
     beginSpeech, pushSpeech, endSpeech, stopSpeaking,
+    say: enqueue, // one-shot: speak a single phrase (used for voice action confirmations)
   }
 }

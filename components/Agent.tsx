@@ -51,6 +51,16 @@ function renderContent(text: string): React.ReactNode {
   })
 }
 
+// Classify a spoken reply to a proposal as a confirm / deny / neither. Local
+// keyword match — boring + reliable for a binary yes/no; anything unclear falls
+// through to a normal new turn. 'yes' is tested first so "no, do it" reads as yes.
+function classifyConfirm(t: string): 'yes' | 'no' | 'unclear' {
+  const s = t.toLowerCase().replace(/[^a-z\s']/g, ' ').replace(/\s+/g, ' ').trim()
+  if (/\b(yes|yeah|yep|yup|sure|do it|go ahead|go for it|confirm|confirmed|approve|approved|please do|sounds good|affirmative|aye|okay|okey|ok)\b/.test(s)) return 'yes'
+  if (/\b(no|nope|nah|skip|cancel|cancelled|don't|dont|do not|stop|negative|leave it|leave them|never mind|nevermind|forget it)\b/.test(s)) return 'no'
+  return 'unclear'
+}
+
 export default function Agent({
   tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, setNotes, onOpenNote, toast,
   messages, setMessages, pending, setPending,
@@ -73,6 +83,9 @@ export default function Agent({
   setPending: React.Dispatch<React.SetStateAction<boolean>>
 }) {
   const [input, setInput] = useState('')
+  // When a voice turn proposes actions, the index of that assistant message —
+  // the next spoken "yes/no" resolves its pending proposals (Voice Step 2).
+  const [confirmMsgIdx, setConfirmMsgIdx] = useState<number | null>(null)
   const voice = useVoice({ onError: toast })
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
@@ -101,9 +114,26 @@ export default function Agent({
     for (const a of actions) if (a.status === 'pending') await approve(msgIdx, a)
   }
 
+  // ── Voice Step 2: resolve a spoken yes/no against a turn's pending proposals ──
+  async function confirmYes(msgIdx: number) {
+    const pendingActions = messages[msgIdx]?.actions?.filter(a => a.status === 'pending') ?? []
+    setConfirmMsgIdx(null)
+    if (!pendingActions.length) return
+    await approveAll(msgIdx, pendingActions)
+    voice.say(pendingActions.length > 1 ? 'Done — all set.' : 'Done.')
+  }
+
+  function confirmNo(msgIdx: number) {
+    const pendingActions = messages[msgIdx]?.actions?.filter(a => a.status === 'pending') ?? []
+    setConfirmMsgIdx(null)
+    pendingActions.forEach(a => setActionStatus(msgIdx, a.id, 'dismissed'))
+    voice.say('Okay, leaving those.')
+  }
+
   async function runTurn(text: string, speak: boolean) {
     const content = text.trim()
     if (!content || pending) return
+    setConfirmMsgIdx(null) // a new turn closes any open voice-confirm window
     const prevState = messages
     const next: ChatMsg[] = [...messages, { role: 'user', content }]
     const assistantIdx = next.length
@@ -112,6 +142,7 @@ export default function Agent({
     setPending(true)
     if (speak) voice.beginSpeech()
     let started = false
+    let proposed = false
     let assembled = ''
     try {
       const history: AgentMessage[] = next.map(({ role, content }) => ({ role, content }))
@@ -129,6 +160,7 @@ export default function Agent({
         onActions: (actions) => {
           const ui: UIAction[] = actions.map(a => ({ ...a, id: crypto.randomUUID(), status: 'pending' as const }))
           if (!ui.length) return
+          proposed = true
           if (!started) {
             started = true
             assembled = assembled || 'I’ve proposed the following — approve below.'
@@ -139,6 +171,8 @@ export default function Agent({
         },
       }, { voice: speak })
       if (!started) setMessages(prev => [...prev, { role: 'assistant', content: '(no response)' }])
+      // Voice turn that proposed actions → the next spoken yes/no resolves them.
+      if (speak && proposed) setConfirmMsgIdx(assistantIdx)
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Agent failed')
       if (!started) { setMessages(prevState); if (!speak) setInput(content) } // nothing streamed — roll back
@@ -157,7 +191,15 @@ export default function Agent({
     if (voice.status === 'idle') { await voice.startListening(); return }
     if (voice.status === 'listening') {
       const text = await voice.stopListening()
-      if (text) await runTurn(text, true)
+      if (!text) return
+      // If a voice proposal is awaiting confirmation, a spoken yes/no resolves it.
+      if (confirmMsgIdx != null) {
+        const verdict = classifyConfirm(text)
+        if (verdict === 'yes') { await confirmYes(confirmMsgIdx); return }
+        if (verdict === 'no') { confirmNo(confirmMsgIdx); return }
+        setConfirmMsgIdx(null) // unclear → treat as a fresh question
+      }
+      await runTurn(text, true)
     }
   }
 
