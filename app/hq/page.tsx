@@ -32,6 +32,8 @@ import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
 import Calendar from '@/components/Calendar'
 import Tags from '@/components/Tags'
+import Settings from '@/components/Settings'
+import { ensurePushSubscription } from '@/lib/push/ensurePush'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
 import NavRail from '@/components/NavRail'
@@ -42,7 +44,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags'
+type Screen = 'home' | 'agent' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags' | 'settings'
 
 
 export default function HQPage() {
@@ -241,6 +243,11 @@ export default function HQPage() {
     if (scr === 'agent') setScreen('agent')
     if (g || scr) window.history.replaceState({}, '', '/hq')
   }, [])
+
+  // Persist briefings without re-prompting: if notification permission is already
+  // granted, silently (re)register the SW + subscription and sync it to the server
+  // on every load. This is why "Turn on" is a one-time action per device.
+  useEffect(() => { void ensurePushSubscription() }, [])
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -806,6 +813,8 @@ export default function HQPage() {
           onJumpToNote={(id) => { setNotesInitialId(id); setTagsInitialTag(null); setScreen('notes') }}
           toast={setToast}
         />
+      ) : screen === 'settings' && !loading ? (
+        <Settings toast={setToast} />
       ) : (
       <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'overview' || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (

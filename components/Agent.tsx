@@ -15,7 +15,6 @@ import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import { createCalendarEvent } from '@/lib/db/googleApi'
 import { useVoice } from '@/lib/voice/useVoice'
-import PushSetup from '@/components/PushSetup'
 import BriefingsFeed from '@/components/BriefingsFeed'
 import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock } from '@/lib/types'
 
@@ -254,7 +253,6 @@ export default function Agent({
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-400)' }}>
           Knows your whole operation — spaces, KRs, tasks, calendar, reflections. It can also propose actions; nothing changes until you approve.
         </p>
-        <PushSetup />
         <BriefingsFeed />
       </div>
 

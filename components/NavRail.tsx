@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'agent' | 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags'
+export type Screen = 'home' | 'agent' | 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'overview' | 'reflect' | 'park' | 'tags' | 'settings'
 
 interface Props {
   screen: Screen
@@ -84,6 +84,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
     label: 'Meta',
     items: [
       { id: 'tags', label: 'Tags', icon: <TagsIcon /> },
+      { id: 'settings', label: 'Settings', icon: <SettingsIcon /> },
     ],
   },
   {
@@ -361,6 +362,9 @@ function ParkIcon() {
 }
 function TagsIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 1.5L4.5 14.5M11.5 1.5L10 14.5M1.5 5h13M1.5 11h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+}
+function SettingsIcon() {
+  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.4"/><path d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5L3.4 3.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
 }
 // 2×2 dot grid — visual continuity with the old All Spaces pill in
 // SpaceSwitcher (which used a row of small dots to represent the cross-space
