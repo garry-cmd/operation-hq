@@ -17,6 +17,7 @@ function rowToNote(row: Record<string, unknown>): Note {
     id: row.id as string,
     space_id: row.space_id as string,
     notebook_id: (row.notebook_id as string | null) ?? null,
+    roadmap_item_id: (row.roadmap_item_id as string | null) ?? null,
     title: (row.title as string) ?? '',
     body: (row.body as NoteBody | null) ?? null,
     body_format: (row.body_format as string) ?? 'tiptap_v1',
@@ -42,6 +43,7 @@ export async function create(input: NewNoteInput): Promise<Note> {
     .insert({
       space_id: input.space_id,
       notebook_id: input.notebook_id ?? null,
+      roadmap_item_id: input.roadmap_item_id ?? null,
       title: input.title ?? '',
       body: input.body ?? null,
     })
@@ -69,6 +71,11 @@ export async function update(
  *  on this without worrying about which other fields might be in flight. */
 export async function saveBody(id: string, body: NoteBody): Promise<Note> {
   return update(id, { body })
+}
+
+/** Link (or clear) the KR a note belongs to. Pass null to unlink. */
+export async function setRoadmapItem(id: string, roadmapItemId: string | null): Promise<Note> {
+  return update(id, { roadmap_item_id: roadmapItemId })
 }
 
 export async function remove(id: string): Promise<void> {

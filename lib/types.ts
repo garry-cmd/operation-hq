@@ -311,6 +311,10 @@ export interface Note {
   // no space AND no notebook, matching the Tasks model.
   space_id: string | null
   notebook_id: string | null
+  // Optional link to a KR (roadmap_item). Mirrors tasks.roadmap_item_id —
+  // FK to roadmap_items, ON DELETE SET NULL. Powers the Home deck's
+  // "click a KR → load its notes" and the editor's Link-to-KR picker.
+  roadmap_item_id: string | null
   title: string
   body: NoteBody | null
   body_format: string  // 'tiptap_v1'
@@ -323,6 +327,7 @@ export interface Note {
 export interface NewNoteInput {
   space_id?: string | null
   notebook_id?: string | null
+  roadmap_item_id?: string | null
   title?: string
   body?: NoteBody | null
 }

@@ -14,7 +14,7 @@
  * shared with Tasks — same string set, separate join table.
  */
 import { useEffect, useState, useMemo, useCallback, useRef, useReducer } from 'react'
-import { Space, Notebook, Note, NoteTag, NoteBody, NoteVersion } from '@/lib/types'
+import { Space, Notebook, Note, NoteTag, NoteBody, NoteVersion, RoadmapItem } from '@/lib/types'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
 import * as noteVersionsDb from '@/lib/db/noteVersions'
@@ -37,6 +37,8 @@ import { uploadNoteImage, uploadNoteFile, deleteAllMediaForNote, deleteNoteMedia
 interface Props {
   spaces: Space[]
   activeSpaceId: string
+  // All-spaces KR list — powers the editor's Link-to-KR picker.
+  roadmapItems: RoadmapItem[]
   // Lifted state (Jun 2026) — page.tsx owns the data, Notes owns the UI.
   notebooks: Notebook[]
   setNotebooks: React.Dispatch<React.SetStateAction<Notebook[]>>
@@ -79,7 +81,7 @@ function byPinnedThenUpdated(a: Note, b: Note): number {
   return a.updated_at < b.updated_at ? 1 : -1
 }
 
-export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, notes, setNotes, tagsByNote, setTagsByNote, initialNoteId, onConsumeInitialNoteId, onJumpToTag, onFocusChange, toast }: Props) {
+export default function Notes({ spaces, activeSpaceId, roadmapItems, notebooks, setNotebooks, notes, setNotes, tagsByNote, setTagsByNote, initialNoteId, onConsumeInitialNoteId, onJumpToTag, onFocusChange, toast }: Props) {
   const [scope, setScope] = useState<Scope>({ kind: 'inbox' })
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
   // Left-pane UI state
@@ -616,6 +618,7 @@ export default function Notes({ spaces, activeSpaceId, notebooks, setNotebooks, 
             note={selectedNote}
             tags={tagsByNote.get(selectedNote.id) ?? []}
             spaces={spaces}
+            roadmapItems={roadmapItems}
             notebooks={notebooks}
             fullscreen={fullscreen}
             onToggleFullscreen={() => setFullscreen(v => { const nv = !v; onFocusChange?.(nv); return nv })}
@@ -933,10 +936,11 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
 
 // ── Editor ─────────────────────────────────────────────────────────
 
-function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscreen, onPatch, onSetTags, onOpenNoteByTitle, onDelete }: {
+function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullscreen, onToggleFullscreen, onPatch, onSetTags, onOpenNoteByTitle, onDelete }: {
   note: Note;
   tags: string[];
   spaces: Space[];
+  roadmapItems: RoadmapItem[];
   notebooks: Notebook[];
   fullscreen: boolean;
   onToggleFullscreen: () => void;
@@ -1023,6 +1027,7 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
   }, [onPatch, snapshot, gcRemovedMedia])
 
   const [moveOpen, setMoveOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [versions, setVersions] = useState<NoteVersion[]>([])
   const [versionsLoading, setVersionsLoading] = useState(false)
@@ -1223,6 +1228,15 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
     setMoveOpen(false)
   }
 
+  // KR link: the note's linked KR (if any), and the setter the picker calls.
+  const linkedKR = note.roadmap_item_id
+    ? roadmapItems.find(k => k.id === note.roadmap_item_id) ?? null
+    : null
+  function linkTo(krId: string | null) {
+    onPatch({ roadmap_item_id: krId })
+    setLinkOpen(false)
+  }
+
   // In fullscreen / focus mode, give the editor a much wider column than the
   // cramped default — roomy for tables while keeping prose line-length sane.
   const innerStyle: React.CSSProperties = fullscreen
@@ -1251,6 +1265,20 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
       <div style={{ padding: '6px 24px 10px' }}>
         <div style={{ ...innerStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', flex: 1 }}>
+            {linkedKR && (() => {
+              const krSpace = spaces.find(s => s.id === linkedKR.space_id) ?? null
+              return (
+                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 240 }}>
+                  {krSpace && <span style={{ width: 7, height: 7, borderRadius: '50%', background: krSpace.color, flexShrink: 0 }} />}
+                  <button onClick={() => { setMoveOpen(false); setHistoryOpen(false); setLinkOpen(true) }}
+                    title={`Linked to KR: ${linkedKR.title}`}
+                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: 'inherit', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    🎯 {linkedKR.title}
+                  </button>
+                  <button onClick={() => linkTo(null)} title="Unlink KR" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+                </span>
+              )
+            })()}
             {tags.map(t => (
               <span key={t} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 #{t}
@@ -1270,10 +1298,13 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
             <IconBtn title={pinned ? 'Unpin note' : 'Pin note'} active={pinned} onClick={togglePin}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 3h6l-1 7 3 3H7l3-3-1-7z"/></svg>
             </IconBtn>
-            <IconBtn title="Move to space / notebook" active={moveOpen} onClick={() => { setHistoryOpen(false); setMoveOpen(o => !o) }}>
+            <IconBtn title={linkedKR ? `Linked to KR: ${linkedKR.title}` : 'Link to a KR'} active={linkOpen || !!linkedKR} onClick={() => { setMoveOpen(false); setHistoryOpen(false); setLinkOpen(o => !o) }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </IconBtn>
+            <IconBtn title="Move to space / notebook" active={moveOpen} onClick={() => { setLinkOpen(false); setHistoryOpen(false); setMoveOpen(o => !o) }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
             </IconBtn>
-            <IconBtn title="Version history" active={historyOpen} onClick={() => { setMoveOpen(false); historyOpen ? setHistoryOpen(false) : openHistory() }}>
+            <IconBtn title="Version history" active={historyOpen} onClick={() => { setLinkOpen(false); setMoveOpen(false); historyOpen ? setHistoryOpen(false) : openHistory() }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
             </IconBtn>
             <IconBtn title="Export as Markdown" onClick={exportMarkdown}>
@@ -1294,6 +1325,9 @@ function NoteEditor({ note, tags, spaces, notebooks, fullscreen, onToggleFullscr
             </button>
             {moveOpen && (
               <MovePanel spaces={spaces} notebooks={notebooks} note={note} onMove={moveTo} onClose={() => setMoveOpen(false)} />
+            )}
+            {linkOpen && (
+              <LinkKRPanel spaces={spaces} roadmapItems={roadmapItems} note={note} onLink={linkTo} onClose={() => setLinkOpen(false)} />
             )}
             {historyOpen && (
               <HistoryPanel versions={versions} loading={versionsLoading} onRestore={restoreVersion} onClose={() => setHistoryOpen(false)} />
@@ -1583,6 +1617,45 @@ function MovePanel({ spaces, notebooks, note, onMove, onClose }: {
             </div>
           )
         })}
+      </div>
+    </div>
+  )
+}
+
+function LinkKRPanel({ spaces, roadmapItems, note, onLink, onClose }: {
+  spaces: Space[]; roadmapItems: RoadmapItem[]; note: Note;
+  onLink: (krId: string | null) => void; onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    function onDoc(e: MouseEvent) { if (ref.current && !ref.current.contains(e.target as Node)) onClose() }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [onClose])
+  // Linkable KRs = live ones (not parked, not done), grouped by space in the
+  // app's space order; only spaces with ≥1 linkable KR appear.
+  const linkable = roadmapItems.filter(k => !k.is_parked && k.health_status !== 'done')
+  const groups = spaces
+    .map(sp => ({ space: sp, krs: linkable.filter(k => k.space_id === sp.id) }))
+    .filter(g => g.krs.length > 0)
+  return (
+    <div ref={ref} style={panelStyle}>
+      <div style={panelHeaderStyle}>Link to KR</div>
+      <div style={{ maxHeight: 340, overflowY: 'auto', padding: 4 }}>
+        <PanelRow label="✕ No KR link" active={!note.roadmap_item_id} onClick={() => onLink(null)} />
+        {groups.length === 0 ? (
+          <div style={panelEmptyStyle}>No active KRs to link. Create a KR on the Roadmap first.</div>
+        ) : groups.map(({ space, krs }) => (
+          <div key={space.id}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: space.color, flexShrink: 0 }} />
+              {space.name}
+            </div>
+            {krs.map(kr => (
+              <PanelRow key={kr.id} label={kr.title} indent active={note.roadmap_item_id === kr.id} onClick={() => onLink(kr.id)} />
+            ))}
+          </div>
+        ))}
       </div>
     </div>
   )

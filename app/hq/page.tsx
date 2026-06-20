@@ -729,6 +729,7 @@ export default function HQPage() {
         <Notes
           spaces={spaces}
           activeSpaceId={activeSpaceId}
+          roadmapItems={roadmapItems}
           notebooks={notebooks}
           setNotebooks={setNotebooks}
           notes={notes}
