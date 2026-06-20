@@ -4,7 +4,7 @@ import { listRecentBriefs, saveProposals, type Briefing, type BriefProposal } fr
 import { runProposedAction, describeAction, type ActionContext } from '@/lib/agentActions'
 
 const nwLabel: React.CSSProperties = {
-  fontSize: 10, fontWeight: 500, letterSpacing: '0.16em', textTransform: 'uppercase',
+  fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.18em', textTransform: 'uppercase',
   color: 'var(--nw-label)', margin: '0 0 8px',
 }
 
@@ -98,8 +98,8 @@ function BriefCard({
   return (
     <div style={{ border: '1px solid var(--navy-700, var(--navy-600))', borderRadius: 10, padding: '10px 12px', background: 'var(--navy-800)' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))' }}>{b.title}</span>
-        <span style={{ fontSize: 10, color: 'var(--navy-400)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))' }}>{b.title}</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-400)', whiteSpace: 'nowrap', flexShrink: 0 }}>
           {relTime(b.created_at)}{b.source === 'cron' ? ' · auto' : ''}
         </span>
       </div>

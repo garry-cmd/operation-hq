@@ -56,7 +56,8 @@ export default function Reflect({ reviews, setReviews, toast }: Props) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Reflect</h1>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Archive · Reflect</div>
+      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.02em', marginBottom: 3 }}>Reflect</h1>
       <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>
         Weekly archive — tap a card to read or edit the entry.
       </p>
@@ -206,7 +207,7 @@ function ReadView({ review, onEdit }: { review: WeeklyReview; onEdit: () => void
 function ReadField({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ marginBottom: 10 }}>
-      <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em', marginBottom: 3 }}>{label}</div>
       <div style={{ fontSize: 13, color: 'var(--navy-100)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{value}</div>
     </div>
   )

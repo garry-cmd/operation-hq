@@ -28,7 +28,7 @@ export interface UIAction extends ProposedAction { id: string; status: ActionSta
 export interface ChatMsg { role: 'user' | 'assistant'; content: string; actions?: UIAction[] }
 
 const nwLabel: React.CSSProperties = {
-  fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase',
+  fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase',
   color: 'var(--nw-label)', margin: 0,
 }
 
@@ -212,8 +212,9 @@ export default function Agent({
   return (
     <div style={{ height: 'calc(100vh - 0px)', display: 'flex', flexDirection: 'column', maxWidth: 860, width: '100%', margin: '0 auto', padding: '20px 24px 16px' }}>
       <div style={{ flexShrink: 0, marginBottom: 14 }}>
-        <h3 style={nwLabel}>Chief of Staff</h3>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-400)' }}>
+        <div style={nwLabel}>Daily · Agent</div>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'var(--navy-50)', margin: '5px 0 0', letterSpacing: '-.02em' }}>Chief of Staff</h1>
+        <p style={{ margin: '5px 0 0', fontSize: 13, color: 'var(--navy-400)' }}>
           Knows your whole operation — spaces, KRs, tasks, calendar, reflections. It can also propose actions; nothing changes until you approve.
         </p>
         <BriefingsFeed ctx={ctx} onOpenNote={onOpenNote} toast={toast} />
@@ -270,8 +271,8 @@ export default function Agent({
                         <button onClick={() => setActionStatus(i, a.id, 'dismissed')} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--navy-600)', color: 'var(--navy-300)' }}>Dismiss</button>
                       </>
                     )}
-                    {a.status === 'approved' && <span style={{ fontSize: 11, color: 'var(--nw-nominal-text)' }}>done</span>}
-                    {a.status === 'dismissed' && <span style={{ fontSize: 11, color: 'var(--navy-400)' }}>dismissed</span>}
+                    {a.status === 'approved' && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--nw-nominal-text)' }}>done</span>}
+                    {a.status === 'dismissed' && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--navy-400)' }}>dismissed</span>}
                     {a.status === 'failed' && <button onClick={() => approve(i, a)} style={{ fontSize: 12, padding: '5px 10px', borderRadius: 8, cursor: 'pointer', background: 'transparent', border: '1px solid var(--navy-600)', color: 'var(--navy-300)' }}>Retry</button>}
                   </div>
                 ))}

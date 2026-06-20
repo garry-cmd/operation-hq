@@ -260,7 +260,7 @@ export default function Summary({
       {classification === 'current' && actionsBySpace.length > 0 && (
         <div style={{ marginTop: 24 }}>
           <h3 style={{
-            fontSize: 10, fontWeight: 500, letterSpacing: '.16em',
+            fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em',
             textTransform: 'uppercase', color: 'var(--nw-label)',
             margin: '0 0 10px 2px',
           }}>
@@ -371,13 +371,13 @@ function Toolbar({
           {viewedQuarter}
         </span>
         {classification === 'current' && (
-          <span style={{ fontSize: 9, color: 'var(--accent)', background: 'var(--accent-dim)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.08em', fontWeight: 700, marginRight: 4 }}>CURRENT</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--accent)', background: 'var(--accent-dim)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.1em', fontWeight: 600, marginRight: 4 }}>CURRENT</span>
         )}
         {classification === 'past' && (
-          <span style={{ fontSize: 9, color: 'var(--nw-label-dim)', background: 'var(--navy-700)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.08em', fontWeight: 700, marginRight: 4 }}>PAST</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--nw-label-dim)', background: 'var(--navy-700)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.1em', fontWeight: 600, marginRight: 4 }}>PAST</span>
         )}
         {classification === 'future' && (
-          <span style={{ fontSize: 9, color: 'var(--nw-label)', background: 'rgba(212, 160, 74, 0.15)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.08em', fontWeight: 700, marginRight: 4 }}>PLAN</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--nw-label)', background: 'rgba(212, 160, 74, 0.15)', padding: '1px 6px', borderRadius: 4, letterSpacing: '.1em', fontWeight: 600, marginRight: 4 }}>PLAN</span>
         )}
         <button onClick={onNext} aria-label="Next quarter"
           style={{ background: 'none', border: 'none', color: 'var(--navy-300)', cursor: 'pointer', width: 26, height: 26, borderRadius: 4, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, lineHeight: 1, fontFamily: 'inherit' }}>›</button>
@@ -408,8 +408,8 @@ function Toolbar({
               background: filter === f ? 'var(--accent-dim)' : 'none',
               border: 'none',
               color: filter === f ? 'var(--accent)' : 'var(--navy-300)',
-              fontSize: 11, padding: '6px 10px', cursor: 'pointer', fontFamily: 'inherit',
-              fontWeight: 500, letterSpacing: '.04em', textTransform: 'capitalize',
+              fontFamily: 'var(--font-mono)', fontSize: 11, padding: '6px 10px', cursor: 'pointer',
+              fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase',
             }}>
             {f === 'off-track' ? 'Off track' : f}
           </button>
@@ -483,7 +483,7 @@ function SwimLaneGrid({
           left: 0,
           zIndex: 12,
         }}>
-          <span style={{ fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.16em', textTransform: 'uppercase', fontWeight: 500 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--nw-label-dim)', letterSpacing: '.18em', textTransform: 'uppercase', fontWeight: 600 }}>
             Space <span style={{ color: 'var(--accent)' }}>↓</span> · Time <span style={{ color: 'var(--accent)' }}>→</span>
           </span>
         </div>
@@ -508,19 +508,19 @@ function SwimLaneGrid({
               zIndex: 10,
             }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
-              <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>
                 {b.isQuarterBound ? 'Quarter-bound' : 'Week of'}
               </span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: b.isCurrentWeek ? 'var(--accent)' : 'var(--navy-50)', letterSpacing: '-.1px' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: b.isCurrentWeek ? 'var(--accent)' : 'var(--navy-50)', letterSpacing: '-.01em', fontVariantNumeric: 'tabular-nums' }}>
                 {b.isQuarterBound ? b.rangeText : b.label.replace(/^Week of /, '')}
               </span>
-              <span style={{ fontSize: 10, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.04em' }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em' }}>
                 {b.isQuarterBound ? 'By end of quarter · no specific week' : b.rangeText}
               </span>
               {b.isCurrentWeek && (
                 <span style={{
                   display: 'inline-block', alignSelf: 'flex-start',
-                  fontSize: 9, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase',
+                  fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase',
                   color: 'var(--accent)', background: 'var(--accent-dim)',
                   padding: '1px 6px', borderRadius: 4, marginTop: 4,
                 }}>This Week</span>
