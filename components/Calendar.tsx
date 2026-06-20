@@ -201,11 +201,9 @@ export default function Calendar({
     }
   }
 
-  async function placeItemAt(itemKey: string, date: string, minute: number) {
+  async function placeItemAt(itemKey: string, date: string, start: number) {
     const item = itemByKey.get(itemKey)
     if (!item || busy) return
-    let start = Math.round(minute / 15) * 15
-    start = Math.max(GRID_START_H * 60, Math.min(start, GRID_END_H * 60 - item.duration))
     const end = start + item.duration
     setBusy(true)
     try {
@@ -225,13 +223,11 @@ export default function Calendar({
   }
 
   // Drag an existing block to a new slot — keeps its duration, optimistic.
-  async function moveBlockAt(blockId: string, date: string, minute: number) {
+  async function moveBlockAt(blockId: string, date: string, start: number) {
     if (busy) return
     const b = calendarBlocks.find(x => x.id === blockId)
     if (!b) return
     const dur = b.end_minute - b.start_minute
-    let start = Math.round(minute / 15) * 15
-    start = Math.max(GRID_START_H * 60, Math.min(start, GRID_END_H * 60 - dur))
     if (b.block_date === date && b.start_minute === start) return
     const end = start + dur
     setCalendarBlocks(prev => prev.map(x => x.id === blockId ? { ...x, block_date: date, start_minute: start, end_minute: end } : x))
@@ -289,7 +285,7 @@ export default function Calendar({
             spaceById={spaceById} colorFor={colorFor}
             onPlaceItem={placeItemAt} onMoveBlock={moveBlockAt} onRemoveBlock={removeBlock}
             onPlan={runPlanner} onClear={clearProposed} busy={busy}
-            googleConnected={googleConnected}
+            googleConnected={googleConnected} toast={toast}
           />
         : <TemplateView
             spaces={spaces} capacityBlocks={capacityBlocks} setCapacityBlocks={setCapacityBlocks}
@@ -354,25 +350,75 @@ function WeekView(props: {
   blocks: CalendarBlock[]; capacityByDate: Map<string, CapacityBlock[]>
   items: SchedulableItem[]
   spaceById: Map<string, Space>; colorFor: (id: string | null) => string
-  onPlaceItem: (itemKey: string, date: string, minute: number) => void
-  onMoveBlock: (blockId: string, date: string, minute: number) => void
+  onPlaceItem: (itemKey: string, date: string, start: number) => void
+  onMoveBlock: (blockId: string, date: string, start: number) => void
   onRemoveBlock: (b: CalendarBlock) => void
   onPlan: () => void; onClear: () => void; busy: boolean; googleConnected: boolean
+  toast: (m: string) => void
 }) {
   const { weekDates, todayStr, blocks, capacityByDate, items,
-    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onClear, busy, googleConnected } = props
+    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onClear, busy, googleConnected, toast } = props
   const gridH = (GRID_END_H - GRID_START_H) * ROW_H
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
-  const [overDate, setOverDate] = useState<string | null>(null)
+  const [over, setOver] = useState<{ date: string; valid: boolean } | null>(null)
+  // What's being dragged — drives valid-window highlighting + drop validation.
+  const [dragCtx, setDragCtx] = useState<{ kind: 'kr_action' | 'task'; spaceId: string | null; duration: number } | null>(null)
+
+  const itemMap = useMemo(() => new Map(items.map(it => [`${it.source}:${it.id}`, it])), [items])
+
+  // Does a capacity block accept this kind+space? (mirrors the planner)
+  const accepts = (c: CapacityBlock, kind: 'kr_action' | 'task', spaceId: string | null) =>
+    (c.kind === 'both' || c.kind === kind) && (c.space_id === null || c.space_id === spaceId)
+
+  // Resolve a drop to a start minute inside a matching capacity window, or null
+  // if the position isn't in a window that accepts this item / it doesn't fit.
+  function resolveSlot(kind: 'kr_action' | 'task', spaceId: string | null, duration: number, date: string, minute: number): number | null {
+    const caps = capacityByDate.get(date) ?? []
+    for (const c of caps) {
+      if (!accepts(c, kind, spaceId)) continue
+      if (minute < c.start_minute || minute >= c.end_minute) continue
+      if (c.end_minute - c.start_minute < duration) continue
+      const snapped = Math.round(minute / 15) * 15
+      return Math.min(Math.max(snapped, c.start_minute), c.end_minute - duration)
+    }
+    return null
+  }
+
+  function ctxFor(payload: string): { kind: 'kr_action' | 'task'; spaceId: string | null; duration: number } | null {
+    if (payload.startsWith('new:')) {
+      const it = itemMap.get(payload.slice(4)); if (!it) return null
+      return { kind: it.kind, spaceId: it.space_id, duration: it.duration }
+    }
+    if (payload.startsWith('move:')) {
+      const b = blocks.find(x => x.id === payload.slice(5)); if (!b) return null
+      return { kind: b.task_id ? 'task' : 'kr_action', spaceId: b.space_id, duration: b.end_minute - b.start_minute }
+    }
+    return null
+  }
+
+  function handleDragOver(date: string, e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    if (!dragCtx) { e.dataTransfer.dropEffect = 'move'; return }
+    const rect = e.currentTarget.getBoundingClientRect()
+    const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
+    const start = resolveSlot(dragCtx.kind, dragCtx.spaceId, dragCtx.duration, date, minute)
+    const valid = start !== null
+    e.dataTransfer.dropEffect = valid ? 'move' : 'none'
+    setOver(prev => (prev && prev.date === date && prev.valid === valid) ? prev : { date, valid })
+  }
 
   function handleDrop(date: string, e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault()
     const payload = e.dataTransfer.getData('text/plain')
+    const ctx = ctxFor(payload)
     const rect = e.currentTarget.getBoundingClientRect()
     const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
-    setOverDate(null)
-    if (payload.startsWith('new:')) onPlaceItem(payload.slice(4), date, minute)
-    else if (payload.startsWith('move:')) onMoveBlock(payload.slice(5), date, minute)
+    setOver(null); setDragCtx(null)
+    if (!ctx) return
+    const start = resolveSlot(ctx.kind, ctx.spaceId, ctx.duration, date, minute)
+    if (start === null) { toast('No capacity reserved here for this item — add a matching window in the Template'); return }
+    if (payload.startsWith('new:')) onPlaceItem(payload.slice(4), date, start)
+    else if (payload.startsWith('move:')) onMoveBlock(payload.slice(5), date, start)
   }
 
   return (
@@ -380,7 +426,7 @@ function WeekView(props: {
       <aside style={{ width: 248, flexShrink: 0, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: 14 }}>
         <h3 style={nwLabel}>Unscheduled · this week</h3>
         <p style={{ fontSize: 11, color: 'var(--navy-400)', margin: '4px 0 12px', lineHeight: 1.45 }}>
-          Drag an item onto the grid to block time, or auto-fill the week.
+          Drag an item onto a matching capacity window, or auto-fill the week.
         </p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <button onClick={onPlan} disabled={busy} style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>Plan week</button>
@@ -395,8 +441,8 @@ function WeekView(props: {
             <div
               key={key}
               draggable
-              onDragStart={(e) => { e.dataTransfer.setData('text/plain', `new:${key}`); e.dataTransfer.effectAllowed = 'move' }}
-              onDragEnd={() => setOverDate(null)}
+              onDragStart={(e) => { e.dataTransfer.setData('text/plain', `new:${key}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: it.kind, spaceId: it.space_id, duration: it.duration }) }}
+              onDragEnd={() => { setOver(null); setDragCtx(null) }}
               style={{
                 display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 10,
                 background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 8, cursor: 'grab',
@@ -429,27 +475,31 @@ function WeekView(props: {
               const today = date === todayStr
               const caps = capacityByDate.get(date) ?? []
               const dayBlocks = blocks.filter(b => b.block_date === date)
-              const over = overDate === date
+              const overThis = over?.date === date
               return (
                 <div
                   key={date}
-                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (overDate !== date) setOverDate(date) }}
-                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverDate(o => (o === date ? null : o)) }}
+                  onDragOver={(e) => handleDragOver(date, e)}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(o => (o?.date === date ? null : o)) }}
                   onDrop={(e) => handleDrop(date, e)}
                   style={{
                     position: 'relative', borderRight: '1px solid var(--navy-700)', height: gridH,
-                    background: over ? 'rgba(74,143,255,.12)' : today ? 'rgba(74,143,255,.04)' : 'transparent',
+                    background: overThis ? (over!.valid ? 'rgba(74,143,255,.12)' : 'rgba(255,90,80,.09)') : today ? 'rgba(74,143,255,.04)' : 'transparent',
                   }}
                 >
                   <HourLines />
-                  {caps.map(c => (
-                    <div key={c.id} title={`${c.space_id ? spaceById.get(c.space_id)?.name : 'Any space'} · ${KIND_LABEL[c.kind]}`} style={{
-                      position: 'absolute', left: 0, right: 0, top: minToTop(c.start_minute), height: durToH(c.end_minute - c.start_minute),
-                      background: `color-mix(in srgb, ${colorFor(c.space_id)} 9%, transparent)`,
-                      borderLeft: `2px solid color-mix(in srgb, ${colorFor(c.space_id)} 55%, transparent)`,
-                      pointerEvents: 'none',
-                    }} />
-                  ))}
+                  {caps.map(c => {
+                    const lit = dragCtx ? accepts(c, dragCtx.kind, dragCtx.spaceId) : false
+                    return (
+                      <div key={c.id} title={`${c.space_id ? spaceById.get(c.space_id)?.name : 'Any space'} · ${KIND_LABEL[c.kind]}`} style={{
+                        position: 'absolute', left: 0, right: 0, top: minToTop(c.start_minute), height: durToH(c.end_minute - c.start_minute),
+                        background: `color-mix(in srgb, ${colorFor(c.space_id)} ${lit ? 22 : 9}%, transparent)`,
+                        borderLeft: `2px solid color-mix(in srgb, ${colorFor(c.space_id)} ${lit ? 95 : 55}%, transparent)`,
+                        boxShadow: lit ? `inset 0 0 0 1px color-mix(in srgb, ${colorFor(c.space_id)} 45%, transparent)` : 'none',
+                        pointerEvents: 'none',
+                      }} />
+                    )
+                  })}
                   {today && nowMin >= GRID_START_H * 60 && nowMin <= GRID_END_H * 60 && (
                     <div style={{ position: 'absolute', left: 0, right: 0, top: minToTop(nowMin), height: 0, borderTop: '2px solid var(--red-text)', zIndex: 5 }} />
                   )}
@@ -460,8 +510,8 @@ function WeekView(props: {
                       <div
                         key={b.id}
                         draggable
-                        onDragStart={(e) => { e.dataTransfer.setData('text/plain', `move:${b.id}`); e.dataTransfer.effectAllowed = 'move' }}
-                        onDragEnd={() => setOverDate(null)}
+                        onDragStart={(e) => { e.dataTransfer.setData('text/plain', `move:${b.id}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: b.task_id ? 'task' : 'kr_action', spaceId: b.space_id, duration: b.end_minute - b.start_minute }) }}
+                        onDragEnd={() => { setOver(null); setDragCtx(null) }}
                         title="Drag to move"
                         style={{
                           position: 'absolute', left: 4, right: 4, top: minToTop(b.start_minute), height: Math.max(durToH(b.end_minute - b.start_minute) - 2, 16),
