@@ -3,7 +3,7 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 19, 2026**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 20, 2026**.
 
 ---
 
@@ -40,6 +40,51 @@ column doesn't exist. This bit us once (commit route 500'd on a phantom `user_id
 ---
 
 ## Current state — shipped
+
+### Jun 20 — AI Chief of Staff agent + Voice (Step 1)
+
+**Chief of Staff** — an in-app agent that knows the whole operation and can act, **propose-first**.
+NavRail entry (`screen==='agent'`). Runs `claude-sonnet-4-6` via the Anthropic API
+(`ANTHROPIC_API_KEY`, Vercel Production). Read broadly, act narrowly, never mutate without approval.
+
+- **Context layer** (`lib/agentContext.ts` → `buildAgentContext({today, weekStart})`) — assembles a
+  full HQ snapshot server-side each turn (spaces, KRs, weekly actions, tasks, capacity + calendar
+  blocks, weekly reviews, notes, metric check-ins) into compact text, ids tagged (`[task:uuid]`,
+  `[kr:uuid]`, `[space:uuid]`) so tools reference real rows. THE reusable "knows everything" layer.
+- **Streaming** — `/api/agent` sets `stream:true`, proxies Anthropic SSE → NDJSON
+  (`{t:'text'|'actions'|'error'}`); client types the reply live and (voice) speaks it. Parser
+  bridges a space across web-search text-block splits ("hours.Perfect" → "hours. Perfect") — only
+  before a letter/digit, never before punctuation/whitespace.
+- **Web search** — Anthropic server tool `web_search_20250305` (runs in-turn, read-only, no
+  approval). Persona forbids inventing venues/hours/specifics — search or say it couldn't confirm.
+- **Propose-first tools** (NEVER auto-execute — render a confirm card, run on Approve only):
+  `complete_task` (uses canonical `tasksDb.toggleComplete` — **recurring tasks roll forward**, not
+  killed), `reschedule_task`, `add_task`, `set_kr_health`, `create_calendar_event`. State setters
+  (tasks/KRs/calendarBlocks) live in `page.tsx`, passed into `Agent.tsx`.
+- **Calendar events from chat** — `create_calendar_event` → `POST /api/google/block` (new handler):
+  inserts a committed **free-form** `calendar_blocks` row FIRST, then creates the Google event,
+  **rolls the row back if Google fails**. Lands on the **HQ** Google calendar (kept agent events in
+  the work time-block layer, not primary — decided this session).
+
+Files: `lib/agentContext.ts`, `app/api/agent/route.ts`, `lib/db/agentApi.ts`, `components/Agent.tsx`.
+Migration: `relax_calendar_block_source_for_freeform_events` (applied via Supabase MCP).
+**Decided this session: the agent does NOT touch Plan-My-Week** (that button stays on Calendar).
+
+**Voice (Step 1 — push-to-talk · DEPLOYED, BLOCKED on real keys):** mic button in Chief of Staff,
+four states (idle → listening → thinking → speaking). `lib/voice/useVoice.ts` records the mic
+(MediaRecorder/webm) → `POST /api/voice/transcribe` (Deepgram **nova-3**) → feeds the text into the
+agent stream in **voice mode** (terse, no-markdown persona) → speaks the reply sentence-by-sentence
+via `/api/voice/speak` (ElevenLabs **eleven_flash_v2_5**, streamed mp3, queued playback) so the
+first sentence speaks while the rest generates. Markdown stripped before TTS; starting the mic
+barges in on playback. Scope is talk→hear; proposed actions still show a tap-Approve card (verbal
+"yes" is Step 2).
+**BLOCKED:** `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` (optional `ELEVENLABS_VOICE_ID`, default
+Rachel `21m00Tcm4TlvDq8ikWAM`) must hold **real values**, scoped Vercel **Production**, **then a
+redeploy** (env changes don't retro-apply to existing deployments). Both routes verified live
+returning a graceful 503 "not configured" until keys land. Free tiers (Deepgram $200 credit,
+ElevenLabs 10k chars/mo) are enough to test. **NEXT SESSION:** real keys → redeploy → round-trip
+verify (TTS a phrase, feed the mp3 to STT, expect the transcript back) → live speak test.
+
 
 ### Jun 20 (late) — Tasks: Backlog smart view
 
@@ -132,6 +177,9 @@ plus the existing `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`. 
 project `operation-hq`, Calendar API enabled, OAuth consent **published to Production**,
 redirect URIs for prod + `localhost:3000`.
 
+**Agent + voice env (Vercel, Production):** `ANTHROPIC_API_KEY` (live, working) · `DEEPGRAM_API_KEY`,
+`ELEVENLABS_API_KEY`, optional `ELEVENLABS_VOICE_ID` (**slots added but need real values + redeploy**).
+
 ### Earlier Jun 19 (sessions 1–4) — summary (detail in pickup-notes / session log)
 
 1. **Objective/KR time windows + metric cards** — objective start/end dates, overdue alarm,
@@ -151,6 +199,16 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **Voice keys (BLOCKER for voice).** `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` are placeholder/empty
+  in Vercel — need real values from the provider dashboards, scoped Production, then a redeploy.
+  Until then `/api/voice/*` return 503. First thing next session.
+- **Migrations applied via Supabase MCP aren't repo files.** This session's
+  `relax_calendar_block_source_for_freeform_events` (and prior ones) live in Supabase's migration
+  history, not as tracked files in the repo. Fine operationally; capture as files only if/when
+  repo-side migration tracking is wanted.
+- **Streaming cosmetic (minor):** voice persona keeps replies terse, but long screen replies can
+  still run a sentence together at a web-search boundary in rare punctuation cases — current bridge
+  is conservative. Revisit only if it recurs.
 - **`APP_TZ` hardcoded to `America/Los_Angeles`** (`lib/google.ts`). Calendar blocks +
   Google event times assume Pacific wall-clock. Mexico-based weeks render offset until this
   is per-user configurable. Not a blocker for PNW use.
@@ -166,12 +224,17 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-1. **★ Unified Home weekly command deck** — DESIGN APPROVED, build sequence in "Current state →
+1. **★ Voice — finish Step 1 + build Step 2.** First: real Deepgram/ElevenLabs keys → redeploy →
+   verify the loop live. Then **Step 2 — verbal action confirmation:** the agent speaks a proposal,
+   you say "yes"/"do it", it executes (replaces the tap-Approve when hands-free). Same proposed-action
+   objects; just a spoken confirm/deny turn. Later: **Step 3** quality/voice tuning, **Step 4**
+   hands-free wake-word host (Picovoice Porcupine, docked phone + Bluetooth speaker — the endgame).
+2. **★ Unified Home weekly command deck** — DESIGN APPROVED, build sequence in "Current state →
    Planned next" above. Multi-deploy: notes↔KR schema, all-day events, quote module, the deck,
-   kill Overview, inline handlers. Step 1 (Backlog view) done. This is the priority.
-2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+   kill Overview, inline handlers. Step 1 (Backlog view) done.
+3. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
+4. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
 
 ### 🟡 Feature backlog
 5. `useSpaceData` hook (audit #4). ~1hr.
@@ -216,6 +279,18 @@ Share-page query optimization · PWA install prompt · keyboard shortcuts (⌘En
 7. **Schema-before-code** — apply + verify migrations before writing the code that uses them.
 8. **Single-user RLS reality** — app tables have no `user_id`; never filter them by it server-side.
    `userId` is only for auth gating + the `user_google_tokens` lookup.
+9. **Supabase Postgrest errors are NOT `instanceof Error`** — they're plain objects. Extract the
+   message via `(e && typeof e === 'object' && 'message' in e) ? String(e.message) : 'error'`, or
+   return `error.message` directly. A bare `e instanceof Error ? e.message : 'error'` masked a real
+   constraint failure as `{"error":"error"}` this session.
+10. **DB row before external API call.** Insert/commit the DB row first, THEN call the external
+    service (Google event); roll the row back if the external call fails. Reverse order orphans
+    external records when a constraint/validation rejects the insert.
+11. **Agent tools are propose-first.** A tool call renders a confirmation card and only mutates on
+    Approve — never auto-execute. `web_search_20250305` is the exception (read-only Anthropic server
+    tool, runs in-turn). The NDJSON stream parser ignores non-`text`/non-custom-`tool_use` blocks.
+12. **Reuse the canonical mutation path in the agent**, not a re-implementation — e.g. `complete_task`
+    must call `tasksDb.toggleComplete` so recurring tasks roll forward instead of being hard-completed.
 
 Earlier (May 14): desktop-first; SECURITY DEFINER RPCs for anon validation; NULL as "applies
 broadly" sentinel; paired text+structured forms; rolling state over event logs for recurrence;
@@ -296,7 +371,9 @@ spaces
 
 calendar_capacity_blocks — weekly template. space_id NULL=any, kind, label,
   day_of_week 0=Mon..6=Sun, start_minute/end_minute (mins from midnight), sort_order.
-calendar_blocks — scheduled placements. task_id XOR weekly_action_id, space_id,
+calendar_blocks — scheduled placements. **at most one** of task_id/weekly_action_id (was XOR;
+  relaxed Jun 20 via `relax_calendar_block_source_for_freeform_events` so agent free-form events
+  with neither are valid), space_id,
   capacity_block_id, title, block_date, start_minute/end_minute,
   google_event_id, google_calendar_id, status 'proposed'|'committed'.  RLS USING(true), NO user_id.
 user_google_tokens — user_id (UNIQUE, FK auth.users), access_token, refresh_token,
