@@ -14,7 +14,7 @@ import { streamAgentMessage, type AgentMessage, type ProposedAction } from '@/li
 import { runProposedAction, describeAction, type ActionContext } from '@/lib/agentActions'
 import { useVoice } from '@/lib/voice/useVoice'
 import BriefingsFeed from '@/components/BriefingsFeed'
-import type { Task, RoadmapItem, Space, CalendarBlock, Note } from '@/lib/types'
+import type { Task, RoadmapItem, Space, CalendarBlock, Note, AnnualObjective } from '@/lib/types'
 
 const STARTERS = [
   "What's slipping right now?",
@@ -62,7 +62,7 @@ function classifyConfirm(t: string): 'yes' | 'no' | 'unclear' {
 }
 
 export default function Agent({
-  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, notes, setNotes, onOpenNote, toast,
+  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, notes, setNotes, objectives, onOpenNote, toast,
   messages, setMessages, pending, setPending,
 }: {
   tasks: Task[]
@@ -73,6 +73,7 @@ export default function Agent({
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   notes: Note[]
   setNotes: (fn: (p: Note[]) => Note[]) => void
+  objectives: AnnualObjective[]
   onOpenNote?: (noteId: string) => void
   toast: (m: string) => void
   // Conversation state lives in page.tsx so the thread (and any in-flight
@@ -91,7 +92,7 @@ export default function Agent({
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  const ctx: ActionContext = { tasks, roadmapItems, spaces, notes, setTasks, setRoadmapItems, setCalendarBlocks, setNotes }
+  const ctx: ActionContext = { tasks, roadmapItems, spaces, notes, objectives, setTasks, setRoadmapItems, setCalendarBlocks, setNotes }
 
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
   const weekStart = getMonday()

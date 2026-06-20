@@ -1,10 +1,13 @@
 import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import * as notesDb from '@/lib/db/notes'
+import * as checkinsDb from '@/lib/db/checkins'
+import * as actionsDb from '@/lib/db/actions'
 import { createCalendarEvent } from '@/lib/db/googleApi'
 import { markdownToTipTapDoc } from '@/lib/notes/markdownToDoc'
+import { getMonday } from '@/lib/utils'
 import type { ProposedAction } from '@/lib/agentTools'
-import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note, NoteBody } from '@/lib/types'
+import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note, NoteBody, AnnualObjective } from '@/lib/types'
 
 /**
  * Canonical executor for a propose-first agent action. Shared by the Chief of
@@ -18,6 +21,7 @@ export interface ActionContext {
   roadmapItems: RoadmapItem[]
   spaces: Space[]
   notes: Note[]
+  objectives: AnnualObjective[]
   setTasks: (fn: (p: Task[]) => Task[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
@@ -42,10 +46,16 @@ function hhmmToMin(v: unknown): number {
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
 }
 
+/** Today as a local YYYY-MM-DD (not UTC — habit logging is day-local). */
+function todayLocal(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 /** Human-readable label for a proposed action's confirmation card. */
 export function describeAction(
   a: ProposedAction,
-  ctx: Pick<ActionContext, 'tasks' | 'roadmapItems' | 'spaces' | 'notes'>,
+  ctx: Pick<ActionContext, 'tasks' | 'roadmapItems' | 'spaces' | 'notes' | 'objectives'>,
 ): string {
   const input = a.input
   if (a.tool === 'complete_task') {
@@ -81,7 +91,12 @@ export function describeAction(
   }
   if (a.tool === 'update_note') {
     const id = stripId(input.note_id, 'note'); const n = ctx.notes.find(x => x.id === id)
-    const bits = [input.title != null ? 'title' : null, input.body != null ? 'body' : null].filter(Boolean).join(' + ')
+    const bits = [
+      input.title != null ? 'title' : null,
+      input.body != null ? 'body' : null,
+      input.kr_id != null ? 'KR link' : null,
+      input.space_id != null ? 'move' : null,
+    ].filter(Boolean).join(' + ')
     return `Edit note \u201c${n?.title || 'Untitled'}\u201d${bits ? ` (${bits})` : ''}`
   }
   if (a.tool === 'update_task') {
@@ -91,7 +106,30 @@ export function describeAction(
     if (input.due_date != null) changes.push(`due ${String(input.due_date)}`)
     if (input.priority != null) changes.push(`priority ${String(input.priority)}`)
     if (input.description != null) changes.push('description')
+    if (input.kr_id != null) {
+      const krRaw = String(input.kr_id)
+      if (krRaw === 'none' || krRaw === 'null') changes.push('unlink KR')
+      else { const k = ctx.roadmapItems.find(x => x.id === stripId(input.kr_id, 'kr')); changes.push(`link \u2192 ${k?.title ?? 'KR'}`) }
+    }
+    if (input.space_id != null) { const sp = ctx.spaces.find(s => s.id === stripId(input.space_id, 'space')); changes.push(`move \u2192 ${sp?.name ?? 'space'}`) }
     return `Edit \u201c${t?.title ?? id}\u201d${changes.length ? `: ${changes.join(', ')}` : ''}`
+  }
+  if (a.tool === 'log_metric') {
+    const k = ctx.roadmapItems.find(x => x.id === stripId(input.kr_id, 'kr'))
+    return `Log ${String(input.value ?? '')}${k?.metric_unit ? ` ${k.metric_unit}` : ''} \u2192 ${k?.title ?? 'metric'}`
+  }
+  if (a.tool === 'log_habit') {
+    const k = ctx.roadmapItems.find(x => x.id === stripId(input.kr_id, 'kr'))
+    return `Mark \u201c${k?.title ?? 'habit'}\u201d done${input.date ? ` (${String(input.date)})` : ''}`
+  }
+  if (a.tool === 'create_weekly_action') {
+    const k = ctx.roadmapItems.find(x => x.id === stripId(input.kr_id, 'kr'))
+    return `Add action \u201c${String(input.title ?? '')}\u201d under ${k?.title ?? 'KR'}`
+  }
+  if (a.tool === 'create_kr') {
+    const o = ctx.objectives.find(x => x.id === stripId(input.objective_id, 'obj'))
+    const flavor = input.is_habit ? 'habit ' : input.is_metric ? 'metric ' : ''
+    return `Create ${flavor}KR \u201c${String(input.title ?? '')}\u201d under ${o?.name ?? 'objective'}`
   }
   return a.tool
 }
@@ -172,9 +210,17 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
   if (a.tool === 'update_note') {
     const id = stripId(input.note_id, 'note')
     if (!ctx.notes.some(n => n.id === id)) throw new Error('Note not found')
-    const patch: { title?: string; body?: NoteBody } = {}
+    const patch: Partial<Omit<Note, 'id' | 'created_at' | 'updated_at'>> = {}
     if (input.title != null) patch.title = String(input.title)
     if (input.body != null) patch.body = markdownToTipTapDoc(String(input.body))
+    if (input.kr_id != null) {
+      const r = String(input.kr_id)
+      patch.roadmap_item_id = (r === 'none' || r === 'null' || r === '') ? null : stripId(input.kr_id, 'kr')
+    }
+    if (input.space_id != null) {
+      patch.space_id = stripId(input.space_id, 'space') || null
+      patch.notebook_id = null // moving to a space lands the note at its root
+    }
     if (!Object.keys(patch).length) throw new Error('Nothing to update')
     const updated = await notesDb.update(id, patch)
     ctx.setNotes?.(prev => prev.map(n => n.id === id ? updated : n))
@@ -196,9 +242,75 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
       patch.priority = p as Task['priority']
     }
     if (input.description != null) patch.description = String(input.description)
+    if (input.kr_id != null) {
+      const r = String(input.kr_id)
+      patch.roadmap_item_id = (r === 'none' || r === 'null' || r === '') ? null : stripId(input.kr_id, 'kr')
+    }
+    if (input.space_id != null) {
+      patch.space_id = stripId(input.space_id, 'space') || null
+      patch.list_id = null // moving spaces clears the (space-scoped) list
+    }
     if (!Object.keys(patch).length) throw new Error('Nothing to update')
     const updated = await tasksDb.update(id, patch)
     ctx.setTasks(prev => prev.map(t => t.id === id ? updated : t))
+    return
+  }
+  if (a.tool === 'log_metric') {
+    const id = stripId(input.kr_id, 'kr')
+    const kr = ctx.roadmapItems.find(k => k.id === id)
+    if (!kr) throw new Error('KR not found')
+    if (!kr.is_metric) throw new Error('Not a metric KR')
+    const value = Number(input.value)
+    if (!Number.isFinite(value)) throw new Error('Bad value')
+    const week = getMonday(input.date ? new Date(String(input.date) + 'T00:00:00') : new Date())
+    await checkinsDb.metric.upsertWeekValue(id, week, value)
+    return
+  }
+  if (a.tool === 'log_habit') {
+    const id = stripId(input.kr_id, 'kr')
+    const kr = ctx.roadmapItems.find(k => k.id === id)
+    if (!kr) throw new Error('KR not found')
+    if (!kr.is_habit) throw new Error('Not a habit KR')
+    const date = input.date ? String(input.date) : todayLocal()
+    try {
+      await checkinsDb.habit.create(id, date)
+    } catch (e) {
+      // Unique (kr, date) violation = already logged that day → treat as success.
+      const msg = (e && typeof e === 'object' && 'message' in e) ? String((e as { message: unknown }).message) : ''
+      if (!/duplicate|unique/i.test(msg)) throw e
+    }
+    return
+  }
+  if (a.tool === 'create_weekly_action') {
+    const id = stripId(input.kr_id, 'kr')
+    if (!ctx.roadmapItems.some(k => k.id === id)) throw new Error('KR not found')
+    const title = String(input.title ?? '').trim()
+    if (!title) throw new Error('No title')
+    await actionsDb.create({ roadmap_item_id: id, title, week_start: getMonday() })
+    return
+  }
+  if (a.tool === 'create_kr') {
+    const objId = stripId(input.objective_id, 'obj')
+    const obj = ctx.objectives.find(o => o.id === objId)
+    if (!obj) throw new Error('Objective not found')
+    const title = String(input.title ?? '').trim()
+    if (!title) throw new Error('No title')
+    const isHabit = input.is_habit === true
+    const isMetric = input.is_metric === true && !isHabit
+    const created = await krsDb.create({
+      space_id: obj.space_id,
+      annual_objective_id: objId,
+      title,
+      quarter: null,
+      sort_order: 0,
+      status: 'active',
+      health_status: 'not_started',
+      is_habit: isHabit,
+      is_metric: isMetric,
+      metric_unit: isMetric && input.metric_unit != null ? String(input.metric_unit) : null,
+      target_value: isMetric && input.target_value != null ? Number(input.target_value) : null,
+    })
+    ctx.setRoadmapItems(prev => [...prev, created])
     return
   }
   throw new Error('Unknown action')

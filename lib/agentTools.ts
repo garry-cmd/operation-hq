@@ -108,8 +108,63 @@ export const TOOLS = [
         note_id: { type: 'string', description: 'The note id from [note:…].' },
         title: { type: 'string', description: 'New title. Omit to leave the title unchanged.' },
         body: { type: 'string', description: 'New body in Markdown — REPLACES the existing body entirely. Omit to leave the body unchanged. Same Markdown support as create_note.' },
+        kr_id: { type: 'string', description: 'Link the note to a KR — pass the id from [kr:…]. Pass "none" to unlink. Omit to leave unchanged.' },
+        space_id: { type: 'string', description: 'Move the note to a space (to its root) — pass the id from [space:…]. Omit to leave unchanged.' },
       },
       required: ['note_id'],
+    },
+  },
+  {
+    name: 'log_metric',
+    description: 'Propose logging a reading for a metric KR (one value per week; re-logging the same week overwrites). Use when the operator reports a measurable number for a KR shown as (metric) in the state — e.g. "I ran 12 miles this week".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kr_id: { type: 'string', description: 'The metric KR id from [kr:…] (must be a metric KR).' },
+        value: { type: 'number', description: 'The numeric reading, in the KR\u2019s unit.' },
+        date: { type: 'string', description: 'Optional date YYYY-MM-DD within the target week; the reading is stored against that week. Defaults to the current week.' },
+      },
+      required: ['kr_id', 'value'],
+    },
+  },
+  {
+    name: 'log_habit',
+    description: 'Propose marking a habit KR as done for a day. Use when the operator reports completing a habit shown as (habit) in the state — e.g. "did the gym today".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kr_id: { type: 'string', description: 'The habit KR id from [kr:…] (must be a habit KR).' },
+        date: { type: 'string', description: 'Optional date YYYY-MM-DD. Defaults to today.' },
+      },
+      required: ['kr_id'],
+    },
+  },
+  {
+    name: 'create_weekly_action',
+    description: 'Propose adding a weekly action under a KR for the current week (the concrete to-do that advances that KR this week). Reference the KR by [kr:…].',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kr_id: { type: 'string', description: 'The KR id from [kr:…] this action sits under.' },
+        title: { type: 'string', description: 'The action title.' },
+      },
+      required: ['kr_id', 'title'],
+    },
+  },
+  {
+    name: 'create_kr',
+    description: 'Propose creating a new KR (key result) under an objective. Reference the objective by the id in [obj:…] in the state. A KR is an outcome by default; set is_habit or is_metric for those flavors.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        objective_id: { type: 'string', description: 'The objective id from [obj:…] this KR belongs to.' },
+        title: { type: 'string', description: 'The KR title.' },
+        is_habit: { type: 'boolean', description: 'True for a recurring habit KR (e.g. "Gym 3x/week"). Default false.' },
+        is_metric: { type: 'boolean', description: 'True for a numeric metric KR. Default false.' },
+        metric_unit: { type: 'string', description: 'For a metric KR, the unit (e.g. "miles", "lbs", "$").' },
+        target_value: { type: 'number', description: 'For a metric KR, the target number.' },
+      },
+      required: ['objective_id', 'title'],
     },
   },
   {
@@ -123,6 +178,8 @@ export const TOOLS = [
         due_date: { type: 'string', description: 'New due date YYYY-MM-DD. Omit to leave unchanged.' },
         priority: { type: 'integer', description: 'Priority 1 (highest) to 4 (lowest). Omit to leave unchanged.', enum: [1, 2, 3, 4] },
         description: { type: 'string', description: 'New description / notes for the task. Omit to leave unchanged.' },
+        kr_id: { type: 'string', description: 'Link the task to a KR — pass the id from [kr:…]. Pass "none" to unlink. Omit to leave unchanged.' },
+        space_id: { type: 'string', description: 'Move the task to a space — pass the id from [space:…]. Omit to leave unchanged.' },
       },
       required: ['task_id'],
     },

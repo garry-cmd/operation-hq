@@ -44,7 +44,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   const weekEnd = addDays(weekStart, 6)
   const horizon = addDays(today, 21)
 
-  const [spacesR, krsR, actionsR, tasksR, capR, blocksR, reviewsR, notesR, metricR] = await Promise.all([
+  const [spacesR, krsR, actionsR, tasksR, capR, blocksR, reviewsR, notesR, metricR, objsR] = await Promise.all([
     admin.from('spaces').select('id,name,sort_order').order('sort_order'),
     admin.from('roadmap_items')
       .select('id,space_id,title,quarter,health_status,progress,is_parked,is_habit,is_metric,metric_unit,metric_direction,start_value,target_value,start_date,end_date')
@@ -59,6 +59,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
       .not('closed_at', 'is', null).order('week_start', { ascending: false }).limit(6),
     admin.from('notes').select('id,title,space_id,updated_at,roadmap_item_id').order('updated_at', { ascending: false }).limit(15),
     admin.from('metric_checkins').select('roadmap_item_id,value,week_start').order('week_start', { ascending: false }),
+    admin.from('annual_objectives').select('id,name,space_id,status').eq('status', 'active'),
   ])
 
   const spaces = (spacesR.data ?? []) as Row[]
@@ -70,6 +71,13 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   const reviews = (reviewsR.data ?? []) as Row[]
   const notes = (notesR.data ?? []) as Row[]
   const metrics = (metricR.data ?? []) as Row[]
+  const objs = (objsR.data ?? []) as Row[]
+  const objsBySpace = new Map<string, Row[]>()
+  for (const o of objs) {
+    const sid = str(o.space_id)
+    if (!objsBySpace.has(sid)) objsBySpace.set(sid, [])
+    objsBySpace.get(sid)!.push(o)
+  }
 
   const spaceName = new Map(spaces.map(s => [str(s.id), str(s.name)]))
   const krById = new Map(krs.map(k => [str(k.id), k]))
@@ -112,6 +120,8 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     if (spaceKrs.length === 0 && spaceTasks.length === 0) continue
 
     lines.push(`## ${str(s.name)} [space:${sid}]`)
+
+    for (const o of objsBySpace.get(sid) ?? []) lines.push(`- Objective [obj:${str(o.id)}]: ${str(o.name)}`)
 
     for (const k of spaceKrs) {
       const flavor = k.is_habit ? 'habit' : k.is_metric ? 'metric' : 'outcome'

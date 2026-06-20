@@ -810,6 +810,7 @@ export default function HQPage() {
           setCalendarBlocks={setCalendarBlocks}
           notes={notes}
           setNotes={setNotes}
+          objectives={objectives}
           onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
           messages={agentMessages}
           setMessages={setAgentMessages}
