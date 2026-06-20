@@ -760,6 +760,7 @@ export default function HQPage() {
           notes={notes}
           setNotes={setNotes}
           objectives={objectives}
+          setObjectives={setObjectives}
           onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
           messages={agentMessages}
           setMessages={setAgentMessages}

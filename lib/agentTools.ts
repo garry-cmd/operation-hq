@@ -178,10 +178,42 @@ export const TOOLS = [
         due_date: { type: 'string', description: 'New due date YYYY-MM-DD. Omit to leave unchanged.' },
         priority: { type: 'integer', description: 'Priority 1 (highest) to 4 (lowest). Omit to leave unchanged.', enum: [1, 2, 3, 4] },
         description: { type: 'string', description: 'New description / notes for the task. Omit to leave unchanged.' },
+        duration_minutes: { type: 'integer', description: 'Time estimate in minutes (drives how long the task takes on the calendar). Omit to leave unchanged.' },
+        deadline_date: { type: 'string', description: 'Hard deadline YYYY-MM-DD (distinct from due_date, which is the planned/scheduled date). Pass "none" to clear. Omit to leave unchanged.' },
         kr_id: { type: 'string', description: 'Link the task to a KR — pass the id from [kr:…]. Pass "none" to unlink. Omit to leave unchanged.' },
         space_id: { type: 'string', description: 'Move the task to a space — pass the id from [space:…]. Omit to leave unchanged.' },
       },
       required: ['task_id'],
+    },
+  },
+  {
+    name: 'update_kr',
+    description: 'Propose editing an existing KR (key result) — rename it, change its time window, or (for a metric KR) change its target or unit. Reference it by the id in [kr:…]. For just the health status use set_kr_health instead. Only pass the fields you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        kr_id: { type: 'string', description: 'The KR id from [kr:…].' },
+        title: { type: 'string', description: 'New KR title. Omit to leave unchanged.' },
+        start_date: { type: 'string', description: 'New start date YYYY-MM-DD. Pass "none" to clear. Omit to leave unchanged.' },
+        end_date: { type: 'string', description: 'New end/target date YYYY-MM-DD. Pass "none" to clear. Omit to leave unchanged.' },
+        metric_unit: { type: 'string', description: 'For a metric KR, the unit (e.g. "miles", "lbs", "$"). Omit to leave unchanged.' },
+        target_value: { type: 'number', description: 'For a metric KR, the target number. Omit to leave unchanged.' },
+      },
+      required: ['kr_id'],
+    },
+  },
+  {
+    name: 'update_objective',
+    description: 'Propose editing an existing objective — rename it or change its time window. Reference it by the id in [obj:…] in the state. Only pass the fields you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        objective_id: { type: 'string', description: 'The objective id from [obj:…].' },
+        name: { type: 'string', description: 'New objective name. Omit to leave unchanged.' },
+        start_date: { type: 'string', description: 'New start date YYYY-MM-DD. Pass "none" to clear. Omit to leave unchanged.' },
+        end_date: { type: 'string', description: 'New end date YYYY-MM-DD. Pass "none" to clear. Omit to leave unchanged.' },
+      },
+      required: ['objective_id'],
     },
   },
 ]

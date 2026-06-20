@@ -62,7 +62,7 @@ function classifyConfirm(t: string): 'yes' | 'no' | 'unclear' {
 }
 
 export default function Agent({
-  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, notes, setNotes, objectives, onOpenNote, toast,
+  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, notes, setNotes, objectives, setObjectives, onOpenNote, toast,
   messages, setMessages, pending, setPending,
 }: {
   tasks: Task[]
@@ -74,6 +74,7 @@ export default function Agent({
   notes: Note[]
   setNotes: (fn: (p: Note[]) => Note[]) => void
   objectives: AnnualObjective[]
+  setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   onOpenNote?: (noteId: string) => void
   toast: (m: string) => void
   // Conversation state lives in page.tsx so the thread (and any in-flight
@@ -92,7 +93,7 @@ export default function Agent({
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  const ctx: ActionContext = { tasks, roadmapItems, spaces, notes, objectives, setTasks, setRoadmapItems, setCalendarBlocks, setNotes }
+  const ctx: ActionContext = { tasks, roadmapItems, spaces, notes, objectives, setTasks, setRoadmapItems, setCalendarBlocks, setNotes, setObjectives }
 
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
   const weekStart = getMonday()

@@ -1,5 +1,6 @@
 import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
+import * as objectivesDb from '@/lib/db/objectives'
 import * as notesDb from '@/lib/db/notes'
 import * as checkinsDb from '@/lib/db/checkins'
 import * as actionsDb from '@/lib/db/actions'
@@ -26,6 +27,7 @@ export interface ActionContext {
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   setNotes?: (fn: (p: Note[]) => Note[]) => void
+  setObjectives?: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
 }
 
 /** Top-level block list of a TipTap doc body (empty if null / malformed). */
@@ -39,6 +41,14 @@ function docBlocks(body: NoteBody | null | undefined): unknown[] {
 function stripId(v: unknown, prefix: string): string {
   const s = String(v ?? '').trim()
   return s.startsWith(prefix + ':') ? s.slice(prefix.length + 1) : s
+}
+
+/** Parse a clearable date field: "none"/""/"null" → null; a valid YYYY-MM-DD → itself; else throw. */
+function dateOrNull(v: unknown): string | null {
+  const s = String(v ?? '').trim()
+  if (s === '' || s === 'none' || s === 'null') return null
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error('Bad date')
+  return s
 }
 
 function hhmmToMin(v: unknown): number {
@@ -106,6 +116,11 @@ export function describeAction(
     if (input.due_date != null) changes.push(`due ${String(input.due_date)}`)
     if (input.priority != null) changes.push(`priority ${String(input.priority)}`)
     if (input.description != null) changes.push('description')
+    if (input.duration_minutes != null) changes.push(`${Number(input.duration_minutes)}m`)
+    if (input.deadline_date != null) {
+      const d = String(input.deadline_date)
+      changes.push((d === 'none' || d === 'null') ? 'clear deadline' : `deadline ${d}`)
+    }
     if (input.kr_id != null) {
       const krRaw = String(input.kr_id)
       if (krRaw === 'none' || krRaw === 'null') changes.push('unlink KR')
@@ -130,6 +145,24 @@ export function describeAction(
     const o = ctx.objectives.find(x => x.id === stripId(input.objective_id, 'obj'))
     const flavor = input.is_habit ? 'habit ' : input.is_metric ? 'metric ' : ''
     return `Create ${flavor}KR \u201c${String(input.title ?? '')}\u201d under ${o?.name ?? 'objective'}`
+  }
+  if (a.tool === 'update_kr') {
+    const id = stripId(input.kr_id, 'kr'); const k = ctx.roadmapItems.find(x => x.id === id)
+    const changes: string[] = []
+    if (input.title != null) changes.push(`title \u2192 \u201c${String(input.title)}\u201d`)
+    if (input.start_date != null) changes.push(`start ${String(input.start_date)}`)
+    if (input.end_date != null) changes.push(`end ${String(input.end_date)}`)
+    if (input.metric_unit != null) changes.push(`unit ${String(input.metric_unit)}`)
+    if (input.target_value != null) changes.push(`target ${String(input.target_value)}`)
+    return `Edit KR \u201c${k?.title ?? id}\u201d${changes.length ? `: ${changes.join(', ')}` : ''}`
+  }
+  if (a.tool === 'update_objective') {
+    const id = stripId(input.objective_id, 'obj'); const o = ctx.objectives.find(x => x.id === id)
+    const changes: string[] = []
+    if (input.name != null) changes.push(`name \u2192 \u201c${String(input.name)}\u201d`)
+    if (input.start_date != null) changes.push(`start ${String(input.start_date)}`)
+    if (input.end_date != null) changes.push(`end ${String(input.end_date)}`)
+    return `Edit objective \u201c${o?.name ?? id}\u201d${changes.length ? `: ${changes.join(', ')}` : ''}`
   }
   return a.tool
 }
@@ -242,6 +275,12 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
       patch.priority = p as Task['priority']
     }
     if (input.description != null) patch.description = String(input.description)
+    if (input.duration_minutes != null) {
+      const m = Number(input.duration_minutes)
+      if (!Number.isFinite(m) || m < 0) throw new Error('Bad duration')
+      patch.estimated_minutes = m
+    }
+    if (input.deadline_date != null) patch.deadline_date = dateOrNull(input.deadline_date)
     if (input.kr_id != null) {
       const r = String(input.kr_id)
       patch.roadmap_item_id = (r === 'none' || r === 'null' || r === '') ? null : stripId(input.kr_id, 'kr')
@@ -311,6 +350,36 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
       target_value: isMetric && input.target_value != null ? Number(input.target_value) : null,
     })
     ctx.setRoadmapItems(prev => [...prev, created])
+    return
+  }
+  if (a.tool === 'update_kr') {
+    const id = stripId(input.kr_id, 'kr')
+    if (!ctx.roadmapItems.some(k => k.id === id)) throw new Error('KR not found')
+    const patch: Partial<RoadmapItem> = {}
+    if (input.title != null) patch.title = String(input.title)
+    if (input.start_date != null) patch.start_date = dateOrNull(input.start_date)
+    if (input.end_date != null) patch.end_date = dateOrNull(input.end_date)
+    if (input.metric_unit != null) patch.metric_unit = String(input.metric_unit)
+    if (input.target_value != null) {
+      const v = Number(input.target_value)
+      if (!Number.isFinite(v)) throw new Error('Bad target')
+      patch.target_value = v
+    }
+    if (!Object.keys(patch).length) throw new Error('Nothing to update')
+    const updated = await krsDb.update(id, patch)
+    ctx.setRoadmapItems(prev => prev.map(k => k.id === id ? updated : k))
+    return
+  }
+  if (a.tool === 'update_objective') {
+    const id = stripId(input.objective_id, 'obj')
+    if (!ctx.objectives.some(o => o.id === id)) throw new Error('Objective not found')
+    const patch: Partial<AnnualObjective> = {}
+    if (input.name != null) patch.name = String(input.name)
+    if (input.start_date != null) patch.start_date = dateOrNull(input.start_date)
+    if (input.end_date != null) patch.end_date = dateOrNull(input.end_date)
+    if (!Object.keys(patch).length) throw new Error('Nothing to update')
+    const updated = await objectivesDb.update(id, patch)
+    ctx.setObjectives?.(prev => prev.map(o => o.id === id ? updated : o))
     return
   }
   throw new Error('Unknown action')
