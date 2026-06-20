@@ -688,7 +688,7 @@ export default function HQPage() {
         onToggleTheme={toggleTheme}
         onCopyShareLink={copyShareLink}
         onSignOut={() => supabase.auth.signOut()}
-        isMobile={isMobile || screen === 'home'}
+        isMobile={isMobile}
         isOpen={drawerOpen}
         onClose={() => setDrawerOpen(false)}
       />
@@ -697,7 +697,7 @@ export default function HQPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       {/* Mobile-only top bar — hamburger + brand. Hidden on desktop where
           NavRail is permanently visible. Sticky so it stays during scroll. */}
-      {(isMobile || screen === 'home') && (
+      {isMobile && (
         <div style={{
           position: 'sticky', top: 0, zIndex: 25,
           display: 'flex', alignItems: 'center', gap: 10,

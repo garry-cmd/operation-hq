@@ -199,8 +199,8 @@ export default function NavRail(props: Props) {
         {NAV_GROUPS.map(group => (
           <div key={group.label}>
             <div style={{
-              padding: '14px 18px 4px', fontSize: 10, fontWeight: 500, letterSpacing: '.16em',
-              textTransform: 'uppercase', color: 'var(--nw-label)',
+              padding: '14px 18px 4px', fontSize: 10, fontWeight: 600, letterSpacing: '.18em',
+              textTransform: 'uppercase', color: 'var(--nw-label)', fontFamily: 'var(--font-mono)',
             }}>
               {group.label}
             </div>
@@ -211,15 +211,17 @@ export default function NavRail(props: Props) {
                 <button key={item.id}
                   onClick={() => { props.onScreenChange(item.id); if (props.isMobile) props.onClose?.() }}
                   style={{
+                    position: 'relative',
                     width: 'calc(100% - 12px)', margin: '0 6px', display: 'flex', alignItems: 'center', gap: 10,
                     padding: '7px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
-                    background: isActive ? 'var(--accent-dim)' : 'none',
-                    color: isActive ? 'var(--accent)' : 'var(--navy-100)',
+                    background: isActive ? 'var(--accent-bg)' : 'none',
+                    color: isActive ? 'var(--accent-2)' : 'var(--navy-100)',
                     fontSize: 13.5, fontWeight: isActive ? 600 : 500, fontFamily: 'inherit', textAlign: 'left',
                     transition: 'background .15s',
                   }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--navy-600)' }}
+                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--hover)' }}
                   onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'none' }}>
+                  {isActive && <span aria-hidden style={{ position: 'absolute', left: 0, top: 6, bottom: 6, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />}
                   <span style={{ width: 18, height: 18, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     {item.icon}
                   </span>
@@ -232,10 +234,11 @@ export default function NavRail(props: Props) {
                   )}
                   {b != null && b > 0 && (
                     <span style={{
-                      fontSize: 10.5, fontWeight: 700, padding: '1px 7px', borderRadius: 99,
-                      background: item.id === 'tasks' ? 'var(--red-bg)' : (isActive ? 'var(--accent)' : 'var(--navy-600)'),
+                      fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+                      fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
+                      background: item.id === 'tasks' ? 'var(--red-bg)' : (isActive ? 'var(--accent)' : 'var(--surface-2)'),
                       color: item.id === 'tasks' ? 'var(--red-text)' : (isActive ? '#fff' : 'var(--navy-300)'),
-                      lineHeight: 1.4,
+                      lineHeight: 1.5,
                     }}>
                       {b}
                     </span>
