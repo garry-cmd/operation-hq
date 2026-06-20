@@ -25,7 +25,7 @@ export async function POST(req: Request) {
     const { data: rows, error } = await admin
       .from('calendar_blocks')
       .select('*')
-      .eq('user_id', userId)
+      
       .eq('status', 'proposed')
       .gte('block_date', from)
       .lte('block_date', to)

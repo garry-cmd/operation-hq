@@ -18,7 +18,7 @@ export async function DELETE(req: Request) {
 
     const admin = getSupabaseAdmin()
     const { data: row, error } = await admin
-      .from('calendar_blocks').select('*').eq('id', blockId).eq('user_id', userId).maybeSingle()
+      .from('calendar_blocks').select('*').eq('id', blockId).maybeSingle()
     if (error) throw error
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 })
 
@@ -26,7 +26,7 @@ export async function DELETE(req: Request) {
       const { accessToken } = await getValidAccessToken(userId)
       await deleteEvent(accessToken, row.google_calendar_id as string, row.google_event_id as string)
     }
-    const { error: delErr } = await admin.from('calendar_blocks').delete().eq('id', blockId).eq('user_id', userId)
+    const { error: delErr } = await admin.from('calendar_blocks').delete().eq('id', blockId)
     if (delErr) throw delErr
     return NextResponse.json({ ok: true })
   } catch (e) {
@@ -49,7 +49,7 @@ export async function PATCH(req: Request) {
 
     const admin = getSupabaseAdmin()
     const { data: row, error } = await admin
-      .from('calendar_blocks').select('*').eq('id', blockId).eq('user_id', userId).maybeSingle()
+      .from('calendar_blocks').select('*').eq('id', blockId).maybeSingle()
     if (error) throw error
     if (!row) return NextResponse.json({ error: 'not found' }, { status: 404 })
 
@@ -59,7 +59,7 @@ export async function PATCH(req: Request) {
     const { data: updated, error: upErr } = await admin
       .from('calendar_blocks')
       .update({ block_date: blockDate, start_minute: startMinute, end_minute: endMinute })
-      .eq('id', blockId).eq('user_id', userId)
+      .eq('id', blockId)
       .select('*').single()
     if (upErr) throw upErr
 
