@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase'
+import type { ProposedAction } from '@/lib/agentTools'
 
 /**
  * Client wrapper for /api/agent (the HQ chief-of-staff chat). Attaches the
@@ -9,7 +10,7 @@ import { supabase } from '@/lib/supabase'
 
 export interface AgentMessage { role: 'user' | 'assistant'; content: string }
 
-export interface ProposedAction { tool: string; input: Record<string, unknown> }
+export type { ProposedAction }
 
 /**
  * Streams the agent reply. Calls onText for each text chunk as it arrives and

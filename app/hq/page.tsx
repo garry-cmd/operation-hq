@@ -803,6 +803,8 @@ export default function HQPage() {
           setRoadmapItems={setRoadmapItems}
           spaces={spaces}
           setCalendarBlocks={setCalendarBlocks}
+          setNotes={setNotes}
+          onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
           toast={setToast}
         />
       ) : screen === 'tags' && !loading ? (

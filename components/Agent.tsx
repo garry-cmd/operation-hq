@@ -11,12 +11,10 @@
 import { useState, useRef, useEffect } from 'react'
 import { getMonday } from '@/lib/utils'
 import { streamAgentMessage, type AgentMessage, type ProposedAction } from '@/lib/db/agentApi'
-import * as tasksDb from '@/lib/db/tasks'
-import * as krsDb from '@/lib/db/krs'
-import { createCalendarEvent } from '@/lib/db/googleApi'
+import { runProposedAction, describeAction, type ActionContext } from '@/lib/agentActions'
 import { useVoice } from '@/lib/voice/useVoice'
 import BriefingsFeed from '@/components/BriefingsFeed'
-import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock } from '@/lib/types'
+import type { Task, RoadmapItem, Space, CalendarBlock, Note } from '@/lib/types'
 
 const STARTERS = [
   "What's slipping right now?",
@@ -32,16 +30,6 @@ interface ChatMsg { role: 'user' | 'assistant'; content: string; actions?: UIAct
 const nwLabel: React.CSSProperties = {
   fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase',
   color: 'var(--nw-label)', margin: 0,
-}
-
-function stripId(v: unknown, prefix: string): string {
-  const s = String(v ?? '').trim()
-  return s.startsWith(prefix + ':') ? s.slice(prefix.length + 1) : s
-}
-
-function hhmmToMin(v: unknown): number {
-  const [h, m] = String(v ?? '').split(':').map(Number)
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0)
 }
 
 // Minimal inline render: **bold** + preserved line breaks, leading "- " → "• ".
@@ -64,7 +52,7 @@ function renderContent(text: string): React.ReactNode {
 }
 
 export default function Agent({
-  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, toast,
+  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, setNotes, onOpenNote, toast,
 }: {
   tasks: Task[]
   setTasks: (fn: (p: Task[]) => Task[]) => void
@@ -72,6 +60,8 @@ export default function Agent({
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   spaces: Space[]
   setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
+  setNotes: (fn: (p: Note[]) => Note[]) => void
+  onOpenNote?: (noteId: string) => void
   toast: (m: string) => void
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([])
@@ -81,91 +71,14 @@ export default function Agent({
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
+  const ctx: ActionContext = { tasks, roadmapItems, spaces, setTasks, setRoadmapItems, setCalendarBlocks, setNotes }
+
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
   const weekStart = getMonday()
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'auto' })
   }, [messages, pending])
-
-  // ── describe a proposed action for its card label ──
-  function describe(a: ProposedAction): string {
-    const input = a.input
-    if (a.tool === 'complete_task') {
-      const id = stripId(input.task_id, 'task'); const t = tasks.find(x => x.id === id)
-      if (t?.recurrence_rule && t.due_date) return `Complete “${t.title}” (recurring — rolls to next)`
-      return `Mark “${t?.title ?? id}” done`
-    }
-    if (a.tool === 'reschedule_task') {
-      const id = stripId(input.task_id, 'task'); const t = tasks.find(x => x.id === id)
-      return `Move “${t?.title ?? id}” → ${String(input.due_date ?? '')}`
-    }
-    if (a.tool === 'add_task') {
-      const sid = stripId(input.space_id, 'space')
-      const sp = sid ? spaces.find(s => s.id === sid)?.name : null
-      const due = input.due_date ? ` · due ${String(input.due_date)}` : ''
-      return `Add task “${String(input.title ?? '')}”${sp ? ` to ${sp}` : ''}${due}`
-    }
-    if (a.tool === 'set_kr_health') {
-      const id = stripId(input.kr_id, 'kr'); const k = roadmapItems.find(x => x.id === id)
-      return `Set “${k?.title ?? id}” → ${String(input.health ?? '').replace('_', ' ')}`
-    }
-    if (a.tool === 'create_calendar_event') {
-      return `Add to calendar: “${String(input.title ?? '')}” · ${String(input.date ?? '')} ${String(input.start_time ?? '')}–${String(input.end_time ?? '')}`
-    }
-    return a.tool
-  }
-
-  // ── run a proposed action (only after approval) ──
-  async function run(a: ProposedAction): Promise<void> {
-    const input = a.input
-    if (a.tool === 'complete_task') {
-      const id = stripId(input.task_id, 'task')
-      const task = tasks.find(t => t.id === id)
-      if (!task) throw new Error('Task not found')
-      if (task.completed_at) return // already done — don't un-complete
-      // Canonical completion: recurring tasks roll their due date forward; others
-      // set completed_at. Mirrors the Tasks UI instead of hard-completing.
-      const updated = await tasksDb.toggleComplete(task)
-      setTasks(prev => prev.map(t => t.id === id ? updated : t))
-      return
-    }
-    if (a.tool === 'reschedule_task') {
-      const id = stripId(input.task_id, 'task'); const due = String(input.due_date ?? '')
-      if (!tasks.some(t => t.id === id)) throw new Error('Task not found')
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('Bad date')
-      await tasksDb.update(id, { due_date: due })
-      setTasks(prev => prev.map(t => t.id === id ? { ...t, due_date: due } : t))
-      return
-    }
-    if (a.tool === 'add_task') {
-      const title = String(input.title ?? '').trim()
-      if (!title) throw new Error('No title')
-      const sid = stripId(input.space_id, 'space') || null
-      const due = input.due_date ? String(input.due_date) : null
-      const created = await tasksDb.create({ title, space_id: sid, due_date: due })
-      setTasks(prev => [...prev, created])
-      return
-    }
-    if (a.tool === 'set_kr_health') {
-      const id = stripId(input.kr_id, 'kr'); const health = String(input.health ?? '') as HealthStatus
-      if (!roadmapItems.some(k => k.id === id)) throw new Error('KR not found')
-      await krsDb.update(id, { health_status: health })
-      setRoadmapItems(prev => prev.map(k => k.id === id ? { ...k, health_status: health } : k))
-      return
-    }
-    if (a.tool === 'create_calendar_event') {
-      const title = String(input.title ?? '').trim()
-      const date = String(input.date ?? '')
-      if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Bad event')
-      const startMin = hhmmToMin(input.start_time); const endMin = hhmmToMin(input.end_time)
-      if (endMin <= startMin) throw new Error('Bad time range')
-      const block = await createCalendarEvent(title, date, startMin, endMin)
-      setCalendarBlocks(prev => [...prev, block])
-      return
-    }
-    throw new Error('Unknown action')
-  }
 
   function setActionStatus(msgIdx: number, actionId: string, status: ActionStatus) {
     setMessages(prev => prev.map((m, i) =>
@@ -174,7 +87,7 @@ export default function Agent({
   }
 
   async function approve(msgIdx: number, a: UIAction) {
-    try { await run(a); setActionStatus(msgIdx, a.id, 'approved') }
+    try { await runProposedAction(a, ctx); setActionStatus(msgIdx, a.id, 'approved') }
     catch (e) { setActionStatus(msgIdx, a.id, 'failed'); toast(e instanceof Error ? e.message : 'Action failed') }
   }
 
@@ -253,7 +166,7 @@ export default function Agent({
         <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--navy-400)' }}>
           Knows your whole operation — spaces, KRs, tasks, calendar, reflections. It can also propose actions; nothing changes until you approve.
         </p>
-        <BriefingsFeed />
+        <BriefingsFeed ctx={ctx} onOpenNote={onOpenNote} toast={toast} />
       </div>
 
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14, paddingRight: 4 }}>
@@ -299,7 +212,7 @@ export default function Agent({
                     <span style={{ fontSize: 13, flex: 1, color: 'var(--navy-100)', textDecoration: a.status === 'dismissed' ? 'line-through' : 'none' }}>
                       {a.status === 'approved' && <span style={{ color: 'var(--nw-nominal-text)', marginRight: 6 }}>✓</span>}
                       {a.status === 'failed' && <span style={{ color: 'var(--nw-alarm-text)', marginRight: 6 }}>⚠</span>}
-                      {describe(a)}
+                      {describeAction(a, ctx)}
                     </span>
                     {a.status === 'pending' && (
                       <>

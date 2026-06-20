@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { userIdFromRequest } from '@/lib/google'
 import { buildAgentContext } from '@/lib/agentContext'
+import { TOOLS, WEB_SEARCH_TOOL, type ProposedAction } from '@/lib/agentTools'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,81 +20,6 @@ export const dynamic = 'force-dynamic'
 
 const MODEL = 'claude-sonnet-4-6'
 
-const HEALTH_VALUES = ['not_started', 'backlog', 'on_track', 'off_track', 'waiting', 'blocked', 'done']
-
-// Action tools. Calling one is a PROPOSAL, not an execution — the server never
-// runs the mutation. It extracts the calls and returns them to the client,
-// which renders a confirmation card and executes on the user's approval.
-const TOOLS = [
-  {
-    name: 'complete_task',
-    description: 'Propose marking a task as done. Use the task id shown in [task:…] in the state.',
-    input_schema: {
-      type: 'object',
-      properties: { task_id: { type: 'string', description: 'The task id (the value after task: in the bracket, or the whole [task:…] token).' } },
-      required: ['task_id'],
-    },
-  },
-  {
-    name: 'reschedule_task',
-    description: 'Propose changing a task\u2019s due date.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        task_id: { type: 'string', description: 'The task id from [task:…].' },
-        due_date: { type: 'string', description: 'New due date, YYYY-MM-DD.' },
-      },
-      required: ['task_id', 'due_date'],
-    },
-  },
-  {
-    name: 'add_task',
-    description: 'Propose creating a new task. Optionally assign it to a space and a due date.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: 'Task title.' },
-        space_id: { type: 'string', description: 'Optional space id from [space:…]. Omit for an inbox task.' },
-        due_date: { type: 'string', description: 'Optional due date, YYYY-MM-DD.' },
-      },
-      required: ['title'],
-    },
-  },
-  {
-    name: 'set_kr_health',
-    description: 'Propose changing a KR\u2019s health status (e.g. mark it on_track or blocked).',
-    input_schema: {
-      type: 'object',
-      properties: {
-        kr_id: { type: 'string', description: 'The KR id from [kr:…].' },
-        health: { type: 'string', enum: HEALTH_VALUES, description: 'New health status.' },
-      },
-      required: ['kr_id', 'health'],
-    },
-  },
-  {
-    name: 'create_calendar_event',
-    description: 'Propose adding an event to the calendar (writes to the HQ Google calendar on approval). Use for meetings, plans, social events, appointments, or time blocks. Pick a sensible time if the user didn\u2019t specify one.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string', description: 'Event title, e.g. "Dinner with Melissa — Sirens Pub".' },
-        date: { type: 'string', description: 'Event date, YYYY-MM-DD.' },
-        start_time: { type: 'string', description: '24-hour start time HH:MM, e.g. "18:00".' },
-        end_time: { type: 'string', description: '24-hour end time HH:MM, e.g. "20:00".' },
-      },
-      required: ['title', 'date', 'start_time', 'end_time'],
-    },
-  },
-]
-
-// Anthropic-executed server tool: web search. Runs inside the model's turn
-// (read-only, no approval needed) so the agent can pull real, current info.
-const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 5 }
-
-interface ProposedAction { tool: string; input: Record<string, unknown> }
-
-
 interface ChatMessage { role: 'user' | 'assistant'; content: string }
 interface AgentRequest { messages: ChatMessage[]; today: string; weekStart: string; mode?: 'text' | 'voice' }
 
@@ -111,7 +37,7 @@ const PERSONA = `You are the chief of staff for the operator of "Operation HQ", 
 Your job is to be a sharp, trusted chief of staff: know the whole operation cold, surface what's slipping before it's a fire, prioritize ruthlessly, and answer with specifics — always reference real KRs, tasks, and spaces by name, never in the abstract. When the operator asks "what should I focus on" or "what's at risk", lead with the highest-leverage thing (off-track or blocked KRs, overdue commitments, an overloaded week), not a flat list.
 
 Hard rules:
-- You can PROPOSE actions with your tools: complete a task, reschedule a task, add a task, add a calendar event, set a KR's health. Calling a tool does NOT execute it — it surfaces a confirmation card the operator approves with one tap. Propose freely when an action is clearly warranted and specific, but always say in plain text what you're proposing and why, and never claim something is done — say you've proposed it / queued it for approval.
+- You can PROPOSE actions with your tools: complete a task, reschedule a task, add a task, add a calendar event, set a KR's health, create a note. Calling a tool does NOT execute it — it surfaces a confirmation card the operator approves with one tap. Propose freely when an action is clearly warranted and specific, but always say in plain text what you're proposing and why, and never claim something is done — say you've proposed it / queued it for approval. Use create_note for things worth recording or reading (meeting notes, summaries, ideas, reference) rather than things to do.
 - You can SEARCH THE WEB. Use it whenever the answer depends on real, current, real-world facts you can't get from the state below — venues, hours, prices, addresses, news, people, products. Never invent specifics like business names, addresses, or hours; search and cite what you find, or say you couldn't confirm it.
 - For anything you have no tool for (moving existing calendar blocks, unblocking a KR, planning the week), advise instead: tell the operator exactly what to do and where — e.g. "run Plan My Week on the Calendar".
 - Don't over-propose. One clear ask beats five speculative ones. When unsure, ask or advise rather than firing a proposal.
