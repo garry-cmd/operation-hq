@@ -25,7 +25,6 @@ import OKRs from '@/components/OKRs'
 import Focus from '@/components/Focus'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
-import Summary from '@/components/Summary'
 import Home from '@/components/Home'
 import Agent, { type ChatMsg } from '@/components/Agent'
 import Tasks from '@/components/Tasks'
@@ -44,7 +43,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'overview' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags' | 'settings'
+type Screen = 'home' | 'agent' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags' | 'settings'
 
 
 export default function HQPage() {
@@ -531,29 +530,6 @@ export default function HQPage() {
   const initials = user.email?.slice(0, 2).toUpperCase() ?? 'HQ'
   const parkedCount = roadmapItems.filter(i => i.is_parked).length
 
-  // Click handlers fired from Summary. Both commit the target real space, then
-  // route into the right tab and pop the corresponding panel — reusing the
-  // openObjectiveId / openActionId plumbing that OKRs and Focus already wire
-  // up for in-space clicks. setScreen implicitly leaves the Overview view
-  // by switching to a per-space tab.
-  function openObjectiveFromSummary(spaceId: string, objectiveId: string) {
-    switchSpace(spaceId)
-    setScreen('okr')
-    setOpenObjectiveId(objectiveId)
-    setOpenActionId(null)
-  }
-  function openActionFromSummary(spaceId: string, action: WeeklyAction) {
-    switchSpace(spaceId)
-    setScreen('focus')
-    // Older open actions live on past weeks; jump to that week so Focus
-    // actually surfaces the action. Use the explicit-spaceId variant —
-    // `setWeekStart` would read the closure-captured activeSpaceId which
-    // hasn't propagated yet from switchSpace, writing to the wrong record.
-    setWeekStartForSpace(spaceId, () => action.week_start)
-    setOpenActionId(action.id)
-    setOpenObjectiveId(null)
-  }
-
   // Route a command-palette pick. Reuses the same space-switch + panel-open
   // plumbing as the Summary jumps. Space-scoped screens (okr/focus/roadmap/
   // park/reflect) need the target's space committed first, or the screen would
@@ -577,32 +553,6 @@ export default function HQPage() {
     if (r.krId) setInitialKRId(r.krId)
     goToScreen(r.screen as Screen)
     if (isMobile) setDrawerOpen(false)
-  }
-
-  async function toggleActionFromSummary(action: WeeklyAction) {
-    try {
-      const updated = await actionsDb.update(action.id, { completed: !action.completed })
-      setActions(prev => prev.map(a => a.id === action.id ? updated : a))
-    } catch (err) {
-      console.error('toggleAction (Summary) failed:', err)
-    }
-  }
-  async function toggleKRFromSummary(kr: RoadmapItem) {
-    // Summary's done check is `status === 'done' || health_status === 'done'`,
-    // so to truly un-done a KR we need to clear `status: 'done'` if set —
-    // otherwise the OR keeps it visually checked. Marking done only touches
-    // health_status to avoid stomping a `planned` or `abandoned` status that
-    // some other flow set.
-    const isDone = kr.health_status === 'done' || kr.status === 'done'
-    const patch: Partial<RoadmapItem> = isDone
-      ? { health_status: 'on_track', ...(kr.status === 'done' ? { status: 'active' as const } : {}) }
-      : { health_status: 'done' }
-    try {
-      const updated = await krsDb.update(kr.id, patch)
-      setRoadmapItems(prev => prev.map(i => i.id === kr.id ? updated : i))
-    } catch (err) {
-      console.error('toggleKR (Summary) failed:', err)
-    }
   }
 
   // Space-scoped data — everything filters from the active space's objectives.
@@ -829,44 +779,12 @@ export default function HQPage() {
       ) : screen === 'settings' && !loading ? (
         <Settings toast={setToast} />
       ) : (
-      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'overview' || screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
             Loading…
           </div>
-        ) : screen === 'overview' ? (
-          <Summary
-            spaces={spaces}
-            objectives={objectives}
-            roadmapItems={roadmapItems}
-            actions={actions}
-            onOpenObjective={openObjectiveFromSummary}
-            onOpenAction={openActionFromSummary}
-            onToggleAction={toggleActionFromSummary}
-            onToggleKR={toggleKRFromSummary}
-            onUpdateKR={async (id, patch) => {
-              try {
-                const updated = await krsDb.update(id, patch)
-                setRoadmapItems(prev => prev.map(kr => kr.id === id ? updated : kr))
-                setToast('Key Result updated')
-              } catch (err) {
-                console.error('updateKR (Summary) failed:', err)
-                setToast('Failed to update KR')
-              }
-            }}
-            onDeleteKR={async (id) => {
-              try {
-                await krsDb.remove(id)
-                setRoadmapItems(prev => prev.filter(kr => kr.id !== id))
-                setToast('Key Result deleted')
-              } catch (err) {
-                console.error('deleteKR (Summary) failed:', err)
-                setToast('Failed to delete KR')
-              }
-            }}
-            toast={setToast}
-          />
         ) : (
           <>
             {draftReview && (
