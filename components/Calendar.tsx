@@ -18,6 +18,7 @@ import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import * as capDb from '@/lib/db/capacityBlocks'
 import * as calDb from '@/lib/db/calendarBlocks'
 import { planWeek, planFromAssignments, minutesToLabel, SchedulableItem, BusyInterval, dateForDow } from '@/lib/calendarPlan'
+import { spaceDisplayColorById } from '@/lib/spaceColor'
 import * as gcal from '@/lib/db/googleApi'
 import type { GoogleBusyEvent } from '@/lib/db/googleApi'
 import { requestPlan } from '@/lib/db/planApi'
@@ -120,7 +121,7 @@ export default function Calendar({
 
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
-  const colorFor = (spaceId: string | null) => spaceId ? (spaceById.get(spaceId)?.color ?? 'var(--navy-500)') : 'var(--navy-500)'
+  const colorFor = (spaceId: string | null) => spaceDisplayColorById(spaceId, spaces)
 
   const weekBlocks = useMemo(
     () => calendarBlocks.filter(b => b.block_date >= viewWeek && b.block_date <= weekEnd),
@@ -161,15 +162,18 @@ export default function Calendar({
       if (a.week_start !== viewWeek || a.completed) continue
       if (placedKeys.has(`action:${a.id}`)) continue
       const kr = krById.get(a.roadmap_item_id)
+      const space_id = kr?.space_id ?? null
+      if (!space_id) continue // calendar schedules space-attributed work only
       out.push({
         source: 'action', id: a.id, title: a.title,
-        space_id: kr?.space_id ?? null, kind: 'kr_action',
+        space_id, kind: 'kr_action',
         duration: a.estimated_minutes ?? 30, priority: 2, due: null,
         health: kr?.health_status ?? null,
       })
     }
     for (const t of tasks) {
       if (t.completed_at || t.parent_task_id) continue
+      if (!t.space_id) continue // list/inbox tasks live in Tasks, not on the calendar
       if (!t.due_date || t.due_date < viewWeek || t.due_date > weekEnd) continue
       if (placedKeys.has(`task:${t.id}`)) continue
       out.push({
@@ -607,6 +611,28 @@ function WeekView(props: {
 
   const itemMap = useMemo(() => new Map(items.map(it => [`${it.source}:${it.id}`, it])), [items])
 
+  // Group the schedulable pool by space so a wall of same-space items reads as a
+  // labelled, color-banded cluster instead of an undifferentiated list. Within a
+  // group: sick KR actions first, then by priority, then shortest.
+  const fmtDur = (m: number) => (m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${m % 60 ? String(m % 60).padStart(2, '0') : ''}`)
+  const groups = useMemo(() => {
+    const m = new Map<string, { space: Space | null; items: SchedulableItem[] }>()
+    for (const it of items) {
+      const key = it.space_id ?? '∅'
+      if (!m.has(key)) m.set(key, { space: it.space_id ? spaceById.get(it.space_id) ?? null : null, items: [] })
+      m.get(key)!.items.push(it)
+    }
+    const rank = (it: SchedulableItem) => {
+      if (it.kind === 'kr_action') {
+        const sick = it.health === 'off_track' || it.health === 'blocked'
+        return (sick ? 0 : 100) + (it.priority ?? 2)
+      }
+      return 200 + (it.priority ?? 4)
+    }
+    for (const g of m.values()) g.items.sort((a, b) => rank(a) - rank(b) || a.duration - b.duration)
+    return [...m.values()].sort((a, b) => (a.space?.sort_order ?? 999) - (b.space?.sort_order ?? 999))
+  }, [items, spaceById])
+
   // Does a capacity block accept this kind+space? (mirrors the planner)
   const accepts = (c: CapacityBlock, kind: 'kr_action' | 'task', spaceId: string | null) =>
     (c.kind === 'both' || c.kind === kind) && (c.space_id === null || c.space_id === spaceId)
@@ -698,27 +724,52 @@ function WeekView(props: {
         {items.length === 0 && (
           <p style={{ fontSize: 12, color: 'var(--navy-500)', textAlign: 'center', padding: '14px 0' }}>Nothing left to schedule.</p>
         )}
-        {items.map(it => {
-          const key = `${it.source}:${it.id}`
+        {groups.map(g => {
+          const col = colorFor(g.space?.id ?? null)
+          const total = g.items.reduce((s, i) => s + i.duration, 0)
           return (
-            <div
-              key={key}
-              draggable
-              onDragStart={(e) => { e.dataTransfer.setData('text/plain', `new:${key}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: it.kind, spaceId: it.space_id, duration: it.duration }) }}
-              onDragEnd={() => { setOver(null); setDragCtx(null) }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 10,
-                background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 8, cursor: 'grab',
-              }}
-            >
-              <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 3, background: colorFor(it.space_id), flexShrink: 0 }} />
-              <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--navy-100)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {it.kind === 'kr_action' && <span title="KR action" style={{ color: 'var(--navy-400)', marginRight: 4 }}>◆</span>}
-                {it.title}
-              </span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-300)', background: 'var(--navy-600)', borderRadius: 6, padding: '1px 6px', flexShrink: 0 }}>
-                {it.duration}m
-              </span>
+            <div key={g.space?.id ?? 'none'} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 2px 7px', borderBottom: '1px solid var(--navy-700)', marginBottom: 7 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 3, background: col, flexShrink: 0 }} />
+                <span style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--navy-50)', letterSpacing: '.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.space?.name ?? 'No space'}</span>
+                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--navy-400)', flexShrink: 0 }}>{g.items.length} · {fmtDur(total)}</span>
+              </div>
+              {g.items.map(it => {
+                const key = `${it.source}:${it.id}`
+                const sick = it.kind === 'kr_action' && (it.health === 'off_track' || it.health === 'blocked')
+                const pri = it.kind === 'task' ? it.priority : null
+                return (
+                  <div
+                    key={key}
+                    draggable
+                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', `new:${key}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: it.kind, spaceId: it.space_id, duration: it.duration }) }}
+                    onDragEnd={() => { setOver(null); setDragCtx(null) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 9,
+                      background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 5, cursor: 'grab',
+                    }}
+                  >
+                    <span style={{ width: 4, alignSelf: 'stretch', minHeight: 26, borderRadius: 3, background: col, flexShrink: 0 }} />
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--navy-100)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {it.kind === 'kr_action' && <span title="KR action" style={{ color: 'var(--navy-400)', marginRight: 4 }}>◆</span>}
+                      {it.title}
+                    </span>
+                    {sick && (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.05em', color: '#ff8a78', background: 'rgba(255,100,82,.16)', borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
+                        {it.health === 'blocked' ? 'blocked' : 'off track'}
+                      </span>
+                    )}
+                    {pri != null && pri <= 2 && (
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, color: '#fff', background: pri === 1 ? '#c0392b' : '#b9770e', borderRadius: 4, padding: '1px 5px', flexShrink: 0 }}>
+                        P{pri}
+                      </span>
+                    )}
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--navy-300)', background: 'var(--navy-600)', borderRadius: 6, padding: '1px 6px', flexShrink: 0 }}>
+                      {fmtDur(it.duration)}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
           )
         })}
@@ -772,17 +823,18 @@ function WeekView(props: {
                   {dayBlocks.map(b => {
                     const proposed = b.status === 'proposed'
                     const col = colorFor(b.space_id)
+                    const spaceName = b.space_id ? spaceById.get(b.space_id)?.name ?? null : null
                     return (
                       <div
                         key={b.id}
                         draggable
                         onDragStart={(e) => { e.dataTransfer.setData('text/plain', `move:${b.id}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: b.task_id ? 'task' : 'kr_action', spaceId: b.space_id, duration: b.end_minute - b.start_minute }) }}
                         onDragEnd={() => { setOver(null); setDragCtx(null) }}
-                        title="Drag to move"
+                        title={`Drag to move${spaceName ? ` · ${spaceName}` : ''}`}
                         style={{
                           position: 'absolute', left: 4, right: 4, top: minToTop(b.start_minute), height: Math.max(durToH(b.end_minute - b.start_minute) - 2, 16),
                           borderRadius: 7, padding: '3px 7px', overflow: 'hidden', cursor: 'grab', zIndex: 4,
-                          background: proposed ? `color-mix(in srgb, ${col} 24%, transparent)` : col,
+                          background: proposed ? `color-mix(in srgb, ${col} 36%, transparent)` : col,
                           border: proposed ? `1px dashed ${col}` : `1px solid ${col}`,
                           color: proposed ? 'var(--navy-50)' : '#0b0d10',
                         }}
@@ -795,7 +847,7 @@ function WeekView(props: {
                           style={{ position: 'absolute', top: 1, right: 3, background: 'none', border: 'none', color: proposed ? 'var(--navy-200)' : '#0b0d10', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, opacity: 0.7 }}
                         >×</button>
                         <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: 12 }}>{b.title}</div>
-                        <div style={{ fontSize: 9.5, opacity: 0.85 }}>{minutesToLabel(b.start_minute)}{proposed ? ' · proposed' : ''}</div>
+                        <div style={{ fontSize: 9.5, opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{spaceName ? `${spaceName} · ` : ''}{minutesToLabel(b.start_minute)}{proposed ? ' · proposed' : ''}</div>
                       </div>
                     )
                   })}
