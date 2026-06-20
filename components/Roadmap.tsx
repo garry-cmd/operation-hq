@@ -110,9 +110,10 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
 
   return (
     <div>
-      <div style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Roadmap</h1>
-        <p style={{ fontSize: 12, color: 'var(--navy-400)' }}>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 6 }}>Strategic · Roadmap</div>
+        <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', margin: '0 0 4px 0', letterSpacing: '-.02em' }}>Roadmap</h1>
+        <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: 0 }}>
           {draggingId
             ? '⊕ Drop in a quarter cell — same objective only'
             : 'Drag a key result between quarters · ✎ to edit'}
@@ -132,11 +133,11 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
             {/* Quarter headers — padding matches the inner KR cells grid (1px obj-card border + 8px inner padding) so columns line up vertically. */}
             <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 8, padding: '0 9px' }}>
               {ROLLING.map(q => (
-                <div key={q} style={{ fontSize: 10, fontWeight: 700, textAlign: 'center', padding: '7px 6px', borderRadius: 8, lineHeight: 1.3,
-                  background: q === ACTIVE_Q ? 'var(--accent-dim)' : 'var(--navy-700)',
-                  color: q === ACTIVE_Q ? 'var(--accent)' : 'var(--navy-300)',
-                  border: q === ACTIVE_Q ? '1px solid var(--accent)' : '1px solid var(--navy-500)' }}>
-                  {formatQ(q)}{q === ACTIVE_Q ? <><br/><span style={{ fontWeight: 400, fontSize: 9 }}>⚡ Active</span></> : ''}
+                <div key={q} style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.08em', textAlign: 'center', padding: '7px 6px', borderRadius: 8, lineHeight: 1.3,
+                  background: q === ACTIVE_Q ? 'var(--accent-bg)' : 'var(--surface-2)',
+                  color: q === ACTIVE_Q ? 'var(--accent-2)' : 'var(--navy-300)',
+                  border: q === ACTIVE_Q ? '1px solid var(--accent-line)' : '1px solid var(--line-2)' }}>
+                  {formatQ(q)}{q === ACTIVE_Q ? <><br/><span style={{ fontWeight: 400, fontSize: 9, letterSpacing: '.04em' }}>⚡ Active</span></> : ''}
                 </div>
               ))}
             </div>
@@ -145,7 +146,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
             {activeObjs.map(obj => {
               const objItems = items.filter(i => i.annual_objective_id === obj.id)
               return (
-                <div key={obj.id} style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 10, background: hex2rgba(obj.color, 0.07), border: `1px solid ${hex2rgba(obj.color, 0.25)}` }}>
+                <div key={obj.id} style={{ borderRadius: 14, overflow: 'hidden', marginBottom: 12, background: hex2rgba(obj.color, 0.07), border: `1px solid ${hex2rgba(obj.color, 0.25)}`, boxShadow: 'var(--card-shadow)' }}>
 
                   {/* Lane header */}
                   <div style={{ padding: '9px 14px', background: hex2rgba(obj.color, 0.14), display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -160,7 +161,8 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                       const overdue = !!(obj.end_date && parseDateLocal(obj.end_date) < today)
                       return (
                         <div style={{
-                          fontSize: 10.5, fontWeight: 600, flexShrink: 0,
+                          fontFamily: 'var(--font-mono)',
+                          fontSize: 10, fontWeight: 600, flexShrink: 0,
                           color: overdue ? 'var(--nw-alarm-text)' : hex2rgba(obj.color, 0.8),
                           fontVariantNumeric: 'tabular-nums',
                           letterSpacing: '.02em', whiteSpace: 'nowrap',
@@ -209,7 +211,7 @@ export default function Roadmap({ objectives, roadmapItems, setObjectives, setRo
                               : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
                             border: isDragOver
                               ? `2px solid ${obj.color}`
-                              : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--navy-600)',
+                              : q === ACTIVE_Q ? `1px dashed ${hex2rgba(obj.color, 0.4)}` : '1px dashed var(--line-2)',
                             cursor: isDragOver ? 'pointer' : 'default',
                             WebkitTapHighlightColor: 'transparent',
                             transition: 'background .12s, border .12s' }}>
@@ -331,10 +333,10 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       onDoubleClick={e => { e.stopPropagation(); onEdit(e) }}
-      style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '6px 8px', borderRadius: 7, marginBottom: 4,
+      style={{ fontSize: 11, fontWeight: isActive ? 600 : 400, padding: '6px 8px', borderRadius: 8, marginBottom: 4,
         cursor: dragging ? 'grabbing' : 'grab', userSelect: 'none', lineHeight: 1.35, transition: 'transform .12s, opacity .12s, background .12s',
-        background: isActive ? hex2rgba(objColor, 0.22) : 'var(--navy-700)',
-        border: isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--navy-500)`,
+        background: isActive ? hex2rgba(objColor, 0.22) : 'var(--surface-2)',
+        border: isActive ? `1.5px solid ${hex2rgba(objColor, 0.6)}` : `1px solid var(--line-2)`,
         color: isActive ? 'var(--navy-50)' : 'var(--navy-200)',
         opacity: dragging ? 0.4 : isDone ? 0.45 : 1,
         WebkitTapHighlightColor: 'transparent',
@@ -345,6 +347,7 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textDecoration: isDone ? 'line-through' : 'none' }}>{item.title}</span>
         {krDateText && (
           <span style={{
+            fontFamily: 'var(--font-mono)',
             fontSize: 9.5, fontWeight: 500,
             color: isActive ? hex2rgba(objColor, 0.9) : 'var(--navy-300)',
             fontVariantNumeric: 'tabular-nums', letterSpacing: '.02em',
@@ -377,7 +380,7 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
 function AddKRBtn({ onClick, color }: { onClick: (e: React.MouseEvent) => void; color: string }) {
   return (
     <button onClick={onClick}
-      style={{ width: '100%', padding: '4px 0', fontSize: 10, fontWeight: 600, color: hex2rgba(color, 0.6),
+      style={{ width: '100%', padding: '4px 0', fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '.08em', textTransform: 'uppercase', color: hex2rgba(color, 0.6),
         background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center',
         justifyContent: 'center', gap: 3, opacity: .7, marginTop: 2 }}>
       <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
