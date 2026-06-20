@@ -427,7 +427,10 @@ export default function Calendar({
   return (
     <div style={{ padding: '22px 26px 60px', maxWidth: 1320, margin: '0 auto', width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 14, flexWrap: 'wrap' }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-.01em', margin: 0 }}>Calendar</h1>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 3 }}>Daily · Calendar</div>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, letterSpacing: '-.02em', margin: 0 }}>Calendar</h1>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <button onClick={() => setViewWeek(w => addWeeks(w, -1))} style={navBtn}>‹</button>
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', minWidth: 168, textAlign: 'center' }}>{fmtWeekLabel(viewWeek)}</span>
@@ -559,8 +562,8 @@ function DayHeaders({ weekDates, todayStr }: { weekDates: string[]; todayStr: st
         const { dow, dnum } = fmtDay(d); const today = d === todayStr
         return (
           <div key={d} style={{ padding: '9px 8px', textAlign: 'center', borderRight: '1px solid var(--navy-600)' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: today ? 'var(--accent)' : 'var(--navy-400)' }}>{dow}</div>
-            <div style={{ fontSize: 16, fontWeight: 700, color: today ? 'var(--accent)' : 'var(--navy-100)', marginTop: 2 }}>{dnum}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: today ? 'var(--accent)' : 'var(--navy-400)' }}>{dow}</div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 700, color: today ? 'var(--accent)' : 'var(--navy-100)', marginTop: 2, fontVariantNumeric: 'tabular-nums' }}>{dnum}</div>
           </div>
         )
       })}
@@ -975,7 +978,7 @@ function CapacityDraftPopup(props: {
   return (
     <div onClick={onCancel} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: 320, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: 18, boxShadow: '0 20px 60px rgba(0,0,0,.5)' }}>
-        <h3 style={{ fontSize: 14, fontWeight: 700, margin: '0 0 4px', color: 'var(--navy-50)' }}>Reserve capacity</h3>
+        <h3 style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, margin: '0 0 4px', color: 'var(--navy-50)', letterSpacing: '-.01em' }}>Reserve capacity</h3>
         <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 14 }}>{DOW_LABELS[draft.dayIndex]} · {minutesToLabel(start)}–{minutesToLabel(end)}</div>
 
         <label style={fieldLabel}>Space</label>
@@ -1016,8 +1019,8 @@ function CapacityDraftPopup(props: {
 }
 
 /* ── styles ─────────────────────────────────────────────────────── */
-const nwLabel: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', margin: 0 }
-const fieldLabel: React.CSSProperties = { display: 'block', fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.16em', marginBottom: 5 }
+const nwLabel: React.CSSProperties = { fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em', margin: 0 }
+const fieldLabel: React.CSSProperties = { display: 'block', fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em', marginBottom: 5 }
 const navBtn: React.CSSProperties = { width: 28, height: 28, borderRadius: 8, border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-300)', fontSize: 14, cursor: 'pointer' }
 const ghostBtn: React.CSSProperties = { border: '1px solid var(--navy-600)', background: 'var(--navy-800)', color: 'var(--navy-200)', fontSize: 12, fontWeight: 600, borderRadius: 8, padding: '6px 11px', cursor: 'pointer' }
 const primaryBtn: React.CSSProperties = { border: 'none', background: 'var(--accent)', color: '#fff', fontSize: 12.5, fontWeight: 700, borderRadius: 8, padding: '7px 13px', cursor: 'pointer' }

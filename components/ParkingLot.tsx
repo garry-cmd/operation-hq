@@ -64,12 +64,13 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
 
   return (
     <div>
-      <h1 style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', marginBottom: 3 }}>Parking Lot</h1>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Archive · Parking</div>
+      <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.02em', marginBottom: 3 }}>Parking Lot</h1>
       <p style={{ fontSize: 12, color: 'var(--navy-400)', marginBottom: 20 }}>Get ideas out of your head — sort them later</p>
 
       {/* Capture form — title only, no categorization */}
       <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 16, padding: '16px', marginBottom: 24 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>
+        <div style={{ fontSize: 12, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 12 }}>
           New idea
         </div>
         <form onSubmit={parkIdea}>
@@ -90,7 +91,7 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
         </div>
       ) : (
         <>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 12 }}>
             {parked.length} parked idea{parked.length > 1 ? 's' : ''}
           </div>
 
@@ -99,7 +100,7 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--navy-500)', flexShrink: 0 }} />
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px' }}>Unassigned</div>
+                <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.12em' }}>Unassigned</div>
               </div>
               {orphanItems.map(item => (
                 <ParkedItemRow key={item.id} item={item}
@@ -114,7 +115,7 @@ export default function ParkingLot({ objectives, roadmapItems, activeSpaceId, se
             <div key={obj.id} style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: obj.color, flexShrink: 0 }} />
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: '.5px' }}>{obj.name}</div>
+                <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: '.12em' }}>{obj.name}</div>
               </div>
               {items.map(item => (
                 <ParkedItemRow key={item.id} item={item}
@@ -190,7 +191,7 @@ function ScheduleSheet({ item, objectives, onClose, onScheduled }: {
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.5)' }} />
       <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 51, background: 'var(--navy-700)', borderTop: '2px solid var(--accent)', borderRadius: '20px 20px 0 0', padding: '20px 20px 32px', animation: 'sheetUp .2s ease' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)', flex: 1 }}>Schedule this idea</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', flex: 1, letterSpacing: '-.01em' }}>Schedule this idea</div>
           <button onClick={onClose} style={{ fontSize: 20, color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>×</button>
         </div>
         <div style={{ fontSize: 13, color: 'var(--navy-200)', marginBottom: 14, lineHeight: 1.4 }}>
@@ -203,13 +204,13 @@ function ScheduleSheet({ item, objectives, onClose, onScheduled }: {
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Objective</div>
+            <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 6 }}>Objective</div>
             <select value={objId} onChange={e => setObjId(e.target.value)}
               style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: 'var(--navy-100)', fontFamily: 'inherit', marginBottom: 14, outline: 'none' }}>
               {objectives.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
             </select>
 
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.5px', marginBottom: 6 }}>Quarter</div>
+            <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.12em', marginBottom: 6 }}>Quarter</div>
             <select value={quarter} onChange={e => setQuarter(e.target.value)}
               style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 12, padding: '12px 14px', fontSize: 13, color: 'var(--navy-100)', fontFamily: 'inherit', marginBottom: 16, outline: 'none' }}>
               {QUARTERS.map(q => <option key={q} value={q}>{q}{q === ACTIVE_Q ? ' — active' : ''}</option>)}

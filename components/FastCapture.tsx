@@ -143,7 +143,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 48, background: 'var(--navy-700)', borderTop: `2px solid ${typeInfo?.color}`, borderRadius: '20px 20px 0 0', padding: '20px 20px 32px', animation: 'sheetUp .2s ease' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 18 }}>
             <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--navy-600)', border: `1.5px solid ${typeInfo?.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: typeInfo?.color, flexShrink: 0 }}>{typeInfo?.icon}</div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--navy-50)' }}>Add {typeInfo?.label}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.01em' }}>Add {typeInfo?.label}</div>
             <button onClick={close} style={{ marginLeft: 'auto', fontSize: 20, color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px' }}>×</button>
           </div>
           <form onSubmit={save}>

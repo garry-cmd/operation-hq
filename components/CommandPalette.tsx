@@ -72,7 +72,7 @@ function ResultRow({ hit, selected, onHover, onClick }: {
         </div>
       </span>
 
-      <span style={{ flex: 'none', fontSize: 10, letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--nw-label)', fontWeight: 600 }}>{e.kind}</span>
+      <span style={{ flex: 'none', fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label)', fontWeight: 600 }}>{e.kind}</span>
     </div>
   )
 }
@@ -209,7 +209,7 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
         {/* results */}
         <div ref={listRef} style={{ overflowY: 'auto', padding: 6 }}>
           {showingRecents && (
-            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--nw-label)', padding: '8px 12px 5px' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', padding: '8px 12px 5px' }}>
               Recent
             </div>
           )}

@@ -189,7 +189,7 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--navy-700)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: parentObjective.color, flexShrink: 0 }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, color: 'var(--navy-300)', textTransform: 'uppercase', letterSpacing: '.1em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {parentObjective.name}
           </span>
           <button onClick={onClose}
@@ -266,7 +266,7 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
         {/* Estimated duration — preset minute buckets. Click the active one to
             clear. Drives the calendar time-block length downstream. */}
         <div style={{ marginTop: 10 }}>
-          <div style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.16em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 6 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 6 }}>
             Estimated duration
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -284,7 +284,7 @@ export default function ActionPanel({ action, parentKR, parentObjective, logs, s
       {/* Notes section */}
       <div style={{ borderTop: '1px solid var(--navy-700)', padding: '14px 16px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: 1 }}>
+          <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
             Notes {objLogs.length > 0 && <span style={{ color: 'var(--navy-500)', fontWeight: 600 }}>({objLogs.length})</span>}
           </div>
           {!creatingNew && (

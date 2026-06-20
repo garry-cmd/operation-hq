@@ -160,7 +160,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
       <div style={{ padding: '12px 16px 10px', borderBottom: '1px solid var(--navy-700)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: objective.color, flexShrink: 0 }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--navy-50)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 600, letterSpacing: '-.01em', color: 'var(--navy-50)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {objective.name}
           </span>
           <button onClick={onClose}
@@ -183,7 +183,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
       {/* References section — files and links interleaved by recency */}
       <div style={{ padding: '14px 16px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: 1 }}>
+          <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
             References {objRefs.length > 0 && <span style={{ color: 'var(--navy-500)', fontWeight: 600 }}>({objRefs.length})</span>}
           </div>
           {!creatingRef && (
@@ -261,7 +261,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
       {/* Notes section */}
       <div style={{ padding: '14px 16px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: 1 }}>
+          <div style={{ fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.1em' }}>
             Notes {objLogs.length > 0 && <span style={{ color: 'var(--navy-500)', fontWeight: 600 }}>({objLogs.length})</span>}
           </div>
           {!creatingNote && (
