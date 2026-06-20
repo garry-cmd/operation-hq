@@ -50,6 +50,39 @@ running deployment can't see it.
 
 ## Current state — shipped
 
+### Jun 20 (latest) — Evolve UI/UX refresh (whole-app) + Overview deleted
+
+A full visual pass that **evolved** (not re-skinned) the night-watch/cobalt instrument-panel
+identity onto a real type system, applied screen-by-screen worst-first, plus deletion of the
+redundant Overview screen. Styling only — no migrations, no schema/logic changes.
+
+- **Type system (foundation).** `app/layout.tsx` wires three Google fonts via `next/font/google`
+  as variable fonts → CSS vars on `<html>`: **Space Grotesk** (`--font-display`, titles),
+  **Inter** (`--font-body`), **JetBrains Mono** (`--font-mono`, readouts/data). Signature =
+  **tabular-mono readouts under amber-mono instrument labels**, Space-Grotesk display titles.
+- **`globals.css` rewrite.** Dark kept ~as-is; **light de-washed** (page bg → cool slate
+  `#e7ebf2`, crisper borders, saturated status colors). All legacy token names (`--navy-*`,
+  `--teal/red/amber/slate-bg/text`, `--nw-*`) **kept and re-pointed** so every component inherited
+  the refresh unbroken. Added evolved vocabulary tokens (`--bg --surface --surface-2 --line
+  --line-2 --line-strong --t-0..3 --label --ok/-warn/-alarm/-standby --card-shadow --radius-*`)
+  + primitives (`.label .mono .chip .card`). **Do NOT redefine `--font-*` in `:root`** — collides
+  with next/font.
+- **Shell.** NavRail renders on **every** desktop screen now (removed the Home special-cases);
+  hamburger only < 900px. Section labels → mono; active nav row gets an `--accent-bg` tint + a
+  left accent bar.
+- **Per-screen sweep** (header eyebrow + Space-Grotesk display title + mono labels/readouts):
+  OKRs (+ a **segmented status bar** on ObjectiveCard replacing the progress bar), Home, Roadmap,
+  Chief of Staff (`Agent` + `BriefingsFeed`), Reflect, Focus (+ `FocusTasks`), Tasks, Notes
+  (note-title editor → display), Calendar, Parking, ⌘K `CommandPalette`, `FastCapture`,
+  `ActionPanel`, `ObjectivePanel`. Tag/priority/status pills left as colored chips.
+- **Overview/`Summary` screen DELETED** (was the long-standing Home-replaced-it backlog item).
+  Removed the nav entry, the `screen==='overview'` route, the four `*FromSummary` handlers, the
+  import, `OverviewIcon`, the `Screen`-type member (page + NavRail), and `components/Summary.tsx`
+  itself. `Home` is the default landing so nothing routes to a dead screen. (Stray Summary/Overview
+  mentions remain only in historical code comments — harmless.)
+- **NOT swept (deliberate):** the modal shells — `Modal`, `EditKRModal`, `MetricLogModal`,
+  `PlanWeek`, `CloseWeekWizard`, `History` — inherit tokens already; their own pass if wanted.
+
 ### Jun 20 (night) — Agent autonomy Stage 2 + full mutation tool surface
 
 The Chief of Staff went from read-broadly/act-narrowly with a handful of tools to a broad
@@ -180,8 +213,8 @@ change. This is the triage destination the planned **Home deck**'s "Backlog" act
 
 Focus's all-spaces concept shipped as a dedicated **Home** screen (`components/Home.tsx`), now the
 **default landing** (top of NavRail, `screen==='home'`). Built over 7 mockup iterations
-(`hq-home-week-deck-mockup-v7.html`). **The old Overview/`Summary` screen still exists** — it was NOT
-deleted (planned step 7), so there's some overlap to resolve later. Shape:
+(`hq-home-week-deck-mockup-v7.html`). **The Overview/`Summary` screen has since been DELETED**
+(Jun 20 latest — see top of Current state). Shape:
 
 - **Color = space** everywhere (5 space dots; legibility pass on space colors still TODO —
   Keeply `#0B1E3F` is invisible on dark, needs a display variant).
@@ -199,14 +232,14 @@ deleted (planned step 7), so there's some overlap to resolve later. Shape:
   **Backlog** (clear due date → backlog view) · **Snooze** (→ tomorrow) · **Kill** (hard delete).
 - **FAB** bottom-right — quick-add task / key action / note / event.
 
-**Build sequence — shipped except Overview deletion:**
+**Build sequence — all shipped:**
 1. ✅ Backlog smart view in Tasks.
 2. ✅ `notes.roadmap_item_id` nullable (mirrors `tasks.roadmap_item_id`).
 3. ✅ Notes↔KR link picker + `lib/db/notes` helper.
 4. ✅ All-day Google events surfaced for the ribbon. *(superseded earlier follow-up — verify still holds)*
 5. ✅ `lib/quotes.ts` daily-quote module.
 6. ✅ Home deck — new all-spaces screen, default landing + top NavRail entry.
-7. ⬜ **Delete the Overview/`Summary` screen** — NOT done; Home + Overview currently coexist.
+7. ✅ **Delete the Overview/`Summary` screen** — done Jun 20 (latest).
 8. ✅ Inline handlers: complete / Backlog / Snooze→tomorrow / Kill + FAB quick-add.
 
 Decisions locked: notes = click-to-open (not inline edit); Backlog lives in Tasks; Kill =
@@ -320,12 +353,10 @@ redirect URIs for prod + `localhost:3000`.
    read tool needs `/api/agent` to execute it mid-turn and feed the `tool_result` back to the model
    (call → if tool_use, run → append result → call again → stream final). Unlocks precise edits
    (`update_note` currently rewrites blind) and future read tools (`search_notes`, etc.). Its own pass.
-2. **Home deck cleanup — delete the Overview/`Summary` screen.** Home shipped as the default landing but
-   Overview still coexists (planned step 7). Remove Overview + its route once confirmed Home covers it.
-3. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-4. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
-5. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
+3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
+4. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
    `delete_kr`; calendar event **edit/delete** (two systems: `calendar_blocks` row + Google event);
    note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context); Stage 3
    autonomous low-risk acting. Deferred deliberately, not dropped.
@@ -391,6 +422,18 @@ Share-page query optimization · PWA install prompt · keyboard shortcuts (⌘En
 14. **Build-time env + paid-tier gotchas.** `NEXT_PUBLIC_*` inline at build → set before building, and
     force a clean rebuild (`git commit --allow-empty`) when a running deployment can't see a changed
     value. ElevenLabs "library" voices (e.g. Rachel) 402 on the free tier — needs a paid plan.
+15. **Type system = Space Grotesk (display) / Inter (body) / JetBrains Mono (data), via `next/font`.**
+    Wired in `layout.tsx` as `--font-display/-body/-mono` on `<html>`. Screen pattern: **mono amber
+    eyebrow ("Group · Screen") → Space-Grotesk display title → mono labels + tabular-mono readouts**.
+    Cobalt accent + colored status pills unchanged. Evolve via these vars + the re-pointed legacy
+    tokens; never redefine `--font-*` in `:root` (collides with next/font).
+16. **Sandbox build can't fetch Google Fonts (egress blocked), so `npm run build` fails at the
+    `next/font` step.** To verify a styling change compiles: `npx tsc --noEmit` (grep out
+    `validator.ts`), then temporarily swap `layout.tsx` for a no-`next/font` stub and run the full
+    build — it compiles every route; the only remaining error is the env-less `/hq` prerender
+    (`supabaseUrl is required`), which is the known cosmetic false-positive. Restore the real
+    `layout.tsx` (grep-confirm `next/font/google` present) before staging. Garry's Mac has open
+    network → his build fetches the fonts and succeeds.
 
 Earlier (May 14): desktop-first; SECURITY DEFINER RPCs for anon validation; NULL as "applies
 broadly" sentinel; paired text+structured forms; rolling state over event logs for recurrence;
@@ -421,9 +464,10 @@ git push origin HEAD:main
 inter-command prompts. Push only if build is green. Staging-first deploys end the first block
 with a staging push + "test, then run:" + a separate block for main.
 
-**Sandbox verify before staging:** clone at `/tmp/operation-hq`;
-`npx tsc --noEmit 2>&1 | grep -v validator.ts`, then
-`rm -rf .next && NEXT_PUBLIC_SUPABASE_URL="https://dummy.supabase.co" NEXT_PUBLIC_SUPABASE_ANON_KEY="dummy" npm run build`.
+**Sandbox verify before staging:** `npx tsc --noEmit 2>&1 | grep -v validator.ts`, then a full
+`npm run build`. **Note:** since `layout.tsx` uses `next/font/google`, the sandbox build now fails
+fetching Google Fonts — use the stub-layout technique in **Convention 16** to verify the pipeline
+compiles (tsc + no-font stub build; the env-less `/hq` prerender error is the known false-positive).
 When re-patching files already touched this session, re-sync first
 (`git fetch --depth 1 origin main && git reset --hard origin/main`) — main moves fast.
 
@@ -492,9 +536,18 @@ briefings — id, user_id, title, body, for_date (date), source 'manual'|'cron',
 
 ## Theme
 
-Night-watch palette propagated app-wide; dark/light legacy semantic tokens
-(`--teal/red/amber/slate-bg/text`) are re-pointed in `globals.css`. Identity tokens used
-directly in components: `--nw-label` (amber instrument labels, `.16em`), `--nw-cream`,
-`--nw-hero-amber`, `--nw-alarm/caution/nominal/standby-text`. Cobalt `--accent` for all
-interactive elements. Per-space object colors:
-`#0ea5b8 #14b87f #c8a040 #d4885a #c44a7c #8b5cf6 #6b8caa #5b8def`.
+**Type (Jun 20):** three fonts via `next/font/google` in `layout.tsx`, exposed as CSS vars on
+`<html>` — `--font-display` (**Space Grotesk**, titles), `--font-body` (**Inter**, default),
+`--font-mono` (**JetBrains Mono**, all readouts/labels/data, `font-variant-numeric: tabular-nums`).
+Screen signature: mono amber eyebrow → display title → mono instrument labels + tabular readouts.
+
+**Color:** night-watch palette, dark/light. Legacy semantic tokens
+(`--teal/red/amber/slate-bg/text`) and `--navy-*` are **re-pointed** in `globals.css` so components
+inherit the look without per-component edits. Light mode is **de-washed** (page bg cool slate
+`#e7ebf2`, crisper `--line*` borders). Evolved vocabulary tokens live alongside the legacy names:
+`--bg --surface --surface-2 --hover --line --line-2 --line-strong --t-0..3 --label --label-dim
+--ok/-bg --warn/-bg --alarm/-bg --standby/-bg --accent/-2/-bg/-line --card-shadow --radius-sm/-/-lg/-xl`,
+plus primitives `.label .mono .chip(.chip-ok/warn/alarm/standby) .card`. Identity tokens still used
+directly: `--nw-label` (amber labels), `--nw-cream`, `--nw-hero-amber`,
+`--nw-alarm/caution/nominal/standby-text`. Cobalt `--accent` for all interactive elements.
+Per-space object colors: `#0ea5b8 #14b87f #c8a040 #d4885a #c44a7c #8b5cf6 #6b8caa #5b8def`.
