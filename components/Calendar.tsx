@@ -76,7 +76,6 @@ export default function Calendar({
 }: Props) {
   const [viewWeek, setViewWeek] = useState<string>(getMonday())
   const [mode, setMode] = useState<'week' | 'template'>('week')
-  const [selectedItemKey, setSelectedItemKey] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
   const weekEnd = useMemo(() => {
@@ -202,10 +201,9 @@ export default function Calendar({
     }
   }
 
-  async function placeSelectedAt(date: string, minute: number) {
-    if (!selectedItemKey || busy) return
-    const item = itemByKey.get(selectedItemKey)
-    if (!item) return
+  async function placeItemAt(itemKey: string, date: string, minute: number) {
+    const item = itemByKey.get(itemKey)
+    if (!item || busy) return
     let start = Math.round(minute / 15) * 15
     start = Math.max(GRID_START_H * 60, Math.min(start, GRID_END_H * 60 - item.duration))
     const end = start + item.duration
@@ -219,11 +217,28 @@ export default function Calendar({
         block_date: date, start_minute: start, end_minute: end, status: 'proposed',
       })
       setCalendarBlocks(prev => [...prev, created])
-      setSelectedItemKey(null)
     } catch {
       toast('Could not place block')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Drag an existing block to a new slot — keeps its duration, optimistic.
+  async function moveBlockAt(blockId: string, date: string, minute: number) {
+    if (busy) return
+    const b = calendarBlocks.find(x => x.id === blockId)
+    if (!b) return
+    const dur = b.end_minute - b.start_minute
+    let start = Math.round(minute / 15) * 15
+    start = Math.max(GRID_START_H * 60, Math.min(start, GRID_END_H * 60 - dur))
+    if (b.block_date === date && b.start_minute === start) return
+    const end = start + dur
+    setCalendarBlocks(prev => prev.map(x => x.id === blockId ? { ...x, block_date: date, start_minute: start, end_minute: end } : x))
+    try {
+      await calDb.update(blockId, { block_date: date, start_minute: start, end_minute: end })
+    } catch {
+      toast('Could not move block')
     }
   }
 
@@ -270,9 +285,9 @@ export default function Calendar({
         ? <WeekView
             weekDates={weekDates} todayStr={todayStr}
             blocks={weekBlocks} capacityByDate={capacityByDate}
-            items={items} selectedItemKey={selectedItemKey} setSelectedItemKey={setSelectedItemKey}
+            items={items}
             spaceById={spaceById} colorFor={colorFor}
-            onPlace={placeSelectedAt} onRemoveBlock={removeBlock}
+            onPlaceItem={placeItemAt} onMoveBlock={moveBlockAt} onRemoveBlock={removeBlock}
             onPlan={runPlanner} onClear={clearProposed} busy={busy}
             googleConnected={googleConnected}
           />
@@ -337,22 +352,35 @@ function CommitmentBlock({ c }: { c: Commitment }) {
 function WeekView(props: {
   weekDates: string[]; todayStr: string
   blocks: CalendarBlock[]; capacityByDate: Map<string, CapacityBlock[]>
-  items: SchedulableItem[]; selectedItemKey: string | null; setSelectedItemKey: (k: string | null) => void
+  items: SchedulableItem[]
   spaceById: Map<string, Space>; colorFor: (id: string | null) => string
-  onPlace: (date: string, minute: number) => void; onRemoveBlock: (b: CalendarBlock) => void
+  onPlaceItem: (itemKey: string, date: string, minute: number) => void
+  onMoveBlock: (blockId: string, date: string, minute: number) => void
+  onRemoveBlock: (b: CalendarBlock) => void
   onPlan: () => void; onClear: () => void; busy: boolean; googleConnected: boolean
 }) {
-  const { weekDates, todayStr, blocks, capacityByDate, items, selectedItemKey, setSelectedItemKey,
-    spaceById, colorFor, onPlace, onRemoveBlock, onPlan, onClear, busy, googleConnected } = props
+  const { weekDates, todayStr, blocks, capacityByDate, items,
+    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onClear, busy, googleConnected } = props
   const gridH = (GRID_END_H - GRID_START_H) * ROW_H
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
+  const [overDate, setOverDate] = useState<string | null>(null)
+
+  function handleDrop(date: string, e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault()
+    const payload = e.dataTransfer.getData('text/plain')
+    const rect = e.currentTarget.getBoundingClientRect()
+    const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
+    setOverDate(null)
+    if (payload.startsWith('new:')) onPlaceItem(payload.slice(4), date, minute)
+    else if (payload.startsWith('move:')) onMoveBlock(payload.slice(5), date, minute)
+  }
 
   return (
     <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
       <aside style={{ width: 248, flexShrink: 0, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: 14 }}>
         <h3 style={nwLabel}>Unscheduled · this week</h3>
         <p style={{ fontSize: 11, color: 'var(--navy-400)', margin: '4px 0 12px', lineHeight: 1.45 }}>
-          Pick an item, then click a slot to block it. Or auto-fill the week.
+          Drag an item onto the grid to block time, or auto-fill the week.
         </p>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <button onClick={onPlan} disabled={busy} style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>Plan week</button>
@@ -363,13 +391,17 @@ function WeekView(props: {
         )}
         {items.map(it => {
           const key = `${it.source}:${it.id}`
-          const sel = selectedItemKey === key
           return (
-            <div key={key} onClick={() => setSelectedItemKey(sel ? null : key)} style={{
-              display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 10,
-              background: 'var(--navy-700)', border: `1px solid ${sel ? 'var(--accent)' : 'var(--navy-600)'}`,
-              boxShadow: sel ? '0 0 0 1px var(--accent)' : 'none', marginBottom: 8, cursor: 'pointer',
-            }}>
+            <div
+              key={key}
+              draggable
+              onDragStart={(e) => { e.dataTransfer.setData('text/plain', `new:${key}`); e.dataTransfer.effectAllowed = 'move' }}
+              onDragEnd={() => setOverDate(null)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 9, padding: '9px 10px', borderRadius: 10,
+                background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 8, cursor: 'grab',
+              }}
+            >
               <span style={{ width: 3, alignSelf: 'stretch', borderRadius: 3, background: colorFor(it.space_id), flexShrink: 0 }} />
               <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--navy-100)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {it.kind === 'kr_action' && <span title="KR action" style={{ color: 'var(--navy-400)', marginRight: 4 }}>◆</span>}
@@ -397,18 +429,16 @@ function WeekView(props: {
               const today = date === todayStr
               const caps = capacityByDate.get(date) ?? []
               const dayBlocks = blocks.filter(b => b.block_date === date)
+              const over = overDate === date
               return (
                 <div
                   key={date}
-                  onClick={selectedItemKey ? (e) => {
-                    const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
-                    const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
-                    onPlace(date, minute)
-                  } : undefined}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (overDate !== date) setOverDate(date) }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOverDate(o => (o === date ? null : o)) }}
+                  onDrop={(e) => handleDrop(date, e)}
                   style={{
                     position: 'relative', borderRight: '1px solid var(--navy-700)', height: gridH,
-                    background: today ? 'rgba(74,143,255,.04)' : 'transparent',
-                    cursor: selectedItemKey ? 'copy' : 'default',
+                    background: over ? 'rgba(74,143,255,.12)' : today ? 'rgba(74,143,255,.04)' : 'transparent',
                   }}
                 >
                   <HourLines />
@@ -427,14 +457,28 @@ function WeekView(props: {
                     const proposed = b.status === 'proposed'
                     const col = colorFor(b.space_id)
                     return (
-                      <div key={b.id} onClick={(e) => { e.stopPropagation(); onRemoveBlock(b) }} title="Click to remove" style={{
-                        position: 'absolute', left: 4, right: 4, top: minToTop(b.start_minute), height: Math.max(durToH(b.end_minute - b.start_minute) - 2, 16),
-                        borderRadius: 7, padding: '3px 7px', overflow: 'hidden', cursor: 'pointer', zIndex: 3,
-                        background: proposed ? `color-mix(in srgb, ${col} 24%, transparent)` : col,
-                        border: proposed ? `1px dashed ${col}` : `1px solid ${col}`,
-                        color: proposed ? 'var(--navy-50)' : '#0b0d10',
-                      }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.title}</div>
+                      <div
+                        key={b.id}
+                        draggable
+                        onDragStart={(e) => { e.dataTransfer.setData('text/plain', `move:${b.id}`); e.dataTransfer.effectAllowed = 'move' }}
+                        onDragEnd={() => setOverDate(null)}
+                        title="Drag to move"
+                        style={{
+                          position: 'absolute', left: 4, right: 4, top: minToTop(b.start_minute), height: Math.max(durToH(b.end_minute - b.start_minute) - 2, 16),
+                          borderRadius: 7, padding: '3px 7px', overflow: 'hidden', cursor: 'grab', zIndex: 4,
+                          background: proposed ? `color-mix(in srgb, ${col} 24%, transparent)` : col,
+                          border: proposed ? `1px dashed ${col}` : `1px solid ${col}`,
+                          color: proposed ? 'var(--navy-50)' : '#0b0d10',
+                        }}
+                      >
+                        <button
+                          draggable={false}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); onRemoveBlock(b) }}
+                          title="Remove"
+                          style={{ position: 'absolute', top: 1, right: 3, background: 'none', border: 'none', color: proposed ? 'var(--navy-200)' : '#0b0d10', cursor: 'pointer', fontSize: 13, lineHeight: 1, padding: 0, opacity: 0.7 }}
+                        >×</button>
+                        <div style={{ fontSize: 11, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', paddingRight: 12 }}>{b.title}</div>
                         <div style={{ fontSize: 9.5, opacity: 0.85 }}>{minutesToLabel(b.start_minute)}{proposed ? ' · proposed' : ''}</div>
                       </div>
                     )
