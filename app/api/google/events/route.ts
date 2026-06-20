@@ -27,9 +27,10 @@ export async function GET(req: Request) {
     const timeMinISO = min.toISOString()
     const timeMaxISO = max.toISOString()
 
-    // The "HQ" calendar holds HQ's own committed task/action blocks. The Home
-    // ribbon (exclude_hq=1) drops it so it shows real meetings + all-day only,
-    // not HQ time-blocks. The Calendar screen leaves it in (no param).
+    // The "HQ" calendar holds HQ's own committed task/action blocks. Both the
+    // Home ribbon and the Calendar overlay pass exclude_hq=1 so HQ time-blocks
+    // aren't shown as meetings (the Calendar renders them natively as removable
+    // blocks; the ribbon wants real meetings + all-day only).
     const keepCal = (id: string) => !(excludeHq && hqCalendarId && id === hqCalendarId)
 
     const batches = await Promise.all(

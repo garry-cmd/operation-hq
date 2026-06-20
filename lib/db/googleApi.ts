@@ -34,7 +34,12 @@ export async function saveReadCalendars(ids: string[]): Promise<string[]> {
 }
 
 export async function fetchEvents(from: string, to: string): Promise<GoogleBusyEvent[]> {
-  const r = await authedFetch(`/api/google/events?from=${from}&to=${to}`)
+  // exclude_hq=1: the Calendar week grid already renders committed HQ blocks
+  // natively (as removable blocks), so the HQ calendar must NOT also come back
+  // as read-only meeting overlays — that double-renders them and the overlay
+  // copy has no remove control. The planner still sees HQ time as busy via the
+  // committed blocks themselves, not this overlay.
+  const r = await authedFetch(`/api/google/events?from=${from}&to=${to}&exclude_hq=1`)
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `events ${r.status}`)
   return (await r.json()).events as GoogleBusyEvent[]
 }
