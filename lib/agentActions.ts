@@ -2,7 +2,7 @@ import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import * as notesDb from '@/lib/db/notes'
 import { createCalendarEvent } from '@/lib/db/googleApi'
-import { textToTipTapDoc } from '@/lib/notes/textToDoc'
+import { markdownToTipTapDoc } from '@/lib/notes/markdownToDoc'
 import type { ProposedAction } from '@/lib/agentTools'
 import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note } from '@/lib/types'
 
@@ -124,7 +124,7 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
     const sid = stripId(input.space_id, 'space') || null
     const created = await notesDb.create({
       title: title || 'Untitled',
-      body: bodyText ? textToTipTapDoc(bodyText) : null,
+      body: bodyText ? markdownToTipTapDoc(bodyText) : null,
       space_id: sid,
       notebook_id: null,
     })

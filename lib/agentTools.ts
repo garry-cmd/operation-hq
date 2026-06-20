@@ -76,12 +76,12 @@ export const TOOLS = [
   },
   {
     name: 'create_note',
-    description: 'Propose creating a note — for capturing information, meeting notes, ideas, summaries, or reference material the operator should keep. The note is created on approval. Body is plain text; use blank lines to separate paragraphs. Prefer this over a task when the content is something to record/read rather than to do.',
+    description: 'Propose creating a note — for capturing information, meeting notes, ideas, summaries, comparisons, or reference material the operator should keep. The note is created on approval. Prefer this over a task when the content is something to record/read rather than to do.',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string', description: 'Note title.' },
-        body: { type: 'string', description: 'Note body as plain text. Blank lines separate paragraphs.' },
+        body: { type: 'string', description: 'Note body in Markdown. Supported: headings (#, ##), bold/italic/strikethrough, inline code and fenced code blocks, bullet and numbered lists, checkboxes (- [ ] / - [x]), blockquotes, horizontal rules (---), and tables using GitHub pipe syntax (| col | col | with a |---|---| separator row). Use real Markdown structure — e.g. an actual table — rather than describing it.' },
         space_id: { type: 'string', description: 'Optional space id from [space:…]. Omit for a loose Inbox note.' },
       },
       required: ['title'],
