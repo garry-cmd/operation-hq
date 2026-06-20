@@ -17,9 +17,10 @@ import {
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import * as capDb from '@/lib/db/capacityBlocks'
 import * as calDb from '@/lib/db/calendarBlocks'
-import { planWeek, minutesToLabel, SchedulableItem, BusyInterval, dateForDow } from '@/lib/calendarPlan'
+import { planWeek, planFromAssignments, minutesToLabel, SchedulableItem, BusyInterval, dateForDow } from '@/lib/calendarPlan'
 import * as gcal from '@/lib/db/googleApi'
 import type { GoogleBusyEvent } from '@/lib/db/googleApi'
+import { requestPlan } from '@/lib/db/planApi'
 
 const GRID_START_H = 6           // 6 AM
 const GRID_END_H = 22            // 10 PM
@@ -81,6 +82,7 @@ export default function Calendar({
   const [viewWeek, setViewWeek] = useState<string>(getMonday())
   const [mode, setMode] = useState<'week' | 'template'>('week')
   const [busy, setBusy] = useState(false)
+  const [planNote, setPlanNote] = useState<{ rationale: string; skipped: { key: string; reason?: string }[] } | null>(null)
 
   // Stage 2 — Google read state. Meetings for the current week, the user's
   // calendar list, and which calendars feed the meetings overlay.
@@ -230,6 +232,93 @@ export default function Calendar({
     }
   }
 
+  // AI planner: Claude assigns each item a day + scheduling order + rationale;
+  // planFromAssignments then does the exact-minute placement around busy time.
+  // Re-plannable: only committed blocks are protected, proposals are redrawn.
+  async function runAIPlanner() {
+    if (busy) return
+    if (capacityBlocks.length === 0) { toast('Add capacity blocks in the Template first'); return }
+    const committedKeys = new Set(
+      weekBlocks.filter(b => b.status === 'committed')
+        .map(b => b.task_id ? `task:${b.task_id}` : b.weekly_action_id ? `action:${b.weekly_action_id}` : '')
+        .filter(Boolean),
+    )
+    const aiItems = items.filter(it => !committedKeys.has(`${it.source}:${it.id}`))
+    if (aiItems.length === 0) { toast('Nothing left to schedule'); return }
+
+    setBusy(true)
+    try {
+      const spaceName = (id: string | null) => id ? (spaceById.get(id)?.name ?? 'Unknown') : 'Any'
+      const dayLabel = (date: string) => { const i = weekDates.indexOf(date); return i >= 0 ? DOW_LABELS[i] : '' }
+
+      const assignment = await requestPlan({
+        weekStart: viewWeek,
+        days: weekDates.map((d, i) => ({ date: d, name: DOW_LABELS[i] })),
+        capacity: capacityBlocks.map(c => ({
+          date: dateForDow(viewWeek, c.day_of_week),
+          day: DOW_LABELS[c.day_of_week],
+          start: minutesToLabel(c.start_minute),
+          end: minutesToLabel(c.end_minute),
+          kind: c.kind,
+          space: spaceName(c.space_id),
+        })),
+        items: aiItems.map(it => ({
+          key: `${it.source}:${it.id}`,
+          title: it.title,
+          space: spaceName(it.space_id),
+          kind: it.kind,
+          minutes: it.duration,
+          due: it.due,
+          health: it.health,
+        })),
+        busy: commitments.map(c => ({
+          date: c.date, day: dayLabel(c.date),
+          start: minutesToLabel(c.start_minute), end: minutesToLabel(c.end_minute),
+          title: c.title,
+        })),
+      })
+
+      const order = assignment.plan.map(p => p.key)
+      const preferredDay: Record<string, string | null> = {}
+      for (const p of assignment.plan) preferredDay[p.key] = p.day || null
+      const existing: BusyInterval[] = commitments.map(c => ({ date: c.date, start_minute: c.start_minute, end_minute: c.end_minute }))
+
+      const removedIds = await calDb.removeProposedInRange(viewWeek, weekEnd)
+      const removed = new Set(removedIds)
+      const { placed, unplaced } = planFromAssignments({
+        weekStart: viewWeek, capacity: capacityBlocks, items: aiItems, busy: [], existing, order, preferredDay,
+      })
+      const created = await calDb.createMany(placed.map(p => ({
+        task_id: p.item.source === 'task' ? p.item.id : null,
+        weekly_action_id: p.item.source === 'action' ? p.item.id : null,
+        space_id: p.item.space_id,
+        capacity_block_id: p.capacity_block_id,
+        title: p.item.title,
+        block_date: p.date,
+        start_minute: p.start_minute,
+        end_minute: p.end_minute,
+        status: 'proposed',
+      })))
+      setCalendarBlocks(prev => [...prev.filter(b => !removed.has(b.id)), ...created])
+
+      const placedKeySet = new Set(placed.map(p => `${p.item.source}:${p.item.id}`))
+      const skipped = [
+        ...assignment.skipped.filter(s => !placedKeySet.has(s.key)),
+        ...unplaced
+          .filter(u => !assignment.skipped.some(s => s.key === `${u.source}:${u.id}`))
+          .map(u => ({ key: `${u.source}:${u.id}`, reason: 'no matching open window this week' })),
+      ]
+      setPlanNote({ rationale: assignment.rationale, skipped })
+      toast(unplaced.length === 0
+        ? `AI planned ${created.length} block${created.length === 1 ? '' : 's'}`
+        : `AI planned ${created.length} · ${unplaced.length} didn't fit`)
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'AI planning failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function clearProposed() {
     if (busy) return
     setBusy(true)
@@ -237,6 +326,7 @@ export default function Calendar({
       const removedIds = await calDb.removeProposedInRange(viewWeek, weekEnd)
       const removed = new Set(removedIds)
       setCalendarBlocks(prev => prev.filter(b => !removed.has(b.id)))
+      setPlanNote(null)
       toast('Cleared proposed blocks')
     } catch {
       toast('Clear failed')
@@ -396,6 +486,32 @@ export default function Calendar({
         )}
       </div>
 
+      {planNote && mode === 'week' && (
+        <div style={{
+          marginBottom: 16, padding: '12px 14px', borderRadius: 12,
+          background: 'var(--accent-dim)', border: '1px solid var(--accent)',
+          display: 'flex', gap: 12, alignItems: 'flex-start',
+        }}>
+          <span style={{ color: 'var(--accent)', fontSize: 14, lineHeight: '20px', flexShrink: 0 }}>✦</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--navy-100)' }}>{planNote.rationale}</p>
+            {planNote.skipped.length > 0 && (
+              <p style={{ margin: '7px 0 0', fontSize: 12, lineHeight: 1.5, color: 'var(--navy-400)' }}>
+                Didn’t schedule: {planNote.skipped.map((s, i) => {
+                  const title = itemByKey.get(s.key)?.title ?? s.key
+                  return <span key={s.key}>{i > 0 ? ' · ' : ''}<span style={{ color: 'var(--navy-300)' }}>{title}</span>{s.reason ? ` (${s.reason})` : ''}</span>
+                })}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={() => setPlanNote(null)}
+            style={{ background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 16, lineHeight: '20px', flexShrink: 0, padding: 0 }}
+            title="Dismiss"
+          >×</button>
+        </div>
+      )}
+
       {mode === 'week'
         ? <WeekView
             weekDates={weekDates} todayStr={todayStr}
@@ -403,7 +519,7 @@ export default function Calendar({
             items={items} meetings={meetings}
             spaceById={spaceById} colorFor={colorFor}
             onPlaceItem={placeItemAt} onMoveBlock={moveBlockAt} onRemoveBlock={removeBlock}
-            onPlan={runPlanner} onClear={clearProposed} onCommit={commitWeek}
+            onPlan={runPlanner} onAIPlan={runAIPlanner} onClear={clearProposed} onCommit={commitWeek}
             proposedCount={weekBlocks.filter(b => b.status === 'proposed').length}
             busy={busy} googleConnected={googleConnected} toast={toast}
           />
@@ -473,12 +589,12 @@ function WeekView(props: {
   onPlaceItem: (itemKey: string, date: string, start: number) => void
   onMoveBlock: (blockId: string, date: string, start: number) => void
   onRemoveBlock: (b: CalendarBlock) => void
-  onPlan: () => void; onClear: () => void; onCommit: () => void
+  onPlan: () => void; onAIPlan: () => void; onClear: () => void; onCommit: () => void
   proposedCount: number; busy: boolean; googleConnected: boolean
   toast: (m: string) => void
 }) {
   const { weekDates, todayStr, blocks, capacityByDate, items, meetings,
-    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onClear, onCommit,
+    spaceById, colorFor, onPlaceItem, onMoveBlock, onRemoveBlock, onPlan, onAIPlan, onClear, onCommit,
     proposedCount, busy, googleConnected, toast } = props
   const gridH = (GRID_END_H - GRID_START_H) * ROW_H
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
@@ -550,8 +666,20 @@ function WeekView(props: {
         <p style={{ fontSize: 11, color: 'var(--navy-400)', margin: '4px 0 12px', lineHeight: 1.45 }}>
           Drag an item onto a matching capacity window, or auto-fill the week.
         </p>
+        <button
+          onClick={onAIPlan}
+          disabled={busy}
+          title="Let Claude assign the week — priority, sequencing, and which day"
+          style={{
+            ...primaryBtn, width: '100%', marginBottom: 8, opacity: busy ? 0.6 : 1,
+            background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+          }}
+        >
+          <span style={{ fontSize: 13 }}>✦</span> {busy ? 'Planning…' : 'Plan my week with AI'}
+        </button>
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button onClick={onPlan} disabled={busy} style={{ ...primaryBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>Plan week</button>
+          <button onClick={onPlan} disabled={busy} style={{ ...ghostBtn, flex: 1, opacity: busy ? 0.6 : 1 }}>Quick fill</button>
           <button onClick={onClear} disabled={busy} style={{ ...ghostBtn, opacity: busy ? 0.6 : 1 }}>Clear</button>
         </div>
         {googleConnected && (

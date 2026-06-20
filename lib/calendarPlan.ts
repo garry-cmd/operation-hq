@@ -166,6 +166,71 @@ export function planWeek(opts: {
   return { placed, unplaced }
 }
 
+/**
+ * AI-assigned placement. Claude decides each item's day + scheduling order and
+ * supplies the rationale; this function does the deterministic math — find a
+ * matching capacity window (preferred day first, then any day chronologically)
+ * and first-fit the exact minutes around busy time. Items Claude didn't mention
+ * are appended in the default priority order so nothing is silently dropped.
+ */
+export function planFromAssignments(opts: {
+  weekStart: string
+  capacity: CapacityBlock[]
+  items: SchedulableItem[]
+  busy: BusyInterval[]
+  existing?: BusyInterval[]
+  order: string[]                               // item keys (`${source}:${id}`) in scheduling order
+  preferredDay: Record<string, string | null>   // key → YYYY-MM-DD (or null)
+}): PlanResult {
+  const itemByKey = new Map(opts.items.map(it => [`${it.source}:${it.id}`, it]))
+
+  const windows: Window[] = opts.capacity
+    .map(c => ({
+      date: dateForDow(opts.weekStart, c.day_of_week),
+      start: c.start_minute, end: c.end_minute,
+      capacity_block_id: c.id, space_id: c.space_id, kind: c.kind,
+    }))
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start)
+
+  const occupied = buildOccupied([...(opts.busy ?? []), ...(opts.existing ?? [])])
+
+  // Claude's order first; any item it didn't mention is appended by the default
+  // priority comparator so it still gets a shot at an open slot.
+  const mentioned = new Set(opts.order.filter(k => itemByKey.has(k)))
+  const tail = opts.items
+    .filter(it => !mentioned.has(`${it.source}:${it.id}`))
+    .sort(compareItems)
+    .map(it => `${it.source}:${it.id}`)
+  const fullOrder = [...opts.order.filter(k => itemByKey.has(k)), ...tail]
+
+  const placed: PlacedBlock[] = []
+  const unplaced: SchedulableItem[] = []
+
+  for (const key of fullOrder) {
+    const item = itemByKey.get(key)
+    if (!item) continue
+    if (!item.duration || item.duration <= 0) { unplaced.push(item); continue }
+    const matching = windows.filter(w => windowAccepts(w, item))
+    const pref = opts.preferredDay[key] ?? null
+    const ordered = pref
+      ? [...matching.filter(w => w.date === pref), ...matching.filter(w => w.date !== pref)]
+      : matching
+    let done = false
+    for (const w of ordered) {
+      const occ = occupied.get(w.date) ?? []
+      const start = firstFit(w.start, w.end, item.duration, occ)
+      if (start === null) continue
+      const end = start + item.duration
+      placed.push({ item, date: w.date, start_minute: start, end_minute: end, capacity_block_id: w.capacity_block_id })
+      occ.push([start, end]); occupied.set(w.date, occ)
+      done = true; break
+    }
+    if (!done) unplaced.push(item)
+  }
+
+  return { placed, unplaced }
+}
+
 // ── small shared time helpers (used by the Calendar UI too) ─────────
 export function minutesToLabel(min: number): string {
   const h24 = Math.floor(min / 60)
