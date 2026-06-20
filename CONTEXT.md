@@ -50,6 +50,44 @@ running deployment can't see it.
 
 ## Current state — shipped
 
+### Jun 20 (night) — Agent autonomy Stage 2 + full mutation tool surface
+
+The Chief of Staff went from read-broadly/act-narrowly with a handful of tools to a broad
+**propose-first** action surface, plus Stage 2 (actionable briefs) and spoken confirmation.
+
+- **Stage 2 — actionable briefings + briefings-as-notes.** Each brief now writes a real note in an
+  auto-created **"Briefings"** notebook (My OKRs space) and freezes its **proposals** (`{id,tool,input,
+  status}`) on the `briefings` row. The feed renders Approve/Dismiss cards from those frozen proposals;
+  "Open as note ↗" deep-links the note. Migration `briefings_add_note_id_and_proposals`
+  (`note_id` FK + `proposals` jsonb, both nullable). `lib/briefing.ts` `generateBrief` now returns
+  `{title, body, proposals}` (harvests tool_use). New `lib/notes/textToDoc.ts` (plain text → ProseMirror).
+- **Conversation persists across navigation.** `messages`/`pending` lifted out of `Agent.tsx` into
+  `page.tsx` (`agentMessages`/`agentPending`); the stream loop closes over parent setters so it keeps
+  writing after the Agent unmounts on nav. `input` stays local; a pending guard blocks double-send.
+- **Nav working signal.** Pulsing cobalt dot on the Chief of Staff NavRail row while the agent streams
+  (`agentWorking` prop, desktop only).
+- **Voice Step 2 — spoken yes/no confirms a proposal.** `useVoice` gained one-shot `say`. After the
+  agent speaks a turn that carries a proposal, the next utterance is classified yes/no/unclear
+  (`classifyConfirm`): yes → approve-all + "Done"; no → dismiss; unclear → normal turn. Tap-Approve
+  still available. (Wake-word / VAD auto-listen deferred.)
+- **Rich Markdown notes.** `lib/notes/markdownToDoc.ts` `markdownToTipTapDoc` (via `marked.lexer`) →
+  ProseMirror JSON, emitting only schema-confirmed nodes incl. **tables** (pipe syntax), task
+  checkboxes, code, blockquote, hr. `create_note` and the note editors author through it.
+- **Full propose-first tool surface (all render an Approve card; client executor in
+  `lib/agentActions.ts` `runProposedAction`):** `complete_task`, `reschedule_task`, `add_task`,
+  **`update_task`** (title/due/priority/description + link-to-KR + move-to-space), `set_kr_health`,
+  `create_calendar_event`, `create_note`, **`append_note`** (merges blocks, keeps content),
+  **`update_note`** (rename/rewrite + link/move), **`log_metric`** (weekly upsert), **`log_habit`**
+  (per-day, swallows duplicate), **`create_weekly_action`** (under a KR, current week),
+  **`create_kr`** (under an objective so it can't orphan). + native `web_search`.
+- **Context now exposes the ids the editors need.** `buildAgentContext` selects note `id` and emits
+  `[note:…]` (recent-notes limit 8→15); fetches active `annual_objectives` and emits `[obj:…]` under
+  each space header. So `append_note`/`update_note`/`update_task` can target real rows and `create_kr`
+  has an objective to attach to.
+- **Verified live (Chrome + Supabase):** `create_kr` lands attached to the named objective;
+  `append_note` grows the body (4→5 blocks) — both Approve→DB writes confirmed, test rows cleaned up.
+  The other five tools share identical plumbing. No new migrations this batch beyond the briefings one.
+
 ### Jun 20 (evening) — Voice LIVE · Proactive briefings (web push) · Settings screen
 
 **Voice is live end-to-end.** Deepgram nova-3 STT + ElevenLabs flash_v2_5 TTS keys are in Vercel
@@ -277,22 +315,20 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-1. **★ Make the AI Agent more proactive (Stage 2 — actionable proposals).** START HERE next session.
-   Stage 1 (read-only scheduled briefings) shipped. Stage 2 = the brief/agent surfaces **suggested
-   actions** you can act on — approve a proposal straight from the brief or notification, not just read
-   it. Reuse the propose-first tool objects (`complete_task`, `reschedule_task`, `add_task`,
-   `set_kr_health`, `create_calendar_event`). Open design Qs: where proposals live (in the brief body?
-   a dedicated review surface? actionable notification?), and how approval flows when arriving cold from
-   a push. Stage 3 (autonomous acting) is later.
-2. **Voice Step 2 — verbal action confirmation.** Step 1 (talk→hear) is LIVE. Step 2: the agent speaks
-   a proposal, you say "yes"/"do it", it executes (replaces tap-Approve when hands-free). Same proposed-
-   action objects; just a spoken confirm/deny turn. Later: Step 3 quality/voice tuning, Step 4 wake-word
-   host (Picovoice Porcupine, docked phone + Bluetooth speaker).
-3. **Home deck cleanup — delete the Overview/`Summary` screen.** Home shipped as the default landing but
+1. **Agent `read_note` (+ a server-side custom-tool execution loop).** The one remaining agent
+   capability from the tool-expansion list. Custom tools don't auto-run the way `web_search` does, so a
+   read tool needs `/api/agent` to execute it mid-turn and feed the `tool_result` back to the model
+   (call → if tool_use, run → append result → call again → stream final). Unlocks precise edits
+   (`update_note` currently rewrites blind) and future read tools (`search_notes`, etc.). Its own pass.
+2. **Home deck cleanup — delete the Overview/`Summary` screen.** Home shipped as the default landing but
    Overview still coexists (planned step 7). Remove Overview + its route once confirmed Home covers it.
-4. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+3. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-5. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
+4. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
+5. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
+   `delete_kr`; calendar event **edit/delete** (two systems: `calendar_blocks` row + Google event);
+   note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context); Stage 3
+   autonomous low-risk acting. Deferred deliberately, not dropped.
 
 ### 🟡 Feature backlog
 5. `useSpaceData` hook (audit #4). ~1hr.
