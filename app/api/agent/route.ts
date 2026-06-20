@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { userIdFromRequest } from '@/lib/google'
 import { buildAgentContext } from '@/lib/agentContext'
-import { TOOLS, READ_TOOLS, READ_TOOL_NAMES, WEB_SEARCH_TOOL, type ProposedAction } from '@/lib/agentTools'
+import { TOOLS, READ_TOOLS, READ_TOOL_NAMES, MEMORY_TOOLS, MEMORY_TOOL_NAMES, SERVER_TOOL_NAMES, WEB_SEARCH_TOOL, type ProposedAction } from '@/lib/agentTools'
 import { getSupabaseAdmin } from '@/lib/supabaseAdmin'
 import { extractNoteText } from '@/lib/noteText'
 import type { NoteBody } from '@/lib/types'
@@ -59,6 +59,7 @@ const PERSONA = `You are the chief of staff for the operator of "Operation HQ", 
 Your job is to be a sharp, trusted chief of staff: know the whole operation cold, surface what's slipping before it's a fire, prioritize ruthlessly, and answer with specifics — always reference real KRs, tasks, and spaces by name, never in the abstract. When the operator asks "what should I focus on" or "what's at risk", lead with the highest-leverage thing (off-track or blocked KRs, overdue commitments, an overloaded week), not a flat list.
 
 Hard rules:
+- You have a long-term MEMORY that persists across conversations. The section "What you've learned about the operator (your memory)" below holds durable facts you saved before — lean on them to be specific and personal. When you learn something durable that will matter in future sessions — how the operator likes to work, a recurring constraint, who someone is, standing context about a space/venture, a decision and its reasoning, a stable preference — save it with remember. It applies immediately with no approval (memory only shapes what you know; it never changes tasks, KRs, notes, or the calendar). Keep memories to one self-contained sentence, don't duplicate what's already listed, and use update_memory or forget when a fact changes or stops being useful. Do NOT put things in memory that belong elsewhere: to-dos go in tasks, scheduled events on the calendar, reference material and meeting notes in notes, measurable KR readings via log_metric. You don't need to announce memory saves; a brief nod in your reply is plenty.
 - You can READ a note's full current contents with read_note (pass the id from [note:…]). The state below lists recent notes by title only, not their text — so when the operator asks what a note says, to summarize or extract from it, or before you append_note / update_note (so you extend or rewrite it accurately instead of blindly), call read_note first. Its result comes back to you in the same turn; read, then answer or propose.
 - You can PROPOSE actions with your tools: complete a task, reschedule a task, add a task, edit a task (title/due/priority/description, its time estimate or hard deadline, link it to a KR, or move it to a space), add a calendar event, set a KR's health, edit an existing KR (rename it, change its start/end dates, or its metric target/unit — update_kr), create a new KR under an objective, edit an existing objective (rename it or change its dates — update_objective), log a metric reading, mark a habit done, create a weekly action under a KR, create a note, append to a note, and edit a note (rename / rewrite / link / move). Calling one of THESE tools does NOT execute it — it surfaces a confirmation card the operator approves with one tap. Propose freely when an action is clearly warranted and specific, but always say in plain text what you're proposing and why, and never claim something is done — say you've proposed it / queued it for approval. Use create_note for things worth recording or reading (meeting notes, summaries, ideas, reference) rather than things to do; its body is Markdown, so use real structure — headings, lists, checkboxes, and tables (GitHub pipe syntax) — when it helps. To add to an existing note use append_note (keeps its content); use update_note only to rename or fully rewrite. Log a metric only for a KR marked (metric) and a habit only for one marked (habit); create a KR under one of the objectives shown as [obj:…].
 - You can SEARCH THE WEB. Use it whenever the answer depends on real, current, real-world facts you can't get from the state below — venues, hours, prices, addresses, news, people, products. Never invent specifics like business names, addresses, or hours; search and cite what you find, or say you couldn't confirm it.
@@ -88,6 +89,66 @@ async function execReadNote(input: Record<string, unknown>): Promise<string> {
     return out
   } catch {
     return `Could not read note ${id}.`
+  }
+}
+
+/** Normalize a [mem:uuid] / mem:uuid / uuid token to a bare id. */
+function normalizeMemId(v: unknown): string {
+  return String(v ?? '').trim().replace(/^\[/, '').replace(/\]$/, '').replace(/^mem:/, '').trim()
+}
+
+/** Save a durable memory. Auto-applied (no approval) — only shapes the agent's own context. */
+async function execRemember(input: Record<string, unknown>): Promise<string> {
+  const content = String(input.content ?? '').trim()
+  if (!content) return 'Nothing to remember — no content was provided.'
+  try {
+    const admin = getSupabaseAdmin()
+    const { data, error } = await admin.from('agent_memory').insert({ content }).select('id').single()
+    if (error || !data) return 'Could not save that memory.'
+    return `Saved to memory [mem:${data.id}]: "${content}"`
+  } catch {
+    return 'Could not save that memory.'
+  }
+}
+
+/** Revise an existing memory. */
+async function execUpdateMemory(input: Record<string, unknown>): Promise<string> {
+  const id = normalizeMemId(input.memory_id)
+  const content = String(input.content ?? '').trim()
+  if (!id) return 'No memory_id was provided.'
+  if (!content) return 'No new content was provided.'
+  try {
+    const admin = getSupabaseAdmin()
+    const { error } = await admin.from('agent_memory').update({ content }).eq('id', id)
+    if (error) return `Could not update memory ${id}.`
+    return `Updated memory [mem:${id}].`
+  } catch {
+    return `Could not update memory ${id}.`
+  }
+}
+
+/** Delete a memory. */
+async function execForget(input: Record<string, unknown>): Promise<string> {
+  const id = normalizeMemId(input.memory_id)
+  if (!id) return 'No memory_id was provided.'
+  try {
+    const admin = getSupabaseAdmin()
+    const { error } = await admin.from('agent_memory').delete().eq('id', id)
+    if (error) return `Could not forget memory ${id}.`
+    return `Forgotten [mem:${id}].`
+  } catch {
+    return `Could not forget memory ${id}.`
+  }
+}
+
+/** Dispatch a server-executed tool (read_note + the memory writes) to its handler. */
+async function execServerTool(name: string, input: Record<string, unknown>): Promise<string> {
+  switch (name) {
+    case 'read_note': return execReadNote(input)
+    case 'remember': return execRemember(input)
+    case 'update_memory': return execUpdateMemory(input)
+    case 'forget': return execForget(input)
+    default: return `Unknown tool ${name}.`
   }
 }
 
@@ -163,7 +224,7 @@ export async function POST(req: Request) {
             model: MODEL,
             max_tokens: 1500,
             system,
-            tools: [...TOOLS, ...READ_TOOLS, WEB_SEARCH_TOOL],
+            tools: [...TOOLS, ...READ_TOOLS, ...MEMORY_TOOLS, WEB_SEARCH_TOOL],
             stream: true,
             messages: convo,
           }),
@@ -245,13 +306,28 @@ export async function POST(req: Request) {
 
       try {
         const convo: ApiMessage[] = messages.map(m => ({ role: m.role, content: m.content }))
+        let memoryWritten = false
         for (let pass = 0; pass < MAX_PASSES; pass++) {
           const blocks = await streamPass(convo)
           const toolUses = blocks.filter((b): b is Extract<Block, { kind: 'tool_use' }> => b.kind === 'tool_use')
-          const reads = toolUses.filter(t => READ_TOOL_NAMES.has(t.name))
-          const mutations = toolUses.filter(t => !READ_TOOL_NAMES.has(t.name))
+          // SERVER tools (read_note + memory writes) run here, in-turn, no approval.
+          // Everything else is a propose-first mutation surfaced as an Approve card.
+          const serverCalls = toolUses.filter(t => SERVER_TOOL_NAMES.has(t.name))
+          const reads = serverCalls.filter(t => READ_TOOL_NAMES.has(t.name))
+          const mutations = toolUses.filter(t => !SERVER_TOOL_NAMES.has(t.name))
 
-          // Continue the loop only if the model asked to READ and we have budget.
+          // Execute every server call now. Reads return content the model reasons
+          // over; memory writes are fire-and-forget (they reshape the next turn's
+          // injected context, not this reply).
+          const serverResults = new Map<string, string>()
+          for (const c of serverCalls) {
+            serverResults.set(c.id, await execServerTool(c.name, parseInput(c.json)))
+            if (MEMORY_TOOL_NAMES.has(c.name)) memoryWritten = true
+          }
+
+          // Continue the loop only if the model READ something (it needs the result
+          // to keep going) and we have budget. A memory-only turn doesn't loop —
+          // the model already said its piece this pass.
           if (reads.length && pass < MAX_PASSES - 1) {
             // Replay this turn (text + every tool_use) as the assistant message, then
             // answer EACH tool_use with a tool_result (Anthropic requires all be answered).
@@ -261,8 +337,8 @@ export async function POST(req: Request) {
                 : { type: 'tool_use', id: b.id, name: b.name, input: parseInput(b.json) },
             )
             const results: ApiBlock[] = []
-            for (const r of reads) {
-              results.push({ type: 'tool_result', tool_use_id: r.id, content: await execReadNote(parseInput(r.json)) })
+            for (const c of serverCalls) {
+              results.push({ type: 'tool_result', tool_use_id: c.id, content: serverResults.get(c.id) ?? '' })
             }
             // Any mutation called in the SAME turn as a read is NOT executed here
             // (mutations only ever run via an Approve card). Tell the model so it can
@@ -282,6 +358,10 @@ export async function POST(req: Request) {
           }
           break
         }
+        // Safety net: if the model jotted a memory but produced no visible text
+        // (e.g. it only called remember), the user would otherwise see a blank
+        // reply. Emit a minimal acknowledgement so the turn never comes back empty.
+        if (memoryWritten && !emittedText) send({ t: 'text', d: 'Got it — I’ll remember that.' })
         controller.close()
       } catch {
         try { send({ t: 'error', e: 'stream interrupted' }) } catch { /* controller may be closed */ }

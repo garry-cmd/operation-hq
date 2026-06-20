@@ -44,7 +44,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   const weekEnd = addDays(weekStart, 6)
   const horizon = addDays(today, 21)
 
-  const [spacesR, krsR, actionsR, tasksR, capR, blocksR, reviewsR, notesR, metricR, objsR] = await Promise.all([
+  const [spacesR, krsR, actionsR, tasksR, capR, blocksR, reviewsR, notesR, metricR, objsR, memsR] = await Promise.all([
     admin.from('spaces').select('id,name,sort_order').order('sort_order'),
     admin.from('roadmap_items')
       .select('id,space_id,title,quarter,health_status,progress,is_parked,is_habit,is_metric,metric_unit,metric_direction,start_value,target_value,start_date,end_date')
@@ -60,6 +60,8 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     admin.from('notes').select('id,title,space_id,updated_at,roadmap_item_id').order('updated_at', { ascending: false }).limit(15),
     admin.from('metric_checkins').select('roadmap_item_id,value,week_start').order('week_start', { ascending: false }),
     admin.from('annual_objectives').select('id,name,space_id,status').eq('status', 'active'),
+    admin.from('agent_memory').select('id,content,pinned')
+      .order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(40),
   ])
 
   const spaces = (spacesR.data ?? []) as Row[]
@@ -72,6 +74,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   const notes = (notesR.data ?? []) as Row[]
   const metrics = (metricR.data ?? []) as Row[]
   const objs = (objsR.data ?? []) as Row[]
+  const mems = (memsR.data ?? []) as Row[]
   const objsBySpace = new Map<string, Row[]>()
   for (const o of objs) {
     const sid = str(o.space_id)
@@ -111,6 +114,16 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   const todayDow = DOW[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7]
   lines.push(`# HQ STATE — ${todayDow} ${today} (current week ${weekStart} → ${weekEnd})`)
   lines.push('')
+
+  // ── long-term memory (durable facts you saved in past conversations) ──
+  if (mems.length) {
+    lines.push('## What you’ve learned about the operator (your memory)')
+    lines.push('Durable facts you saved in earlier conversations. Use them to be specific and personal. When one changes, update_memory or forget it; don’t re-save something already here.')
+    for (const m of mems) {
+      lines.push(`- [mem:${str(m.id)}]${m.pinned ? ' 📌' : ''} ${str(m.content)}`)
+    }
+    lines.push('')
+  }
 
   // ── per space: KRs, their actions this week, then the space's open tasks ──
   for (const s of spaces) {

@@ -242,6 +242,61 @@ export const READ_TOOLS = [
 /** Names of the server-executed read tools — the route runs these in-turn rather than proposing them. */
 export const READ_TOOL_NAMES = new Set(READ_TOOLS.map(t => t.name))
 
+// Server-executed MEMORY tools. Like READ_TOOLS, these run server-side inside the
+// /api/agent turn (no approval card) — but they WRITE to the agent's long-term
+// memory store (the agent_memory table), which is injected back into the system
+// prompt every turn by buildAgentContext. Memory only shapes the agent's own
+// context; it never touches tasks/KRs/notes/calendar, so it's safe to auto-apply.
+// Kept OUT of TOOLS so the briefing generator and client proposal executor never
+// see them. The Settings → Memory panel is the human control surface.
+export const MEMORY_TOOLS = [
+  {
+    name: 'remember',
+    description:
+      'Save a durable fact or preference about the operator or their world to your long-term memory, so you still know it in future conversations. Use it for things that stay true across sessions: how they like to work, recurring constraints, who people are, standing context about a space/venture, decisions and the reasoning behind them, stable preferences. This applies immediately, no approval needed. Do NOT use it for things that belong in tasks, notes, KRs, or the calendar (to-dos, scheduled events, meeting notes, measurable KR readings — those have their own tools), and do NOT restate something already in your memory list below. Keep each memory to one self-contained sentence.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        content: { type: 'string', description: 'The fact or preference to remember, as one clear self-contained sentence (e.g. "Prefers deep work in the morning and keeps Fridays meeting-free.").' },
+      },
+      required: ['content'],
+    },
+  },
+  {
+    name: 'update_memory',
+    description: 'Revise a memory you previously saved when the fact has changed or needs correcting. Reference it by the id in [mem:…] in your memory list. Applies immediately, no approval needed.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        memory_id: { type: 'string', description: 'The memory id from [mem:…].' },
+        content: { type: 'string', description: 'The corrected memory text — replaces the old text entirely.' },
+      },
+      required: ['memory_id', 'content'],
+    },
+  },
+  {
+    name: 'forget',
+    description: 'Delete a memory that is no longer true or no longer useful. Reference it by the id in [mem:…] in your memory list. Applies immediately, no approval needed.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        memory_id: { type: 'string', description: 'The memory id from [mem:…].' },
+      },
+      required: ['memory_id'],
+    },
+  },
+]
+
+/** Names of the server-executed memory-write tools. */
+export const MEMORY_TOOL_NAMES = new Set(MEMORY_TOOLS.map(t => t.name))
+
+/**
+ * Every tool the /api/agent route executes SERVER-SIDE within the turn (reads +
+ * memory writes), as opposed to the propose-first mutations in TOOLS that surface
+ * as Approve cards. The route partitions a turn's tool calls against this set.
+ */
+export const SERVER_TOOL_NAMES = new Set<string>([...READ_TOOL_NAMES, ...MEMORY_TOOL_NAMES])
+
 // Anthropic-executed server tool: web search. Runs inside the model's turn
 // (read-only, no approval needed) so the agent can pull real, current info.
 export const WEB_SEARCH_TOOL = { type: 'web_search_20250305', name: 'web_search', max_uses: 5 }

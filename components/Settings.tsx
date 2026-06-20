@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { getMonday } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import { currentPushState, enablePush, disablePush, type PushState } from '@/lib/push/ensurePush'
+import * as memoryDb from '@/lib/db/agentMemory'
+import type { AgentMemory } from '@/lib/db/agentMemory'
 
 function todayStr(): string {
   const d = new Date()
@@ -19,6 +21,15 @@ const btn = (variant: 'primary' | 'ghost'): React.CSSProperties => ({
   background: variant === 'primary' ? 'var(--accent)' : 'transparent',
   color: variant === 'primary' ? '#fff' : 'var(--navy-200)',
 })
+const smallBtn: React.CSSProperties = {
+  fontSize: 11.5, fontWeight: 500, padding: '4px 9px', borderRadius: 6, cursor: 'pointer',
+  border: '1px solid var(--navy-600)', background: 'transparent', color: 'var(--navy-300)',
+}
+const memInput: React.CSSProperties = {
+  width: '100%', fontSize: 13, lineHeight: 1.5, padding: '8px 10px', borderRadius: 8,
+  border: '1px solid var(--navy-600)', background: 'var(--navy-900, var(--navy-800))',
+  color: 'var(--nw-cream, var(--navy-100))', resize: 'vertical', fontFamily: 'inherit',
+}
 
 export default function Settings({ toast }: { toast: (m: string) => void }) {
   const [state, setState] = useState<PushState | null>(null)
@@ -76,6 +87,57 @@ export default function Settings({ toast }: { toast: (m: string) => void }) {
     : state === 'no-vapid' ? 'Push isn’t configured on the server (missing VAPID key).'
     : 'Off on this device.'
 
+  // ── Agent memory ──
+  const [mems, setMems] = useState<AgentMemory[] | null>(null)
+  const [adding, setAdding] = useState('')
+  const [addBusy, setAddBusy] = useState(false)
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+
+  const loadMems = useCallback(() => {
+    memoryDb.listAll().then(setMems).catch(() => setMems([]))
+  }, [])
+  useEffect(() => { loadMems() }, [loadMems])
+
+  const onAdd = async () => {
+    const content = adding.trim()
+    if (!content) return
+    setAddBusy(true)
+    try {
+      await memoryDb.create(content)
+      setAdding('')
+      loadMems()
+      toast('Saved to agent memory')
+    } catch { toast('Could not save') } finally { setAddBusy(false) }
+  }
+
+  const startEdit = (m: AgentMemory) => { setEditId(m.id); setEditText(m.content) }
+  const cancelEdit = () => { setEditId(null); setEditText('') }
+  const saveEdit = async (id: string) => {
+    const content = editText.trim()
+    if (!content) return
+    try {
+      await memoryDb.updateContent(id, content)
+      setMems(prev => (prev ?? []).map(m => (m.id === id ? { ...m, content } : m)))
+      cancelEdit()
+    } catch { toast('Could not update') }
+  }
+
+  const togglePin = async (m: AgentMemory) => {
+    try {
+      await memoryDb.setPinned(m.id, !m.pinned)
+      loadMems()
+    } catch { toast('Could not update') }
+  }
+
+  const onRemove = async (id: string) => {
+    try {
+      await memoryDb.remove(id)
+      setMems(prev => (prev ?? []).filter(m => m.id !== id))
+      toast('Forgotten')
+    } catch { toast('Could not delete') }
+  }
+
   return (
     <main style={{ padding: '24px 28px', maxWidth: 800, width: '100%', margin: '0 auto' }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--nw-cream, var(--navy-100))', margin: '0 0 4px', letterSpacing: '-.01em' }}>Settings</h1>
@@ -101,6 +163,66 @@ export default function Settings({ toast }: { toast: (m: string) => void }) {
         <p style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--navy-500, var(--navy-400))', margin: '14px 0 0' }}>
           Once on, briefings stay on — HQ re-establishes the subscription automatically each time you open it. You only turn it on once per device.
         </p>
+      </div>
+
+      <div style={{ ...card, marginTop: 18 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))', marginBottom: 4 }}>Agent memory</div>
+        <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--navy-300)', margin: '0 0 14px' }}>
+          Durable facts and preferences the Chief of Staff has learned about you. It saves these on its own as you chat, and reads them every conversation. Edit, pin, or delete anything here — pinned memories are kept first. You can also add one yourself.
+        </p>
+
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginBottom: 16 }}>
+          <textarea
+            value={adding}
+            onChange={e => setAdding(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); onAdd() } }}
+            placeholder="Tell the agent something to remember…"
+            rows={2}
+            style={{ ...memInput, flex: 1 }}
+          />
+          <button onClick={onAdd} disabled={addBusy || !adding.trim()} style={{ ...btn('primary'), opacity: addBusy || !adding.trim() ? 0.5 : 1, whiteSpace: 'nowrap' }}>
+            {addBusy ? 'Saving…' : 'Add'}
+          </button>
+        </div>
+
+        {mems === null ? (
+          <p style={{ fontSize: 12.5, color: 'var(--navy-400)', margin: 0 }}>Loading…</p>
+        ) : mems.length === 0 ? (
+          <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--navy-400)', margin: 0 }}>
+            Nothing saved yet. As you talk with the Chief of Staff, it’ll remember durable facts — how you work, who people are, standing context about your spaces — and they’ll show up here.
+          </p>
+        ) : (
+          <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {mems.map(m => (
+              <li key={m.id} style={{
+                border: '1px solid var(--navy-700, var(--navy-600))', borderRadius: 9, padding: '10px 12px',
+                background: m.pinned ? 'var(--navy-700, var(--navy-800))' : 'transparent',
+              }}>
+                {editId === m.id ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <textarea value={editText} onChange={e => setEditText(e.target.value)} rows={2} style={memInput} autoFocus />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => saveEdit(m.id)} disabled={!editText.trim()} style={{ ...smallBtn, color: 'var(--accent)', borderColor: 'var(--accent)' }}>Save</button>
+                      <button onClick={cancelEdit} style={smallBtn}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color: 'var(--nw-cream, var(--navy-100))' }}>
+                      {m.pinned && <span title="Pinned" style={{ marginRight: 5 }}>📌</span>}
+                      {m.content}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button onClick={() => togglePin(m)} style={smallBtn} title={m.pinned ? 'Unpin' : 'Pin (keep first)'}>{m.pinned ? 'Unpin' : 'Pin'}</button>
+                      <button onClick={() => startEdit(m)} style={smallBtn}>Edit</button>
+                      <button onClick={() => onRemove(m.id)} style={{ ...smallBtn, color: 'var(--nw-rose, #d66)', borderColor: 'var(--navy-600)' }}>Delete</button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </main>
   )
