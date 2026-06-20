@@ -443,6 +443,8 @@ export default function Home({
         .ribhead .cap{font-size:12px;color:var(--navy-400);}
         .ribhead .connect{font-size:12px;color:var(--accent);cursor:pointer;margin-left:auto;}
         .ribwrap{border:1px solid var(--line);border-radius:14px;background:var(--navy-900);overflow:hidden;margin-bottom:24px;box-shadow:var(--card-shadow);}
+        [data-theme="light"] .ribwrap{background:var(--surface);border-color:var(--line-2);}
+        [data-theme="light"] .day{border-right-color:var(--line-2);}
         .grid7{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));}
         .day{border-right:1px solid var(--line);padding:12px 13px 16px;min-height:122px;display:flex;flex-direction:column;gap:6px;}
         .day:last-child{border-right:none;}
