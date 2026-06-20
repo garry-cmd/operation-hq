@@ -693,7 +693,6 @@ export default function HQPage() {
             googleConnected={googleConnected}
             onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
             onOpenTasks={() => setScreen('tasks')}
-            onOpenBacklog={() => setScreen('tasks')}
             onOpenCalendar={() => setScreen('calendar')}
             toast={setToast}
           />

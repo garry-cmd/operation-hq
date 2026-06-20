@@ -49,7 +49,6 @@ interface Props {
   googleConnected: boolean
   onOpenNote: (noteId: string) => void
   onOpenTasks: () => void
-  onOpenBacklog: () => void
   onOpenCalendar: () => void
   toast: (m: string) => void
 }
@@ -57,7 +56,7 @@ interface Props {
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions, tasks, setTasks,
   habitCheckins, setHabitCheckins, notes, googleConnected,
-  onOpenNote, onOpenTasks, onOpenBacklog, onOpenCalendar, toast,
+  onOpenNote, onOpenTasks, onOpenCalendar, toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   const [selectedKRId, setSelectedKRId] = useState<string | null>(null)
@@ -126,10 +125,6 @@ export default function Home({
       .filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date >= weekMonday && t.due_date <= weekEnd)
       .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '')),
     [tasks, weekMonday, weekEnd])
-
-  const backlogCount = useMemo(() =>
-    tasks.filter(t => !t.completed_at && !t.parent_task_id && !t.due_date && !t.list_id).length,
-    [tasks])
 
   // ── Overdue tasks (needs attention) ──
   const overdue = useMemo(() =>
@@ -206,8 +201,8 @@ export default function Home({
     try {
       const updated = await tasksDb.update(t.id, { due_date: null })
       setTasks(prev => prev.map(x => x.id === t.id ? updated : x))
-      toast('Moved to backlog')
-    } catch { toast('Could not move to backlog') }
+      toast('Due date cleared')
+    } catch { toast('Could not update task') }
   }
   async function snoozeTask(t: Task) {
     const tm = parseDateLocal(todayStr); tm.setDate(tm.getDate() + 1)
@@ -335,7 +330,6 @@ export default function Home({
           <div className="card">
             <div className="chead">
               <span><span className="label">Tasks due this week</span><span className="n">{dueThisWeek.length}</span></span>
-              <span className="link" onClick={onOpenBacklog}>Backlog · {backlogCount} ↗</span>
             </div>
             {dueThisWeek.length === 0 ? (
               <div className="empty sm">Nothing due this week.</div>
