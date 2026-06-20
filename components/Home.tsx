@@ -64,9 +64,6 @@ export default function Home({
   const [busyEvents, setBusyEvents] = useState<GoogleBusyEvent[]>([])
   const [allDayEvents, setAllDayEvents] = useState<GoogleAllDayEvent[]>([])
   const [nowTick, setNowTick] = useState(() => Date.now())
-  const [fabOpen, setFabOpen] = useState(false)
-  const [quickTitle, setQuickTitle] = useState('')
-  const [quickSpace, setQuickSpace] = useState<string>('')
 
   const weekEnd = useMemo(() => dateForDow(weekMonday, 6), [weekMonday])
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(weekMonday, i)), [weekMonday])
@@ -227,17 +224,6 @@ export default function Home({
       toast('Deleted')
     } catch { toast('Could not delete') }
   }
-  async function quickAddTask() {
-    const title = quickTitle.trim()
-    if (!title) return
-    try {
-      const created = await tasksDb.create({ title, space_id: quickSpace || null, due_date: todayStr })
-      setTasks(prev => [...prev, created])
-      setQuickTitle(''); setFabOpen(false)
-      toast('Task added')
-    } catch { toast('Could not add task') }
-  }
-
   function onPickKR(krId: string) { setSelectedKRId(prev => prev === krId ? prev : krId) }
 
   const headerSub = isCurrentWeek
@@ -280,22 +266,25 @@ export default function Home({
             const isToday = date === todayStr
             const mtgs = busyByDate.get(date) ?? []
             const ads = allDayByDate.get(date) ?? []
+            const MAX_M = 4, MAX_A = 2
             return (
               <div key={date} className={`day${isToday ? ' today' : ''}`}>
                 <div className="dtop">
                   <span className="dname">{DOW[i]}{isToday ? ' · today' : ''}</span>
                   <span className="dnum">{parseDateLocal(date).getDate()}</span>
                 </div>
-                {ads.map(e => (
+                {ads.slice(0, MAX_A).map(e => (
                   <div key={e.id} className={`allday${/holiday/i.test(e.title) ? ' holiday' : ' ev'}`} title={e.title}>{e.title}</div>
                 ))}
-                {mtgs.map(e => (
+                {ads.length > MAX_A && <div className="dmore">+{ads.length - MAX_A} all-day</div>}
+                {mtgs.slice(0, MAX_M).map(e => (
                   <div key={e.id} className="mtg" title={e.title}>
                     <span className="mdot" />
                     <span className="mt">{e.title}</span>
                     <span className="tm">{fmtMin(e.startMinute)}</span>
                   </div>
                 ))}
+                {mtgs.length > MAX_M && <div className="dmore">+{mtgs.length - MAX_M} more</div>}
               </div>
             )
           })}
@@ -427,21 +416,9 @@ export default function Home({
         </div>
       )}
 
-      {/* FAB — quick-add task (the other three create-flows land next) */}
-      {fabOpen && (
-        <div className="fab-pop">
-          <div className="fp-label">Quick task</div>
-          <input autoFocus value={quickTitle} onChange={e => setQuickTitle(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') quickAddTask(); if (e.key === 'Escape') setFabOpen(false) }}
-            placeholder="What needs doing?" />
-          <select value={quickSpace} onChange={e => setQuickSpace(e.target.value)}>
-            <option value="">Inbox (no space)</option>
-            {spaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <div className="fp-row"><span className="fp-hint">Due today · ⏎ to add</span><button onClick={quickAddTask}>Add</button></div>
-        </div>
-      )}
-      <button className="fab" onClick={() => setFabOpen(o => !o)} title="Quick add">{fabOpen ? '×' : '+'}</button>
+      {/* FAB deferred — the global FastCapture + already occupies this corner;
+          Home's 4-way quick-add (task/action/note/event) lands in the FAB
+          follow-up, reconciled with FastCapture rather than stacked on it. */}
 
       <style>{`
         .home-deck{max-width:1640px;margin:0 auto;padding:8px 4px 90px;}
@@ -466,7 +443,7 @@ export default function Home({
         .ribhead .cap{font-size:12px;color:var(--navy-400);}
         .ribhead .connect{font-size:12px;color:var(--accent);cursor:pointer;margin-left:auto;}
         .ribwrap{border:1px solid var(--navy-600);border-radius:13px;background:var(--navy-900);overflow:hidden;margin-bottom:24px;}
-        .grid7{position:relative;display:grid;grid-template-columns:repeat(7,1fr);}
+        .grid7{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));}
         .day{border-right:1px solid var(--navy-700);padding:12px 13px 16px;min-height:122px;display:flex;flex-direction:column;gap:6px;}
         .day:last-child{border-right:none;}
         .day.today{background:rgba(74,143,255,.06);}
@@ -482,6 +459,7 @@ export default function Home({
         .allday{font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .allday.ev{background:#1c2436;color:#9db8e8;}
         .allday.holiday{background:var(--nw-caution-bg,#251a08);color:var(--nw-caution-text,#f5b840);}
+        .dmore{font-size:11px;color:var(--navy-400);padding:1px 0 0 2px;}
 
         .nowline{position:absolute;top:0;bottom:0;width:2px;background:#e8c060;box-shadow:0 0 8px rgba(232,192,96,.5);z-index:5;pointer-events:none;}
         .nowcap{position:absolute;top:0;left:50%;transform:translateX(-50%);background:#e8c060;color:#1a1406;font-size:9px;font-weight:800;letter-spacing:.1em;padding:2px 6px;border-radius:0 0 5px 5px;text-transform:uppercase;}
@@ -547,15 +525,6 @@ export default function Home({
         .abtn:hover{background:var(--navy-600);}
         .abtn.primary{background:var(--accent-dim);color:var(--accent);border-color:var(--accent);}
         .abtn.kill{color:var(--nw-alarm-text,#ff6452);border-color:#3a1512;}
-
-        .fab{position:fixed;right:36px;bottom:32px;width:58px;height:58px;border-radius:50%;background:var(--accent);color:#fff;border:none;font-size:28px;cursor:pointer;box-shadow:0 10px 26px rgba(74,143,255,.5);z-index:30;}
-        .fab-pop{position:fixed;right:36px;bottom:100px;width:300px;background:var(--navy-800);border:1px solid var(--navy-600);border-radius:13px;padding:14px;box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:31;display:flex;flex-direction:column;gap:9px;}
-        .fab-pop .fp-label{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label);}
-        .fab-pop input,.fab-pop select{background:var(--navy-900);border:1px solid var(--navy-600);border-radius:8px;padding:9px 11px;color:var(--navy-50);font-size:13.5px;font-family:inherit;outline:none;}
-        .fab-pop input:focus,.fab-pop select:focus{border-color:var(--accent);}
-        .fp-row{display:flex;align-items:center;justify-content:space-between;}
-        .fp-hint{font-size:11px;color:var(--navy-400);}
-        .fab-pop .fp-row button{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;}
       `}</style>
     </div>
   )
