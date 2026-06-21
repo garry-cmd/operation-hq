@@ -39,6 +39,7 @@ import NavRail from '@/components/NavRail'
 import CommandPalette from '@/components/CommandPalette'
 import type { SearchEntry } from '@/lib/search'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
+import PlanWeek from '@/components/PlanWeek'
 import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
@@ -109,6 +110,7 @@ export default function HQPage() {
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
   const [closingWizard, setClosingWizard] = useState<{ spaceId: string; week: string } | null>(null)
+  const [planningWizard, setPlanningWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
   // Currently-open action panel on the Focus tab. Lifted to page level so
   // <main> can widen its max-width when the panel is open (push-aside layout).
@@ -776,7 +778,7 @@ export default function HQPage() {
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} spaceName={activeSpace?.name ?? 'My OKRs'} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
             {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard({ spaceId: activeSpaceId, week })} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} tasks={spaceTasks} setTasks={setTasks} onOpenTask={id => { setTasksInitialId(id); setScreen('tasks') }} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
-            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} toast={setToast} />}
+            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} onPlanWeek={(spaceId, week) => setPlanningWizard({ spaceId, week })} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
@@ -825,6 +827,22 @@ export default function HQPage() {
             activeSpaceId={cs}
             toast={setToast}
             onClose={() => setClosingWizard(null)}
+          />
+        )
+      })()}
+
+      {/* Plan-week wizard — same per-space launch model as the close wizard.
+          Launched from Reflect's launcher (or Focus's own copy until it's
+          deleted). Re-derives the target space's objectives/KRs. */}
+      {planningWizard && (() => {
+        const ps = planningWizard.spaceId
+        return (
+          <PlanWeek
+            objectives={objectives.filter(o => o.space_id === ps)}
+            roadmapItems={roadmapItems.filter(i => i.space_id === ps)}
+            weekStart={planningWizard.week}
+            onAddAction={a => setActions(prev => [...prev, a])}
+            onClose={() => setPlanningWizard(null)}
           />
         )
       })()}
