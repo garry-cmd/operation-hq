@@ -51,6 +51,57 @@ running deployment can't see it.
 
 ## Current state — shipped
 
+### Jun 21 (later) — Home polish pass
+
+Tuning the default landing deck. One file (`components/Home.tsx`) + one helper (`lib/quotes.ts`).
+**Supersedes the layout described in the Jun 21 Focus-retired entry below** (space-filter +
+close-strip placement specifically).
+
+- **Top leads with value content.** Order is now header → quote → Shape-of-the-week ribbon, then the
+  controls. The **space-filter chips moved DOWN** to sit directly above the body board they narrow
+  (key actions + rail), out of the top slot. The **weekly-close strip moved into the right rail under
+  Notes**, restyled as a `.card` (`.closecard`) — it was a full-width strip near the top; now a
+  compact rail card (`.card + .card` auto-spacing, chips wrap within the ~380px column).
+- **Completed key-actions fall off the deck.** `actionGroups` filters `!a.completed` from the rendered
+  rows; the "X of Y done" counter stays accurate (done/total computed from the full list before the
+  filter); a space whose actions are **all** done drops its group entirely, and the empty state splits
+  into "All key actions complete ✓" (total>0) vs "No key actions planned" (total===0).
+- **Ribbon day-mode fixes.** All-day pills were hardcoded dark (`#1c2436`) → rendered as dark blocks in
+  light mode. Now theme-aware: events `--accent-bg/--accent/--accent-line`, holidays `--warn-bg/--warn`.
+  Self-created **`Busy (…)` / `Blocked (…)` holds are filtered** out of both meetings and all-day rows
+  (`isHold = /^\s*(busy|blocked)\b/i`) so the ribbon shows real meetings only.
+- **Quote randomizes per mount.** `lib/quotes.ts` gains `randomQuote()`; Home picks via
+  `useState(() => randomQuote())` → fresh on every page open / refresh / nav-back (was day-of-year
+  indexed). Quote block scaled **~15%** (`.q` 19→22, `.by` 12→13.5, `.mark` 30→35, padding/margin up).
+
+### Jun 20–21 — Agent persistent memory + background watcher (Scout) · read_note [DOC CATCH-UP]
+
+*Shipped across the Jun 20→21 agent sessions but missed by the Jun 21 Focus-retired sweep. Recorded
+here from code-of-record.*
+
+- **Persistent agent memory.** `agent_memory` table (`id, content, pinned, created_at`; owner_all RLS).
+  `lib/db/agentMemory.ts` CRUD (listAll / create / updateContent / setPinned / remove). Injected into
+  `buildAgentContext` as a "What you've learned about the operator (your memory)" block with `[mem:id]`
+  tokens (📌 = pinned). Three **auto-applied, no-approval** tools (`MEMORY_TOOLS` / `MEMORY_TOOL_NAMES`,
+  executed server-side in `/api/agent`): **`remember`**, **`update_memory`**, **`forget`** — they only
+  shape the agent's own context, never mutate tasks/KRs/notes/calendar. Persona: one self-contained
+  sentence per memory, don't duplicate, route to-dos/events/readings elsewhere. **Settings** screen has
+  a memory panel (list / add / inline-edit / pin / delete).
+- **`read_note` + server-side custom-tool execution loop.** `READ_TOOLS` / `READ_TOOL_NAMES`; `/api/agent`
+  runs the tool mid-turn and feeds the `tool_result` back (call → run → append → call again → stream).
+  Read-only, no approval. (This was Next-session candidate #1 — now shipped.)
+- **Background watcher (Scout, autonomy rung 2).** `lib/watch.ts` `generateWatch({today, weekStart})` —
+  a periodic check that surfaces something **only if genuinely new and worth interrupting** (else
+  `surface:false`). Surfaced items write a **`source='watch'`** row into the SAME `briefings` feed
+  (reuses the Stage-2 Approve/Dismiss proposal cards — no new UI), no archival note filed. De-dup:
+  model self-dedupes against recent watch items + today's brief, plus a hard `dedupe_key` backstop
+  (`wasRecentlySurfaced`, 18h lookback). `/api/cron/watch` (CRON_SECRET) on **two** daily Vercel crons
+  (`30 19 * * *`, `0 0 * * *`). `briefings.source` + `dedupe_key` columns added via Supabase MCP.
+  Rung 3 (autonomous *acting* on an allowlist) remains deferred.
+- **Tasks row redesign.** Open rows render in 3 conditional modes (name / +description /
+  +schedule&tags); completed pooled at the bottom under a "Done · N" eye-toggle (`completedFiltered` /
+  `showDone`); add-task quick-add bar repositioned above the board (parser placeholder).
+
 ### Jun 21 — Focus retired · Reflect = weekly ritual hub · Home close strip
 
 Focus was made fully redundant and **deleted**; its abilities were redistributed across Home,
@@ -398,18 +449,14 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-1. **Agent `read_note` (+ a server-side custom-tool execution loop).** The one remaining agent
-   capability from the tool-expansion list. Custom tools don't auto-run the way `web_search` does, so a
-   read tool needs `/api/agent` to execute it mid-turn and feed the `tool_result` back to the model
-   (call → if tool_use, run → append result → call again → stream final). Unlocks precise edits
-   (`update_note` currently rewrites blind) and future read tools (`search_notes`, etc.). Its own pass.
-2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+1. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
-4. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
+2. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
+3. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
    `delete_kr`; calendar event **edit/delete** (two systems: `calendar_blocks` row + Google event);
-   note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context); Stage 3
-   autonomous low-risk acting. Deferred deliberately, not dropped.
+   note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context);
+   **autonomy rung 3** (autonomous low-risk acting on an allowlist — the watcher already surfaces at
+   rung 2). Deferred deliberately, not dropped.
 
 ### 🟡 Feature backlog
 5. `useSpaceData` hook (audit #4). ~1hr.
