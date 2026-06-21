@@ -60,6 +60,7 @@ export default function Home({
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   const [selectedKRId, setSelectedKRId] = useState<string | null>(null)
+  const [spaceFilter, setSpaceFilter] = useState<string | null>(null) // null = All spaces
   const [busyEvents, setBusyEvents] = useState<GoogleBusyEvent[]>([])
   const [allDayEvents, setAllDayEvents] = useState<GoogleAllDayEvent[]>([])
   const [nowTick, setNowTick] = useState(() => Date.now())
@@ -71,6 +72,7 @@ export default function Home({
 
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])
+  const orderedSpaces = useMemo(() => [...spaces].sort((a, b) => a.sort_order - b.sort_order), [spaces])
   const colorForSpace = (id: string | null) => {
     const sp = id ? spaceById.get(id) : null
     return sp ? spaceDisplayColor(sp) : 'var(--navy-500)'
@@ -105,10 +107,9 @@ export default function Home({
       const arr = bySpace.get(kr.space_id) ?? []
       arr.push(a); bySpace.set(kr.space_id, arr)
     }
-    const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
     let doneTotal = 0, total = 0
     const groups = orderedSpaces
-      .filter(sp => bySpace.has(sp.id))
+      .filter(sp => bySpace.has(sp.id) && (spaceFilter === null || sp.id === spaceFilter))
       .map(sp => {
         const list = (bySpace.get(sp.id) ?? []).slice().sort((a, b) => Number(a.completed) - Number(b.completed))
         const open = list.filter(a => !a.completed).length
@@ -117,26 +118,26 @@ export default function Home({
         return { space: sp, list, open, done }
       })
     return { groups, doneTotal, total }
-  }, [actions, weekMonday, krById, spaces])
+  }, [actions, weekMonday, krById, orderedSpaces, spaceFilter])
 
   // ── Tasks due this week (open, non-subtask, due in week) ──
   const dueThisWeek = useMemo(() =>
     tasks
-      .filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date >= weekMonday && t.due_date <= weekEnd)
+      .filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date >= weekMonday && t.due_date <= weekEnd && (spaceFilter === null || t.space_id === spaceFilter))
       .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '')),
-    [tasks, weekMonday, weekEnd])
+    [tasks, weekMonday, weekEnd, spaceFilter])
 
   // ── Overdue tasks (needs attention) ──
   const overdue = useMemo(() =>
     tasks
-      .filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date < todayStr)
+      .filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date < todayStr && (spaceFilter === null || t.space_id === spaceFilter))
       .sort((a, b) => (a.due_date ?? '').localeCompare(b.due_date ?? '')),
-    [tasks, todayStr])
+    [tasks, todayStr, spaceFilter])
 
   // ── Habits: habit KRs × 7-day grid ──
   const habitKRs = useMemo(() =>
-    roadmapItems.filter(k => k.is_habit && !k.is_parked && k.health_status !== 'done'),
-    [roadmapItems])
+    roadmapItems.filter(k => k.is_habit && !k.is_parked && k.health_status !== 'done' && (spaceFilter === null || k.space_id === spaceFilter)),
+    [roadmapItems, spaceFilter])
   const checkinSet = useMemo(() => {
     const m = new Map<string, string>() // `${kr}:${date}` → checkin id
     for (const c of habitCheckins) m.set(`${c.roadmap_item_id}:${c.date}`, c.id)
@@ -237,6 +238,20 @@ export default function Home({
         </div>
       </div>
 
+      {/* space filter — narrows key actions, tasks, overdue, habits (not the calendar ribbon) */}
+      <div className="spacefilter">
+        <button className={`spchip${spaceFilter === null ? ' on' : ''}`} onClick={() => setSpaceFilter(null)}>All</button>
+        {orderedSpaces.map(sp => (
+          <button
+            key={sp.id}
+            className={`spchip${spaceFilter === sp.id ? ' on' : ''}`}
+            onClick={() => setSpaceFilter(prev => prev === sp.id ? null : sp.id)}
+          >
+            <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
+          </button>
+        ))}
+      </div>
+
       {/* quote */}
       <div className="quote">
         <span className="mark">“</span>
@@ -291,7 +306,7 @@ export default function Home({
         {/* LEFT: key actions */}
         <section>
           <div className="ka-head">
-            <span className="label">Key actions · all spaces</span>
+            <span className="label">Key actions · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
             <span className="kadone">{actionGroups.total === 0 ? 'no actions this week' : `${actionGroups.doneTotal} of ${actionGroups.total} done`}</span>
           </div>
           {actionGroups.groups.length === 0 ? (
@@ -427,6 +442,10 @@ export default function Home({
         .hd-row h1 .sub{font-size:14.5px;font-weight:500;color:var(--navy-400);letter-spacing:0;}
         .wknav button{width:36px;height:36px;border-radius:50%;background:var(--navy-800);border:1px solid var(--navy-600);color:var(--navy-200);font-size:15px;cursor:pointer;margin-left:8px;}
         .wknav button.today{font-size:9px;color:var(--accent);}
+        .spacefilter{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 2px;}
+        .spchip{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--navy-200);border:1px solid var(--line);cursor:pointer;}
+        .spchip:hover{border-color:var(--accent);}
+        .spchip.on{border-color:var(--accent);background:var(--accent-dim);color:var(--navy-50);}
 
         .quote{position:relative;margin:16px 0 20px;padding:6px 0 6px 22px;border-left:3px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:20px;}
         .quote .mark{position:absolute;left:9px;top:-8px;font-size:30px;color:var(--line-strong);font-family:Georgia,serif;}
