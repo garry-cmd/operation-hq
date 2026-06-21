@@ -1,13 +1,20 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
-import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, WeeklyReview, ActionTag } from '@/lib/types'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
 import * as tasksDb from '@/lib/db/tasks'
+import * as notesDb from '@/lib/db/notes'
 import * as checkinsDb from '@/lib/db/checkins'
+import { extractNoteText } from '@/lib/noteText'
+import { deleteAllMediaForNote } from '@/lib/db/noteMedia'
+import { NoteEditor } from './notes/NoteEditor'
 import { fetchCalendarEvents, type GoogleBusyEvent, type GoogleAllDayEvent } from '@/lib/db/googleApi'
+
+// Which object the Home cockpit's focused "work" view is showing.
+type WorkTarget = { kind: 'kr'; id: string } | { kind: 'note'; id: string } | { kind: 'task'; id: string }
 
 // ── date helpers (local-tz safe; mirror Calendar.tsx) ──
 function ymd(d: Date): string {
@@ -54,6 +61,10 @@ interface Props {
   habitCheckins: HabitCheckin[]
   setHabitCheckins: (fn: (h: HabitCheckin[]) => HabitCheckin[]) => void
   notes: Note[]
+  setNotes: React.Dispatch<React.SetStateAction<Note[]>>
+  notebooks: Notebook[]
+  tagsByNote: Map<string, string[]>
+  setTagsByNote: React.Dispatch<React.SetStateAction<Map<string, string[]>>>
   googleConnected: boolean
   reviews: WeeklyReview[]
   weekForSpace: (spaceId: string) => string
@@ -66,12 +77,11 @@ interface Props {
 
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions, tasks, setTasks,
-  habitCheckins, setHabitCheckins, notes, googleConnected,
-  reviews, weekForSpace, onCloseWeek,
-  onOpenNote, onOpenTasks, onOpenCalendar, toast,
+  habitCheckins, setHabitCheckins, notes, setNotes, notebooks, tagsByNote, setTagsByNote,
+  googleConnected, reviews, weekForSpace, onCloseWeek,
+  onOpenTasks, onOpenCalendar, toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
-  const [selectedKRId, setSelectedKRId] = useState<string | null>(null)
   const [spaceFilter, setSpaceFilter] = useState<string | null>(null) // null = All spaces
   const [busyEvents, setBusyEvents] = useState<GoogleBusyEvent[]>([])
   const [allDayEvents, setAllDayEvents] = useState<GoogleAllDayEvent[]>([])
@@ -183,11 +193,13 @@ export default function Home({
     return m
   }, [habitCheckins])
 
-  // ── Notes for the selected KR ──
-  const selectedKR = selectedKRId ? krById.get(selectedKRId) ?? null : null
-  const krNotes = useMemo(() =>
-    selectedKRId ? notes.filter(n => n.roadmap_item_id === selectedKRId) : [],
-    [notes, selectedKRId])
+  // ── Recent notes for the rail (each dives into its note work view) ──
+  const recentNotes = useMemo(() =>
+    [...notes]
+      .filter(n => spaceFilter === null || n.space_id === spaceFilter)
+      .sort((a, b) => (a.updated_at > b.updated_at ? -1 : 1))
+      .slice(0, 4),
+    [notes, spaceFilter])
 
   // ── meetings + all-day grouped by date ──
   // Drop self-created "Busy (…)" / "Blocked (…)" holds — they're capacity blocks,
@@ -262,14 +274,109 @@ export default function Home({
       toast('Deleted')
     } catch { toast('Could not delete') }
   }
-  function onPickKR(krId: string) { setSelectedKRId(prev => prev === krId ? prev : krId) }
+  // ── Home cockpit: focused "work" dive ───────────────────────────────
+  const [work, setWork] = useState<WorkTarget | null>(null)
+  const [entered, setEntered] = useState(false)         // drives the dive/surface animation
+  const [krNoteId, setKrNoteId] = useState<string | null>(null) // selected note in the KR shelf
+  const [editorFull, setEditorFull] = useState(false)   // editor focus / KR expand-to-spine
+  const [linkPickerOpen, setLinkPickerOpen] = useState(false)
+  const [linkQuery, setLinkQuery] = useState('')
+  const [krActionInput, setKrActionInput] = useState('')
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  function dive(t: WorkTarget) {
+    if (leaveTimer.current) { clearTimeout(leaveTimer.current); leaveTimer.current = null }
+    setWork(t); setKrNoteId(null); setEditorFull(false); setLinkPickerOpen(false); setLinkQuery('')
+    // double-rAF: let the just-mounted work layer paint hidden, then animate in.
+    requestAnimationFrame(() => requestAnimationFrame(() => setEntered(true)))
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  function surface() {
+    setEntered(false)
+    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    leaveTimer.current = setTimeout(() => setWork(null), 240)
+  }
+  useEffect(() => {
+    if (!work) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      if (linkPickerOpen) setLinkPickerOpen(false); else surface()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [work, linkPickerOpen])
+
+  // Pinned-first, then most-recent (mirrors Notes' byPinnedThenUpdated).
+  const byPinned = (a: Note, b: Note) => {
+    const ap = a.pinned_at ? 1 : 0, bp = b.pinned_at ? 1 : 0
+    if (ap !== bp) return bp - ap
+    if (a.pinned_at && b.pinned_at) return a.pinned_at > b.pinned_at ? -1 : 1
+    return a.updated_at > b.updated_at ? -1 : 1
+  }
+  const shortDate = (iso: string) => {
+    const d = new Date(iso); const now = new Date()
+    if (d.toDateString() === now.toDateString()) return 'today'
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  }
+
+  // Note persistence (stable identities — NoteEditor flushes on these). Mirrors Notes.tsx.
+  const onUpdateNote = useCallback(async (id: string, patch: Partial<Note>) => {
+    try {
+      const updated = await notesDb.update(id, patch)
+      setNotes(prev => prev.map(n => n.id === id ? updated : n))
+    } catch { toast('Could not save note') }
+  }, [setNotes, toast])
+  const onSetNoteTags = useCallback(async (id: string, t: string[]) => {
+    try {
+      await notesDb.setTags(id, t)
+      setTagsByNote(prev => { const next = new Map(prev); if (t.length === 0) next.delete(id); else next.set(id, t); return next })
+    } catch { toast('Could not update tags') }
+  }, [setTagsByNote, toast])
+  const onDeleteNote = useCallback(async (id: string) => {
+    try {
+      await notesDb.remove(id)
+      void deleteAllMediaForNote(id)
+      setNotes(prev => prev.filter(n => n.id !== id))
+      setTagsByNote(prev => { const next = new Map(prev); next.delete(id); return next })
+    } catch { toast('Could not delete note'); return }
+    if (work?.kind === 'note') surface(); else setKrNoteId(null)
+  }, [setNotes, setTagsByNote, toast, work])
+  const openNoteByTitle = useCallback((rawTitle: string) => {
+    const t = rawTitle.trim().toLowerCase(); if (!t) return
+    const target = notes.find(n => (n.title || '').trim().toLowerCase() === t)
+    if (!target) { toast(`No note titled "${rawTitle.trim()}"`); return }
+    dive({ kind: 'note', id: target.id })
+  }, [notes, toast])
+
+  async function linkNoteToKR(noteId: string, krId: string) {
+    try {
+      const u = await notesDb.setRoadmapItem(noteId, krId)
+      setNotes(prev => prev.map(n => n.id === noteId ? u : n))
+      setKrNoteId(noteId); setLinkPickerOpen(false)
+    } catch { toast('Could not link note') }
+  }
+  async function createNoteForKR(kr: RoadmapItem) {
+    try {
+      const created = await notesDb.create({ space_id: kr.space_id, roadmap_item_id: kr.id, title: '' })
+      setNotes(prev => [...prev, created]); setKrNoteId(created.id); setLinkPickerOpen(false)
+    } catch { toast('Could not create note') }
+  }
+  async function addKRAction(kr: RoadmapItem) {
+    const t = krActionInput.trim(); if (!t) return
+    try {
+      const created = await actionsDb.create({ roadmap_item_id: kr.id, title: t, week_start: weekMonday })
+      setActions(prev => [...prev, created]); setKrActionInput('')
+    } catch { toast('Could not add action') }
+  }
+
 
   const headerSub = isCurrentWeek
     ? `${fmtRange(weekMonday)} · ${DOW_FULL[(new Date().getDay() + 6) % 7]} ${dayPart(new Date().getHours())}`
     : `${fmtRange(weekMonday)}`
 
   return (
-    <div className="home-deck">
+    <div className={`home-deck stage${entered ? ' work-on' : ''}`}>
+      <div className="layer survey">
       {/* header */}
       <div className="hd-row">
         <h1>{isCurrentWeek ? 'This week' : 'Week of'} <span className="sub">{headerSub}</span></h1>
@@ -364,14 +471,16 @@ export default function Home({
                 const kr = krById.get(a.roadmap_item_id)
                 const health = kr?.health_status
                 return (
-                  <div key={a.id} className={`act${a.completed ? ' is-done' : ''}`}>
-                    <button className={`bub${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
+                  <div key={a.id} className={`act${a.completed ? ' is-done' : ''}${kr ? ' tappable' : ''}`}
+                    onClick={() => kr && dive({ kind: 'kr', id: kr.id })}
+                    title={kr ? 'Open this KR' : undefined}>
+                    <button className={`bub${a.completed ? ' done' : ''}`} onClick={e => { e.stopPropagation(); toggleAction(a) }} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
                     <span className="atitle">{a.title}</span>
                     {a.tag && <span className="atag" style={{ background: TAG_STYLE[a.tag].bg, color: TAG_STYLE[a.tag].color }}>{TAG_STYLE[a.tag].label}</span>}
                     {!a.completed && health === 'off_track' && <span className="status off">off track</span>}
                     {!a.completed && health === 'blocked' && <span className="status blocked">blocked</span>}
                     {kr && (
-                      <button className={`krpill${selectedKRId === kr.id ? ' on' : ''}`} onClick={() => onPickKR(kr.id)} title="Load this KR's notes">
+                      <button className="krpill" onClick={e => { e.stopPropagation(); dive({ kind: 'kr', id: kr.id }) }} title="Open this KR">
                         <span className="di">◆</span><span className="kt">{kr.title}</span>
                       </button>
                     )}
@@ -427,23 +536,16 @@ export default function Home({
           {/* notes (contextual) */}
           <div className="card">
             <div className="chead">
-              <span className="label">Notes</span>
-              <span className="muted" style={{ fontSize: 11.5 }}>click a <span style={{ color: 'var(--accent)' }}>◆</span> KR</span>
+              <span className="label">Recent notes</span>
             </div>
-            {!selectedKR ? (
-              <div className="notes-empty">Click any <span className="di">◆</span> KR bubble to load that KR’s notes.</div>
-            ) : (
-              <>
-                <div className="note-ctx"><span className="dot" style={{ background: colorForSpace(selectedKR.space_id) }} />{selectedKR.title} · {krNotes.length} {krNotes.length === 1 ? 'note' : 'notes'}</div>
-                {krNotes.length === 0 ? (
-                  <div className="empty sm">No notes linked to this KR yet.</div>
-                ) : krNotes.map(n => (
-                  <div key={n.id} className="note" onClick={() => onOpenNote(n.id)}>
-                    <span className="ntitle">{n.title?.trim() || 'Untitled'}</span>
-                  </div>
-                ))}
-              </>
-            )}
+            {recentNotes.length === 0 ? (
+              <div className="notes-empty">No notes yet. Open a KR to start one.</div>
+            ) : recentNotes.map(n => (
+              <div key={n.id} className="note" onClick={() => dive({ kind: 'note', id: n.id })}>
+                <span className="ntitle">{n.title?.trim() || 'Untitled'}</span>
+                {(() => { const p = extractNoteText(n.body).slice(0, 80); return p ? <div className="nprev">{p}</div> : null })()}
+              </div>
+            ))}
           </div>
 
           {/* weekly close — passive, all-spaces; appears only when a close is due */}
@@ -491,6 +593,203 @@ export default function Home({
       {/* FAB deferred — the global FastCapture + already occupies this corner;
           Home's 4-way quick-add (task/action/note/event) lands in the FAB
           follow-up, reconciled with FastCapture rather than stacked on it. */}
+      </div>{/* /layer.survey */}
+
+      {work && (() => {
+        const workKR = work.kind === 'kr' ? krById.get(work.id) ?? null : null
+        const workNote = work.kind === 'note' ? notes.find(n => n.id === work.id) ?? null : null
+        const workTask = work.kind === 'task' ? tasks.find(t => t.id === work.id) ?? null : null
+        const crumbSpace = (sid: string | null | undefined) => sid ? (spaceById.get(sid)?.name ?? 'Space') : 'Inbox'
+        const breadcrumb = workKR ? `${crumbSpace(workKR.space_id)}  ›  Key result`
+          : workNote ? `${crumbSpace(workNote.space_id)}  ›  Note`
+          : workTask ? `${crumbSpace(workTask.space_id)}  ›  Task` : ''
+
+        return (
+          <div className="layer workview">
+            <div className="cw-back">
+              <button className="cw-backbtn" onClick={surface}><span className="chev">‹</span> Back to deck</button>
+              <span className="cw-crumb">{breadcrumb}</span>
+            </div>
+
+            {/* ── KR work view ── reference shelf · editor · tasks ── */}
+            {workKR && (() => {
+              const kr = workKR
+              const col = colorForSpace(kr.space_id)
+              const krNotesList = notes.filter(n => n.roadmap_item_id === kr.id).sort(byPinned)
+              const sel = krNotesList.find(n => n.id === krNoteId) ?? krNotesList[0] ?? null
+              const wkActions = actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday)
+              const linkedTasks = tasks.filter(t => t.roadmap_item_id === kr.id && !t.parent_task_id)
+              return (
+                <section className="cw-pane">
+                  <div className="cw-head">
+                    <span className="cw-kdot" style={{ background: col }} />
+                    <div className="cw-htext">
+                      <span className="cw-keyb">{crumbSpace(kr.space_id)} · Key result</span>
+                      <span className="cw-ktitle">{kr.title}</span>
+                    </div>
+                    {kr.health_status === 'off_track' && <span className="cw-chip off">off track</span>}
+                    {kr.health_status === 'blocked' && <span className="cw-chip blocked">blocked</span>}
+                  </div>
+                  <div className={`cw-split${editorFull ? ' expanded' : ''}`}>
+                    {/* reference shelf */}
+                    <div className="cw-shelf">
+                      <div className="cw-shelf-head"><span className="cw-lbl">Notes</span><span className="cw-n">· {krNotesList.length} linked</span></div>
+                      <div className="cw-shelf-acts">
+                        <button className="cw-sb pri" onClick={() => createNoteForKR(kr)}>+ New</button>
+                        <button className="cw-sb" onClick={() => { setLinkPickerOpen(true); setLinkQuery('') }}>Link a note</button>
+                      </div>
+                      <div className="cw-shelf-scroll">
+                        {krNotesList.length === 0 && <div className="cw-shelf-empty">No notes yet. Start one with <b>+ New</b>, or link an existing note.</div>}
+                        {krNotesList.map(n => {
+                          const prev = extractNoteText(n.body).slice(0, 70)
+                          return (
+                            <button key={n.id} className={`cw-nrow${sel?.id === n.id ? ' on' : ''}`} onClick={() => setKrNoteId(n.id)}>
+                              <div className="cw-nr-top">
+                                {n.pinned_at && <span className="cw-pin">📌</span>}
+                                <span className="cw-nr-title" data-initial={(n.title || 'U').trim().slice(0, 1).toUpperCase() || 'U'}>{n.title?.trim() || 'Untitled'}</span>
+                                <span className="cw-nr-date">{shortDate(n.updated_at)}</span>
+                              </div>
+                              {prev && <div className="cw-nr-prev">{prev}</div>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                    {/* editor */}
+                    <div className="cw-editor">
+                      {sel ? (
+                        <NoteEditor key={sel.id} note={sel} tags={tagsByNote.get(sel.id) ?? []}
+                          spaces={spaces} roadmapItems={roadmapItems} notebooks={notebooks}
+                          fullscreen={editorFull} onToggleFullscreen={() => setEditorFull(v => !v)}
+                          onPatch={p => onUpdateNote(sel.id, p)} onSetTags={t => onSetNoteTags(sel.id, t)}
+                          onOpenNoteByTitle={openNoteByTitle} onDelete={() => onDeleteNote(sel.id)} />
+                      ) : (
+                        <div className="cw-noeditor">
+                          <p>No notes linked to this KR yet.</p>
+                          <button className="cw-sb pri" onClick={() => createNoteForKR(kr)}>+ New note for this KR</button>
+                        </div>
+                      )}
+                    </div>
+                    {/* tasks */}
+                    <div className="cw-tasks">
+                      <div className="cw-tasks-sec"><span className="cw-lbl">This week’s actions</span></div>
+                      {wkActions.length === 0 && <div className="cw-tasks-empty">No actions this week.</div>}
+                      {wkActions.map(a => (
+                        <div key={a.id} className={`cw-trow${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)}>
+                          <span className={`cw-cb${a.completed ? ' done' : ''}`}>{a.completed ? '✓' : ''}</span>
+                          <span className="cw-tt">{a.title}</span>
+                        </div>
+                      ))}
+                      <div className="cw-tasks-sec brd"><span className="cw-lbl">Linked tasks</span></div>
+                      {linkedTasks.length === 0 && <div className="cw-tasks-empty">No linked tasks.</div>}
+                      {linkedTasks.map(t => (
+                        <div key={t.id} className={`cw-trow${t.completed_at ? ' done' : ''}`} onClick={() => toggleTask(t)}>
+                          <span className={`cw-cb${t.completed_at ? ' done' : ''}`}>{t.completed_at ? '✓' : ''}</span>
+                          <span className="cw-tt">{t.title}</span>
+                        </div>
+                      ))}
+                      <div className="cw-add">
+                        <input value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr) }}
+                          placeholder="+ Add an action to this KR…" />
+                      </div>
+                    </div>
+                  </div>
+
+                  {linkPickerOpen && (
+                    <div className="cw-pickback" onClick={() => setLinkPickerOpen(false)}>
+                      <div className="cw-picker" onClick={e => e.stopPropagation()}>
+                        <div className="cw-pick-h">
+                          <div className="t">Link a note to this KR</div>
+                          <div className="s">Attach an existing note — e.g. meeting notes — to “{kr.title}”.</div>
+                        </div>
+                        <input className="cw-pick-search" autoFocus value={linkQuery} onChange={e => setLinkQuery(e.target.value)} placeholder="Search your notes…" />
+                        <div className="cw-pick-list">
+                          {(() => {
+                            const cands = notes
+                              .filter(n => n.roadmap_item_id !== kr.id)
+                              .filter(n => { const q = linkQuery.trim().toLowerCase(); return !q || (n.title || '').toLowerCase().includes(q) })
+                              .sort((a, b) => (a.updated_at > b.updated_at ? -1 : 1))
+                              .slice(0, 40)
+                            if (cands.length === 0) return <div className="cw-pick-empty">No notes to link.</div>
+                            return cands.map(n => (
+                              <div key={n.id} className="cw-pick-row" onClick={() => linkNoteToKR(n.id, kr.id)}>
+                                <span className="cw-pdot" style={{ background: colorForSpace(n.space_id) }} />
+                                <div className="cw-pt">
+                                  <div className="pn">{n.title?.trim() || 'Untitled'}</div>
+                                  <div className="pm">{crumbSpace(n.space_id)} · {shortDate(n.updated_at)}</div>
+                                </div>
+                                <span className="cw-plink">Link</span>
+                              </div>
+                            ))
+                          })()}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )
+            })()}
+
+            {/* ── Note work view ── editor full width ── */}
+            {workNote && (
+              <section className="cw-pane">
+                <div className="cw-noteonly">
+                  <NoteEditor key={workNote.id} note={workNote} tags={tagsByNote.get(workNote.id) ?? []}
+                    spaces={spaces} roadmapItems={roadmapItems} notebooks={notebooks}
+                    fullscreen={editorFull} onToggleFullscreen={() => setEditorFull(v => !v)}
+                    onPatch={p => onUpdateNote(workNote.id, p)} onSetTags={t => onSetNoteTags(workNote.id, t)}
+                    onOpenNoteByTitle={openNoteByTitle} onDelete={() => onDeleteNote(workNote.id)} />
+                </div>
+              </section>
+            )}
+
+            {/* ── Task work view ── detail ── */}
+            {workTask && (() => {
+              const t = workTask
+              const tkr = t.roadmap_item_id ? krById.get(t.roadmap_item_id) ?? null : null
+              const subtasks = tasks.filter(s => s.parent_task_id === t.id)
+              const meta = [
+                t.due_date ? `Due ${shortDate(t.due_date)}` : null,
+                t.deadline_date ? `Deadline ${shortDate(t.deadline_date)}` : null,
+                t.estimated_minutes ? `~${t.estimated_minutes}m` : null,
+              ].filter(Boolean).join('  ·  ')
+              return (
+                <section className="cw-pane">
+                  <div className="cw-head">
+                    <span className="cw-kdot" style={{ background: colorForSpace(t.space_id) }} />
+                    <div className="cw-htext">
+                      <span className="cw-keyb">{crumbSpace(t.space_id)} · Task</span>
+                      <span className="cw-ktitle">{t.title}</span>
+                    </div>
+                    <button className={`cw-complete${t.completed_at ? ' done' : ''}`} onClick={() => toggleTask(t)}>
+                      {t.completed_at ? '✓ Completed' : 'Mark complete'}
+                    </button>
+                  </div>
+                  <div className="cw-taskbody">
+                    {meta && <div className="cw-banner">{meta}</div>}
+                    {t.description && <><div className="cw-lbl">Description</div><p className="cw-desc">{t.description}</p></>}
+                    {tkr && <>
+                      <div className="cw-lbl">Linked KR</div>
+                      <button className="cw-krlink" onClick={() => dive({ kind: 'kr', id: tkr.id })}>
+                        <span className="cw-pdot" style={{ background: colorForSpace(tkr.space_id) }} />{tkr.title}
+                      </button>
+                    </>}
+                    <div className="cw-lbl">Subtasks</div>
+                    {subtasks.length === 0 && <div className="cw-tasks-empty">No subtasks.</div>}
+                    {subtasks.map(s => (
+                      <div key={s.id} className={`cw-trow${s.completed_at ? ' done' : ''}`} onClick={() => toggleTask(s)}>
+                        <span className={`cw-cb${s.completed_at ? ' done' : ''}`}>{s.completed_at ? '✓' : ''}</span>
+                        <span className="cw-tt">{s.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )
+            })()}
+          </div>
+        )
+      })()}
 
       <style>{`
         .home-deck{max-width:1640px;margin:0 auto;padding:8px 4px 90px;}
@@ -613,6 +912,112 @@ export default function Home({
         .abtn:hover{background:var(--hover);color:var(--navy-100);}
         .abtn.kill{color:var(--navy-300);}
         .abtn.kill:hover{color:var(--nw-alarm-text,#ff6452);border-color:#3a1512;}
+
+        /* ── Home cockpit: dive stage + work views ───────────────────── */
+        .home-deck.stage{position:relative;}
+        .home-deck .layer{transition:opacity .24s ease, transform .24s ease;}
+        .home-deck .survey{position:relative;}
+        .home-deck .workview{position:absolute;inset:0;opacity:0;transform:scale(.965);pointer-events:none;}
+        .home-deck.work-on .survey{position:absolute;inset:0;opacity:0;transform:scale(1.012);pointer-events:none;}
+        .home-deck.work-on .workview{position:relative;opacity:1;transform:scale(1);pointer-events:auto;}
+        @media (prefers-reduced-motion: reduce){ .home-deck .layer{transition:opacity .12s ease;transform:none!important;} }
+        .act.tappable{cursor:pointer;}
+        .note .nprev{font-size:11.5px;color:var(--navy-400);margin-top:3px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+        .cw-back{display:flex;align-items:center;gap:14px;padding:2px 4px 14px;}
+        .cw-backbtn{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;font-weight:600;color:var(--navy-200);background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;padding:7px 13px;cursor:pointer;}
+        .cw-backbtn:hover{border-color:var(--accent);color:var(--navy-50);}
+        .cw-backbtn .chev{font-size:17px;line-height:1;margin-top:-1px;}
+        .cw-crumb{font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--navy-400);text-transform:uppercase;}
+
+        .cw-pane{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden;}
+        .cw-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line);}
+        .cw-kdot{width:11px;height:11px;border-radius:50%;flex-shrink:0;}
+        .cw-htext{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
+        .cw-keyb{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--nw-label);}
+        .cw-ktitle{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--navy-50);letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .cw-chip{font-size:10.5px;font-weight:600;font-family:var(--font-mono);letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:99px;flex-shrink:0;}
+        .cw-chip.off{background:#2a1410;color:var(--nw-alarm-text,#ff6452);}
+        .cw-chip.blocked{background:#2a2410;color:var(--warn,#f5b840);}
+
+        .cw-split{display:grid;grid-template-columns:236px 1fr 372px;min-height:560px;transition:grid-template-columns .24s ease;}
+        .cw-split.expanded{grid-template-columns:56px 1fr 0px;}
+
+        .cw-shelf{border-right:1px solid var(--line);display:flex;flex-direction:column;background:var(--navy-900);overflow:hidden;}
+        .cw-shelf-head{display:flex;align-items:baseline;gap:7px;padding:13px 14px 9px;}
+        .cw-shelf-head .cw-lbl{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--nw-label);}
+        .cw-n{font-family:var(--font-mono);font-size:10px;color:var(--navy-400);}
+        .cw-shelf-acts{display:flex;gap:6px;padding:0 12px 10px;}
+        .cw-sb{flex:1;font-family:inherit;font-size:11.5px;font-weight:600;text-align:center;padding:7px 6px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--navy-200);cursor:pointer;}
+        .cw-sb:hover{border-color:var(--accent);color:var(--navy-50);}
+        .cw-sb.pri{border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
+        .cw-shelf-scroll{overflow-y:auto;flex:1;}
+        .cw-shelf-empty{padding:14px;font-size:12px;color:var(--navy-400);line-height:1.5;}
+        .cw-nrow{display:block;width:100%;text-align:left;padding:10px 13px;border:none;border-top:1px solid var(--line);border-left:3px solid transparent;background:none;cursor:pointer;font-family:inherit;}
+        .cw-nrow:hover{background:var(--hover);}
+        .cw-nrow.on{background:var(--accent-dim);border-left-color:var(--accent);}
+        .cw-nr-top{display:flex;align-items:baseline;gap:7px;}
+        .cw-nr-title{font-size:13px;font-weight:600;color:var(--navy-100);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .cw-nrow.on .cw-nr-title{color:var(--navy-50);}
+        .cw-nr-date{font-family:var(--font-mono);font-size:9.5px;color:var(--navy-400);flex-shrink:0;}
+        .cw-nr-prev{font-size:11px;color:var(--navy-400);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .cw-pin{font-size:9px;margin-right:2px;}
+        .cw-split.expanded .cw-shelf-head,.cw-split.expanded .cw-shelf-acts,.cw-split.expanded .cw-nr-prev,.cw-split.expanded .cw-nr-date,.cw-split.expanded .cw-pin{display:none;}
+        .cw-split.expanded .cw-shelf{align-items:center;}
+        .cw-split.expanded .cw-shelf-scroll{width:100%;}
+        .cw-split.expanded .cw-nrow{padding:11px 0;text-align:center;border-left:none;}
+        .cw-split.expanded .cw-nr-top{justify-content:center;}
+        .cw-split.expanded .cw-nr-title{font-size:0;}
+        .cw-split.expanded .cw-nr-title::before{content:attr(data-initial);font-size:12px;font-weight:700;color:var(--navy-300);}
+        .cw-split.expanded .cw-nrow.on .cw-nr-title::before{color:var(--accent);}
+        .cw-split.expanded .cw-tasks{display:none;}
+
+        .cw-editor{display:flex;flex-direction:column;min-width:0;min-height:0;border-right:1px solid var(--line);}
+        .cw-editor > div{flex:1;min-height:0;}
+        .cw-noeditor{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--navy-400);font-size:13px;}
+        .cw-noteonly{min-height:600px;display:flex;flex-direction:column;}
+        .cw-noteonly > div{flex:1;min-height:0;}
+
+        .cw-tasks{display:flex;flex-direction:column;overflow-y:auto;padding-bottom:8px;}
+        .cw-tasks-sec{padding:13px 16px 7px;}
+        .cw-tasks-sec.brd{border-top:1px solid var(--line);margin-top:4px;}
+        .cw-tasks .cw-lbl{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--nw-label);}
+        .cw-tasks-empty{padding:2px 16px 8px;font-size:12px;color:var(--navy-500);}
+        .cw-trow{display:flex;align-items:center;gap:10px;padding:8px 16px;cursor:pointer;}
+        .cw-trow:hover{background:var(--hover);}
+        .cw-cb{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--line-strong);flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--navy-900);}
+        .cw-cb.done{background:var(--nw-nominal-text,#7fe27a);border-color:var(--nw-nominal-text,#7fe27a);}
+        .cw-tt{font-size:13px;color:var(--navy-100);line-height:1.4;}
+        .cw-trow.done .cw-tt{color:var(--navy-500);text-decoration:line-through;}
+        .cw-add{padding:10px 14px 4px;}
+        .cw-add input{width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--navy-50);font-family:inherit;outline:none;}
+        .cw-add input:focus{border-color:var(--accent);}
+
+        .cw-taskbody{padding:18px 22px 26px;max-width:760px;}
+        .cw-banner{font-family:var(--font-mono);font-size:11.5px;color:var(--navy-300);background:var(--navy-900);border:1px solid var(--line);border-radius:8px;padding:9px 13px;margin-bottom:16px;}
+        .cw-taskbody .cw-lbl{display:block;font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--nw-label);margin:14px 0 6px;}
+        .cw-desc{font-size:13.5px;color:var(--navy-100);line-height:1.6;white-space:pre-wrap;margin:0;}
+        .cw-krlink{display:inline-flex;align-items:center;gap:8px;font-family:inherit;font-size:13px;color:var(--accent);background:var(--accent-dim);border:1px solid var(--accent);border-radius:99px;padding:5px 12px;cursor:pointer;}
+        .cw-pdot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+        .cw-complete{font-family:inherit;font-size:12.5px;font-weight:600;padding:7px 14px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--navy-200);cursor:pointer;flex-shrink:0;}
+        .cw-complete:hover{border-color:var(--nw-nominal-text,#7fe27a);color:var(--navy-50);}
+        .cw-complete.done{border-color:var(--nw-nominal-text,#7fe27a);color:var(--nw-nominal-text,#7fe27a);}
+
+        .cw-pickback{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;}
+        .cw-picker{width:480px;max-width:92vw;background:var(--navy-700);border:1px solid var(--navy-500);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.5);overflow:hidden;}
+        .cw-pick-h{padding:15px 18px 12px;border-bottom:1px solid var(--navy-600);}
+        .cw-pick-h .t{font-family:var(--font-display);font-size:15px;font-weight:600;color:var(--navy-50);}
+        .cw-pick-h .s{font-size:12px;color:var(--navy-400);margin-top:3px;line-height:1.45;}
+        .cw-pick-search{margin:12px 16px;width:calc(100% - 32px);background:var(--navy-800);border:1px solid var(--navy-500);border-radius:9px;padding:10px 12px;font-size:13px;color:var(--navy-50);font-family:inherit;outline:none;}
+        .cw-pick-search:focus{border-color:var(--accent);}
+        .cw-pick-list{max-height:300px;overflow-y:auto;padding:0 8px 10px;}
+        .cw-pick-empty{padding:14px;font-size:12.5px;color:var(--navy-400);}
+        .cw-pick-row{display:flex;align-items:center;gap:10px;padding:10px;border-radius:9px;cursor:pointer;}
+        .cw-pick-row:hover{background:var(--hover);}
+        .cw-pick-row .cw-pt{flex:1;min-width:0;}
+        .cw-pick-row .pn{font-size:13px;color:var(--navy-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .cw-pick-row .pm{font-size:11px;color:var(--navy-400);font-family:var(--font-mono);margin-top:1px;}
+        .cw-plink{font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;}
       `}</style>
     </div>
   )

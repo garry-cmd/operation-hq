@@ -51,6 +51,47 @@ running deployment can't see it.
 
 ## Current state — shipped
 
+### Jun 21 (latest) — Home cockpit (master-detail dive) + NoteEditor extraction
+
+Home becomes the always-open workspace: from the deck you **dive** into a focused work view and
+**surface** back, instead of being routed to the Notes/Tasks modules. Goal is to kill the
+two-app pull (Todoist/Evernote) by making real note + task + KR work happen in place. Four files:
+new `components/notes/NoteEditor.tsx`, `components/Notes.tsx`, `components/Home.tsx`, `app/hq/page.tsx`.
+
+- **NoteEditor extracted to its own file** (`components/notes/NoteEditor.tsx`, exported). The TipTap
+  editor — autosave (1.5s debounce + unmount flush), version snapshots, media upload + GC, internal
+  `[[links]]`, tables, and the move/link-KR/history panels — moved verbatim out of `Notes.tsx` (with
+  its sub-components `IconBtn`/`PanelRow`/`MovePanel`/`LinkKRPanel`/`HistoryPanel`/`Toolbar`/
+  `TableToolbar` + `EMPTY_DOC`). Prop interface unchanged (`note, tags, spaces, roadmapItems,
+  notebooks, fullscreen, onToggleFullscreen, onPatch, onSetTags, onOpenNoteByTitle, onDelete`), so it
+  mounts identically in Notes' right pane AND the Home cockpit. `formatRelative` is duplicated (tiny
+  pure helper; original stays in Notes for `NoteListItem`). `Notes.tsx` pruned of all now-unused
+  editor imports.
+- **Home dive stage.** Survey deck and a focused **work layer** are two `.layer`s inside a
+  `.home-deck.stage`; `entered` toggles the `work-on` class for a 240ms cross-fade/scale (survey
+  recedes, work view rises), with a `prefers-reduced-motion` fallback. `dive(target)` mounts the work
+  layer (double-rAF in) + scrolls top; `surface()` animates out then unmounts; **Esc** surfaces (and
+  closes the link picker first). Work layer has a `‹ Back to deck` button + breadcrumb.
+- **KR work view = three columns** (`.cw-split`): **reference shelf** (every note linked to the KR,
+  pinned-first then recent, date + preview; `+ New` makes a KR-linked note, **Link a note** opens a
+  searchable picker that sets `roadmap_item_id`) · **NoteEditor** on the selected note · **tasks**
+  (this-week actions for the KR + linked tasks + an add-action input). The editor's focus toggle
+  drives **expand-to-spine**: shelf collapses to a 56px initials rail and the tasks column hides.
+- **Note dive** = NoteEditor full-width. **Task dive** = detail (meta banner, description, linked-KR
+  pill that dives to the KR, subtasks toggle, mark-complete).
+- **Entry points on the deck:** clicking a key-action row or its `◆` KR pill dives into that KR; the
+  right-rail Notes card was **repurposed to "Recent notes"** (top-4, space-filtered, preview) that
+  dive into the note (replacing the old click-a-KR-to-load-notes rail + its `selectedKRId` state).
+- **page.tsx** now passes `setNotes`, `notebooks`, `tagsByNote`, `setTagsByNote` to Home (it already
+  held all four). `onOpenNote` stays in Home's Props (page still passes it) but is no longer
+  destructured/used.
+- Same `notes` table throughout — a KR note is a real Note (in the Notes module + search); the shelf
+  is just the `roadmap_item_id == KR` view. No schema changes.
+- **Still open from this session: calendar drag-and-drop (fix #4).** Code path verified correct
+  (preventDefault on dragover, valid dataTransfer, capacity windows `pointer-events:none`, 13 windows
+  in DB) but the reported breakage couldn't be reproduced without a live browser click (Garry's
+  Chrome needs his Connect). Needs live repro next session — not faked/patched.
+
 ### Jun 21 (later) — Home polish pass
 
 Tuning the default landing deck. One file (`components/Home.tsx`) + one helper (`lib/quotes.ts`).

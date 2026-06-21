@@ -629,6 +629,10 @@ export default function HQPage() {
             habitCheckins={habitCheckins}
             setHabitCheckins={setHabitCheckins}
             notes={notes}
+            setNotes={setNotes}
+            notebooks={notebooks}
+            tagsByNote={tagsByNote}
+            setTagsByNote={setTagsByNote}
             googleConnected={googleConnected}
             reviews={reviews}
             weekForSpace={weekForSpace}
