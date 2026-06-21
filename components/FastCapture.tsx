@@ -11,6 +11,8 @@ import { getCurrentQuarterKRs } from '@/lib/krFilters'
 import { spaceDisplayColorById } from '@/lib/spaceColor'
 import { textToTipTapDoc } from '@/lib/notes/textToDoc'
 
+type CaptureType = 'task' | 'note' | 'action' | 'keyresult' | 'parking' | 'objective'
+
 type Props = {
   spaces: Space[]
   objectives: AnnualObjective[]    // ALL spaces (FAB is a global capture surface)
@@ -23,9 +25,9 @@ type Props = {
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>
   toast: (m: string) => void
+  // External open command (global hotkeys in page.tsx). Bump `key` to re-fire.
+  openRequest?: { type: CaptureType; key: number } | null
 }
-
-type CaptureType = 'task' | 'note' | 'action' | 'keyresult' | 'parking' | 'objective'
 
 // Order matters: index 0 sits closest to the FAB (first thumb-hit), last index
 // highest in the stack. Daily captures (Task, Note) nearest; strategic above.
@@ -45,6 +47,7 @@ function ymdLocal(d: Date): string {
 export default function FastCapture({
   spaces, objectives, roadmapItems, weekStart, activeSpaceId,
   setObjectives, setRoadmapItems, setActions, setTasks, setNotes, toast,
+  openRequest,
 }: Props) {
   const [dialOpen, setDialOpen] = useState(false)
   const [active, setActive] = useState<CaptureType | null>(null)
@@ -70,6 +73,12 @@ export default function FastCapture({
   }, [active])
 
   function openType(type: CaptureType) { setActive(type); setDialOpen(false); setTitle('') }
+
+  // Respond to global hotkeys (⌘T / ⌘N) raised from page.tsx.
+  useEffect(() => {
+    if (openRequest) openType(openRequest.type)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest?.key])
   function close() { setActive(null); setDialOpen(false); setTitle(''); setSecondVal(''); setNoteBody(''); setDueChoice('none'); setKrSearch('') }
 
   async function save(e: React.FormEvent) {

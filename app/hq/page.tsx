@@ -62,6 +62,7 @@ export default function HQPage() {
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [captureRequest, setCaptureRequest] = useState<{ type: 'task' | 'note'; key: number } | null>(null)
 
   // Mobile fallback (May 17): the NavRail collapses into a hamburger-triggered
   // slide-in drawer below 900px. Drawer state lives at the page level so the
@@ -457,13 +458,43 @@ export default function HQPage() {
     return out
   }, [objectives, roadmapItems, actions, tasks, notes, reviews, notebooks, spaces, tagsByTask, tagsByNote, weekStartBySpace, legacyWeekStart])
 
-  // ⌘K / Ctrl-K opens the command palette from anywhere in the app.
+  // Global keyboard layer:
+  //   ⌘K  command palette
+  //   ⌘T  new task   ·  ⌘N  new note   (PWA only — browser tabs reserve ⌘T/⌘N)
+  //   g <key>  go-to nav:  h Home · t Tasks · n Notes · o OKRs · r Roadmap
+  //                        c Calendar · s Scout · f Reflect · p Parking
   useEffect(() => {
+    let gLeaderAt = 0
+    const GO: Record<string, Screen> = {
+      h: 'home', t: 'tasks', n: 'notes', o: 'okr', r: 'roadmap',
+      c: 'calendar', s: 'agent', f: 'reflect', p: 'park',
+    }
+    function isTyping(t: EventTarget | null): boolean {
+      const el = t as HTMLElement | null
+      if (!el || !el.tagName) return false
+      const tag = el.tagName
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable
+    }
     function onKey(e: KeyboardEvent) {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setPaletteOpen(true)
+      const k = e.key.toLowerCase()
+      // ⌘/Ctrl combos fire anywhere (even mid-typing), so capture works from any field.
+      if (e.metaKey || e.ctrlKey) {
+        if (e.altKey || e.shiftKey) return
+        if (k === 'k') { e.preventDefault(); setPaletteOpen(true); return }
+        if (k === 't') { e.preventDefault(); setCaptureRequest({ type: 'task', key: Date.now() }); return }
+        if (k === 'n') { e.preventDefault(); setCaptureRequest({ type: 'note', key: Date.now() }); return }
+        return
       }
+      // Bare keys are suppressed while typing in a field or the note editor.
+      if (isTyping(e.target)) { gLeaderAt = 0; return }
+      if (k === 'g') { gLeaderAt = Date.now(); return }
+      if (gLeaderAt && Date.now() - gLeaderAt < 1200 && GO[k]) {
+        e.preventDefault()
+        setScreen(GO[k])
+        gLeaderAt = 0
+        return
+      }
+      gLeaderAt = 0
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
@@ -780,6 +811,7 @@ export default function HQPage() {
         setTasks={setTasks}
         setNotes={setNotes}
         toast={setToast}
+        openRequest={captureRequest}
       />
       )}
 
