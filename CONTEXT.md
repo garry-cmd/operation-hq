@@ -3,16 +3,17 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 20, 2026**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 21, 2026**.
 
 ---
 
 ## What this is
 
 A single-user life-management + OKR system. Desktop-first, used many times a day.
-Modules: **Home** (all-spaces weekly deck, default landing) · **Chief of Staff** (AI agent, voice) ·
-**OKRs + Roadmap** (strategic) · **Focus + Tasks + Notes + Calendar** (daily) · **Settings** ·
-**Reflect + Parking** (archive). Proactive web-push briefings layer on top. Garry is the sole user
+Modules: **Home** (all-spaces weekly deck + space filter + weekly-close strip; default landing) ·
+**Chief of Staff** (AI agent, voice) · **OKRs + Roadmap** (strategic) · **Tasks + Notes + Calendar**
+(daily) · **Reflect** (per-space weekly ritual hub — Plan + Close + archive) · **Settings** ·
+**Parking** (archive). Proactive web-push briefings layer on top. Garry is the sole user
 (Mel/multi-user is deferred indefinitely — see Backlog).
 
 ---
@@ -49,6 +50,55 @@ running deployment can't see it.
 ---
 
 ## Current state — shipped
+
+### Jun 21 — Focus retired · Reflect = weekly ritual hub · Home close strip
+
+Focus was made fully redundant and **deleted**; its abilities were redistributed across Home,
+Reflect, OKRs/ActionPanel, and the FAB. Six increments, each its own deploy; Focus deleted **last**,
+only after every replacement was live. No schema changes this session.
+
+- **Home — space filter restored + close strip + tag pill** (`components/Home.tsx`):
+  - **Space filter chips** (All + per-space) re-added — narrow key actions, tasks-due, overdue, and
+    habits (not the calendar ribbon, which isn't space-tagged). *(These had drifted out of the code
+    after the Jun 20 Evolve refresh despite the doc below still claiming them — now genuinely present.)*
+  - **Weekly-close status strip** below the filter — passive, all-spaces. Per space: muted ✓ when
+    caught up, accent "close →" for the current week, amber "overdue →" when behind; click launches
+    that space's Close Week. Renders only when ≥1 space is open. Same cursor-week rule as Reflect.
+  - **Action-row tag pill** (backlog/waiting/doing) now shown on Home's key-action rows
+    (`TAG_STYLE` mirrored from ActionPanel — read-only display; set in ActionPanel).
+- **Reflect = per-space weekly ritual hub** (`components/Reflect.tsx`): owns both rituals + archive.
+  - **Close Week launcher** — per-space rows: "Close week →" / "✓ up to date" (cursor advanced past
+    the current week) / "✓ closed".
+  - **Plan Week launcher** — a "Plan" button per space opens the existing `PlanWeek` modal for that
+    space's cursor week. *(Pivot: Plan Week was briefly slated for Chief of Staff / agent-assist;
+    Garry pivoted to "put it in Reflect like Close Week" — both human-driven, no agent.)*
+  - **Archive** now shows **all spaces** (was active-space-only) with a space dot + name per card.
+- **Close & Plan wizards decoupled from the active space.** `closingWizard` and `planningWizard`
+  page state are each `{ spaceId, week } | null`; each wizard's data is re-derived for the target
+  space at the render site (objectives/KRs/actions/habit+metric checkins/reviews filtered to
+  `spaceId`; `setWeekStart` → `setWeekStartForSpace(spaceId, …)`). Any space closes/plans, not just
+  the active one. `CloseWeekWizard` and `PlanWeek` components are unchanged.
+- **Forced-launch auto-popup REMOVED.** The `useEffect` that auto-opened the close wizard for the
+  active space's unclosed last week (and `forceCheckDoneRef`) is gone. The passive Home close strip
+  replaces it — on the default landing, and covering **all** spaces, which the popup never did.
+- **Focus deleted.** `components/Focus.tsx` + `components/FocusTasks.tsx` removed; NavRail Focus
+  entry/icon/badge + `focusOpenCount` gone; `'focus'` dropped from both `Screen` unions; page's
+  `openActionId` state removed. The ⌘K "open action" result (which jumped to Focus + ActionPanel)
+  now routes to the action's KR in **OKRs** via the existing `krId` plumbing. App description
+  (`manifest.json` + `layout.tsx`) no longer advertises "Weekly Focus".
+- **Already-covered abilities (verified, no new code):** inline action-add lives in both the FAB
+  (`FastCapture` Action dial) and `ObjectiveCard`'s "Add action"; tag editing lives in `ActionPanel`
+  (canonical picker, used by OKRs/ObjectivePanel). FAB toast "…to Focus!" → "Action added!".
+
+**Per-space close cadence (confirmed):** work spaces close **Friday**, personal spaces **Sun/Mon** —
+independent `weekStartBySpace` cursors are real and used. Both launchers target each space's cursor
+week; "caught up" = cursor advanced past the current Monday.
+
+**Investigated, not a bug:** a Keeply close that looked like it "didn't roll forward / persist" had
+in fact fully persisted (review + carried action created at the click timestamp — verified in
+Supabase). The real issue was the launcher re-prompting a *future* week after the cursor advanced;
+fixed with the "✓ up to date" caught-up state.
+
 
 ### Jun 20 (latest) — Evolve UI/UX refresh (whole-app) + Overview deleted
 
@@ -220,7 +270,7 @@ Focus's all-spaces concept shipped as a dedicated **Home** screen (`components/H
   Keeply `#0B1E3F` is invisible on dark, needs a display variant).
 - **Daily quote** under the header — curated public-domain pool (stoics · sailors · Franklin),
   rotated by day-of-year, no external API. (`lib/quotes.ts`.)
-- **Space filter chips** (All + per-space) filter the whole board.
+- **Space filter chips** (All + per-space) filter the whole board. *(Dropped in the Jun 20 Evolve refresh; restored Jun 21 — see top of Current state.)*
 - **Shape-of-week ribbon** — calendar only (meetings · all-day · holidays), Mon–Sun, today
   highlighted. Needs the all-day-events fetch (currently skipped — see follow-ups).
 - **Key actions** — all spaces, flat, grouped by space (2 levels, not 3); each row has a
@@ -355,7 +405,7 @@ redirect URIs for prod + `localhost:3000`.
    (`update_note` currently rewrites blind) and future read tools (`search_notes`, etc.). Its own pass.
 2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Focus/Calendar surfaces.
+3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
 4. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
    `delete_kr`; calendar event **edit/delete** (two systems: `calendar_blocks` row + Google event);
    note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context); Stage 3
@@ -365,10 +415,10 @@ redirect URIs for prod + `localhost:3000`.
 5. `useSpaceData` hook (audit #4). ~1hr.
 6. "Plan your first week" for empty spaces (see Parked).
 7. Quarter-close summary when the rolling 4Q window advances. ~3–4hr.
-8. Recurring-action visual badge on Focus. ~30min.
+8. Recurring-action visual badge on Home action rows (Focus retired). ~30min.
 9. Drag to reorder objectives (`sort_order` exists). ~2hr.
 10. Drag to reorder tasks (`sort_order` exists). ~2hr.
-11. Extract shared `TAG_STYLE`/tag picker (dup'd in `Focus`, `ActionPanel`, `Tasks`). ~30min.
+11. Extract shared `TAG_STYLE`/tag picker (dup'd in `Home`, `ActionPanel`, `Tasks`). ~30min.
 12. Propagate done-KR treatment (strikethrough + 0.45 opacity) beyond Roadmap. ~1hr.
 13. Metric-card pace-aware status (compare progress to quarter time-elapsed). ~1–2hr.
 14. Responsive `ActionPanel` / `ObjectivePanel` (still desktop-only at 800px). ~2hr.
