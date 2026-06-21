@@ -269,20 +269,6 @@ export default function Home({
         </div>
       </div>
 
-      {/* space filter — narrows key actions, tasks, overdue, habits (not the calendar ribbon) */}
-      <div className="spacefilter">
-        <button className={`spchip${spaceFilter === null ? ' on' : ''}`} onClick={() => setSpaceFilter(null)}>All</button>
-        {orderedSpaces.map(sp => (
-          <button
-            key={sp.id}
-            className={`spchip${spaceFilter === sp.id ? ' on' : ''}`}
-            onClick={() => setSpaceFilter(prev => prev === sp.id ? null : sp.id)}
-          >
-            <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
-          </button>
-        ))}
-      </div>
-
       {/* quote */}
       <div className="quote">
         <span className="mark">“</span>
@@ -330,6 +316,20 @@ export default function Home({
             )
           })}
         </div>
+      </div>
+
+      {/* space filter — narrows the board below (key actions, tasks, overdue, habits; not the ribbon) */}
+      <div className="spacefilter">
+        <button className={`spchip${spaceFilter === null ? ' on' : ''}`} onClick={() => setSpaceFilter(null)}>All</button>
+        {orderedSpaces.map(sp => (
+          <button
+            key={sp.id}
+            className={`spchip${spaceFilter === sp.id ? ' on' : ''}`}
+            onClick={() => setSpaceFilter(prev => prev === sp.id ? null : sp.id)}
+          >
+            <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
+          </button>
+        ))}
       </div>
 
       {/* body */}
@@ -494,7 +494,7 @@ export default function Home({
         .hd-row h1 .sub{font-size:14.5px;font-weight:500;color:var(--navy-400);letter-spacing:0;}
         .wknav button{width:36px;height:36px;border-radius:50%;background:var(--navy-800);border:1px solid var(--navy-600);color:var(--navy-200);font-size:15px;cursor:pointer;margin-left:8px;}
         .wknav button.today{font-size:9px;color:var(--accent);}
-        .spacefilter{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 2px;}
+        .spacefilter{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 18px;}
         .spchip{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--navy-200);border:1px solid var(--line);cursor:pointer;}
         .spchip:hover{border-color:var(--accent);}
         .spchip.on{border-color:var(--accent);background:var(--accent-dim);color:var(--navy-50);}
@@ -508,10 +508,10 @@ export default function Home({
         .cs-chip.done{color:var(--navy-400);}
         .cs-chip.done .cs-ok{color:var(--nw-nominal-text,#7fe27a);font-weight:700;}
 
-        .quote{position:relative;margin:16px 0 20px;padding:6px 0 6px 22px;border-left:3px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:20px;}
-        .quote .mark{position:absolute;left:9px;top:-8px;font-size:30px;color:var(--line-strong);font-family:Georgia,serif;}
-        .quote .q{font-size:19px;font-style:italic;color:var(--nw-cream);font-family:Georgia,'Times New Roman',serif;}
-        .quote .by{font-family:var(--font-mono);font-size:12px;letter-spacing:.02em;color:var(--navy-300);white-space:nowrap;}
+        .quote{position:relative;margin:18px 0 23px;padding:7px 0 7px 25px;border-left:3px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:20px;}
+        .quote .mark{position:absolute;left:9px;top:-10px;font-size:35px;color:var(--line-strong);font-family:Georgia,serif;}
+        .quote .q{font-size:22px;font-style:italic;color:var(--nw-cream);font-family:Georgia,'Times New Roman',serif;}
+        .quote .by{font-family:var(--font-mono);font-size:13.5px;letter-spacing:.02em;color:var(--navy-300);white-space:nowrap;}
 
         .ribhead{display:flex;align-items:baseline;gap:12px;margin-bottom:10px;}
         .ribhead .cap{font-size:12px;color:var(--navy-400);}
