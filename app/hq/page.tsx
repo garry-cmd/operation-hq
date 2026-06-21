@@ -1,8 +1,8 @@
 'use client'
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note, CapacityBlock, CalendarBlock } from '@/lib/types'
-import { getMonday, ACTIVE_Q, addWeeks, formatWeek } from '@/lib/utils'
+import { getMonday, ACTIVE_Q, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
@@ -127,11 +127,6 @@ export default function HQPage() {
   // Reverse direction: when clicking a tag chip on a task/note row,
   // prefill the Tags page with that tag selected.
   const [tagsInitialTag, setTagsInitialTag] = useState<string | null>(null)
-
-  // Guards the once-per-space force-launch check. Reset when the user switches
-  // spaces so a different space's unclosed last week can also trigger.
-  const forceCheckDoneRef = useRef(false)
-  useEffect(() => { forceCheckDoneRef.current = false }, [activeSpaceId])
 
 
   useEffect(() => {
@@ -344,46 +339,10 @@ export default function HQPage() {
 
   useEffect(() => { if (user) loadAll() }, [user, loadAll])
 
-  // Forced launch of CloseWeekWizard when last week wasn't closed.
-  // Runs once per space (reset on space switch). Fires only after data loads,
-  // and only if the prior Monday had real activity in this space (planned
-  // actions or habit checkins) AND no weekly_review exists for it. For stale
-  // gaps of more than one week, the wizard's own carry-forward logic handles
-  // landing carries in the current week on finish — so we only check the
-  // immediately prior week; deeper gaps can be closed manually from Focus.
-  useEffect(() => {
-    if (loading || !activeSpaceId || forceCheckDoneRef.current) return
-    if (closingWizard) return // already open (rare, but don't clobber)
-    forceCheckDoneRef.current = true
+  // Weekly-close prompting moved to Home's all-spaces close strip (passive,
+  // glanceable, per-space) — replaces the old active-space-only auto-popup.
 
-    const lastMonday = addWeeks(getMonday(), -1)
 
-    // Space-scope on the fly — cheap and avoids depending on derived state
-    // that's recomputed later in this render.
-    const spaceKRIds = new Set(
-      roadmapItems.filter(i => i.space_id === activeSpaceId).map(i => i.id)
-    )
-
-    // Only a fully-closed review (closed_at set by commitFinish/skipWeek)
-    // suppresses the re-prompt. A draft (Step 1 saved, Step 2 abandoned)
-    // still triggers — the user wants to be brought back to finish closing.
-    const hasClosedReview = reviews.some(
-      r => r.space_id === activeSpaceId && r.week_start === lastMonday && r.closed_at != null
-    )
-    if (hasClosedReview) return
-
-    const hadActions = actions.some(
-      a => spaceKRIds.has(a.roadmap_item_id) && a.week_start === lastMonday
-    )
-    const hadHabits = habitCheckins.some(h => {
-      if (!spaceKRIds.has(h.roadmap_item_id)) return false
-      const hMonday = getMonday(new Date(h.date + 'T12:00:00'))
-      return hMonday === lastMonday
-    })
-    if (!hadActions && !hadHabits) return
-
-    setClosingWizard({ spaceId: activeSpaceId, week: lastMonday })
-  }, [loading, activeSpaceId, reviews, actions, habitCheckins, objectives, roadmapItems, closingWizard])
 
   // Search index — a flat list of every searchable thing, rebuilt only when
   // its source state changes. The command palette ranks this in-memory.
@@ -694,6 +653,9 @@ export default function HQPage() {
             setHabitCheckins={setHabitCheckins}
             notes={notes}
             googleConnected={googleConnected}
+            reviews={reviews}
+            weekForSpace={weekForSpace}
+            onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })}
             onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
             onOpenTasks={() => setScreen('tasks')}
             onOpenCalendar={() => setScreen('calendar')}

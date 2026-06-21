@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note } from '@/lib/types'
+import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, WeeklyReview } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import { quoteForDay } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
@@ -47,6 +47,9 @@ interface Props {
   setHabitCheckins: (fn: (h: HabitCheckin[]) => HabitCheckin[]) => void
   notes: Note[]
   googleConnected: boolean
+  reviews: WeeklyReview[]
+  weekForSpace: (spaceId: string) => string
+  onCloseWeek: (spaceId: string, week: string) => void
   onOpenNote: (noteId: string) => void
   onOpenTasks: () => void
   onOpenCalendar: () => void
@@ -56,6 +59,7 @@ interface Props {
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions, tasks, setTasks,
   habitCheckins, setHabitCheckins, notes, googleConnected,
+  reviews, weekForSpace, onCloseWeek,
   onOpenNote, onOpenTasks, onOpenCalendar, toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
@@ -77,6 +81,20 @@ export default function Home({
     const sp = id ? spaceById.get(id) : null
     return sp ? spaceDisplayColor(sp) : 'var(--navy-500)'
   }
+
+  // Per-space weekly-close status — same rule as Reflect's launcher: a space's
+  // cursor week is "open" (closeable) when it's this week or earlier and has no
+  // closed review; "overdue" when strictly before this week. Independent of the
+  // week Home is currently displaying (close cadence is per-space, not the deck).
+  const thisMonday = getMonday()
+  const closeRows = orderedSpaces.map(sp => {
+    const wk = weekForSpace(sp.id)
+    const closed = reviews.some(r => r.space_id === sp.id && r.week_start === wk && r.closed_at != null)
+    const open = !closed && wk <= thisMonday
+    const overdue = open && wk < thisMonday
+    return { sp, wk, open, overdue }
+  })
+  const anyOpen = closeRows.some(r => r.open)
 
   // Tick the now-line every minute (only matters on the current week).
   useEffect(() => {
@@ -251,6 +269,26 @@ export default function Home({
           </button>
         ))}
       </div>
+
+      {/* weekly close status — passive, all-spaces; appears only when a close is due */}
+      {anyOpen && (
+        <div className="closestrip">
+          <span className="label">Weekly close</span>
+          <div className="cs-chips">
+            {closeRows.map(({ sp, wk, open, overdue }) => open ? (
+              <button key={sp.id} className={`cs-chip${overdue ? ' late' : ''}`} onClick={() => onCloseWeek(sp.id, wk)} title={`Close week of ${fmtRange(wk)}`}>
+                <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
+                <span className="cs-act">{overdue ? 'overdue →' : 'close →'}</span>
+              </button>
+            ) : (
+              <span key={sp.id} className="cs-chip done">
+                <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
+                <span className="cs-ok">✓</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* quote */}
       <div className="quote">
@@ -446,6 +484,16 @@ export default function Home({
         .spchip{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--navy-200);border:1px solid var(--line);cursor:pointer;}
         .spchip:hover{border-color:var(--accent);}
         .spchip.on{border-color:var(--accent);background:var(--accent-dim);color:var(--navy-50);}
+        .closestrip{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0 2px;padding:9px 14px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);}
+        .cs-chips{display:flex;gap:8px;flex-wrap:wrap;}
+        .cs-chip{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;font-size:13px;font-family:inherit;border:1px solid var(--line);background:var(--surface-2);color:var(--navy-100);}
+        button.cs-chip{cursor:pointer;}
+        button.cs-chip:hover{border-color:var(--accent);}
+        .cs-chip .cs-act{font-family:var(--font-mono);font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent);}
+        .cs-chip.late{border-color:var(--nw-caution-text,#f5b840);}
+        .cs-chip.late .cs-act{color:var(--nw-caution-text,#f5b840);}
+        .cs-chip.done{color:var(--navy-400);}
+        .cs-chip.done .cs-ok{color:var(--nw-nominal-text,#7fe27a);font-weight:700;}
 
         .quote{position:relative;margin:16px 0 20px;padding:6px 0 6px 22px;border-left:3px solid var(--line-2);display:flex;align-items:center;justify-content:space-between;gap:20px;}
         .quote .mark{position:absolute;left:9px;top:-8px;font-size:30px;color:var(--line-strong);font-family:Georgia,serif;}
