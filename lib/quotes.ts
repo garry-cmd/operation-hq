@@ -105,3 +105,10 @@ export function quoteForDay(date: Date = new Date()): Quote {
   const idx = (dayOfYear(date) + date.getFullYear()) % n
   return QUOTES[idx]
 }
+
+/** A random quote — fresh on every call (e.g. once per page load/mount). */
+export function randomQuote(): Quote {
+  const n = QUOTES.length
+  if (n === 0) return { text: '', author: '' }
+  return QUOTES[Math.floor(Math.random() * n)]
+}

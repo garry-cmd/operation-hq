@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, WeeklyReview, ActionTag } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
-import { quoteForDay } from '@/lib/quotes'
+import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
 import * as tasksDb from '@/lib/db/tasks'
@@ -121,7 +121,8 @@ export default function Home({
     return () => { cancelled = true }
   }, [googleConnected, weekMonday, weekEnd])
 
-  const quote = useMemo(() => quoteForDay(new Date()), [])
+  // Fresh quote on every mount (page open / refresh / nav back to Home).
+  const [quote] = useState(() => randomQuote())
 
   // ── Key actions: this week's weekly_actions, grouped by space ──
   const actionGroups = useMemo(() => {
@@ -137,12 +138,13 @@ export default function Home({
     const groups = orderedSpaces
       .filter(sp => bySpace.has(sp.id) && (spaceFilter === null || sp.id === spaceFilter))
       .map(sp => {
-        const list = (bySpace.get(sp.id) ?? []).slice().sort((a, b) => Number(a.completed) - Number(b.completed))
-        const open = list.filter(a => !a.completed).length
-        const done = list.length - open
-        doneTotal += done; total += list.length
-        return { space: sp, list, open, done }
+        const full = bySpace.get(sp.id) ?? []
+        const list = full.filter(a => !a.completed) // completed rows fall off the deck
+        const done = full.length - list.length
+        doneTotal += done; total += full.length
+        return { space: sp, list, open: list.length, done }
       })
+      .filter(g => g.list.length > 0) // a space whose actions are all done drops out
     return { groups, doneTotal, total }
   }, [actions, weekMonday, krById, orderedSpaces, spaceFilter])
 
@@ -177,15 +179,18 @@ export default function Home({
     [notes, selectedKRId])
 
   // ── meetings + all-day grouped by date ──
+  // Drop self-created "Busy (…)" / "Blocked (…)" holds — they're capacity blocks,
+  // not real meetings. Keep everything else.
+  const isHold = (title: string) => /^\s*(busy|blocked)\b/i.test(title)
   const busyByDate = useMemo(() => {
     const m = new Map<string, GoogleBusyEvent[]>()
-    for (const e of busyEvents) { const a = m.get(e.date) ?? []; a.push(e); m.set(e.date, a) }
+    for (const e of busyEvents) { if (isHold(e.title)) continue; const a = m.get(e.date) ?? []; a.push(e); m.set(e.date, a) }
     for (const a of m.values()) a.sort((x, y) => x.startMinute - y.startMinute)
     return m
   }, [busyEvents])
   const allDayByDate = useMemo(() => {
     const m = new Map<string, GoogleAllDayEvent[]>()
-    for (const e of allDayEvents) { const a = m.get(e.date) ?? []; a.push(e); m.set(e.date, a) }
+    for (const e of allDayEvents) { if (isHold(e.title)) continue; const a = m.get(e.date) ?? []; a.push(e); m.set(e.date, a) }
     return m
   }, [allDayEvents])
 
@@ -278,26 +283,6 @@ export default function Home({
         ))}
       </div>
 
-      {/* weekly close status — passive, all-spaces; appears only when a close is due */}
-      {anyOpen && (
-        <div className="closestrip">
-          <span className="label">Weekly close</span>
-          <div className="cs-chips">
-            {closeRows.map(({ sp, wk, open, overdue }) => open ? (
-              <button key={sp.id} className={`cs-chip${overdue ? ' late' : ''}`} onClick={() => onCloseWeek(sp.id, wk)} title={`Close week of ${fmtRange(wk)}`}>
-                <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
-                <span className="cs-act">{overdue ? 'overdue →' : 'close →'}</span>
-              </button>
-            ) : (
-              <span key={sp.id} className="cs-chip done">
-                <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
-                <span className="cs-ok">✓</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* quote */}
       <div className="quote">
         <span className="mark">“</span>
@@ -356,7 +341,7 @@ export default function Home({
             <span className="kadone">{actionGroups.total === 0 ? 'no actions this week' : `${actionGroups.doneTotal} of ${actionGroups.total} done`}</span>
           </div>
           {actionGroups.groups.length === 0 ? (
-            <div className="empty">No key actions planned for this week.</div>
+            <div className="empty">{actionGroups.total > 0 ? 'All key actions complete for this week. ✓' : 'No key actions planned for this week.'}</div>
           ) : actionGroups.groups.map(({ space, list, open, done }) => (
             <div key={space.id} className="spgrp">
               <div className="sphead">
@@ -449,6 +434,26 @@ export default function Home({
               </>
             )}
           </div>
+
+          {/* weekly close — passive, all-spaces; appears only when a close is due */}
+          {anyOpen && (
+            <div className="card closecard">
+              <div className="chead"><span className="label">Weekly close</span></div>
+              <div className="cs-chips">
+                {closeRows.map(({ sp, wk, open, overdue }) => open ? (
+                  <button key={sp.id} className={`cs-chip${overdue ? ' late' : ''}`} onClick={() => onCloseWeek(sp.id, wk)} title={`Close week of ${fmtRange(wk)}`}>
+                    <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
+                    <span className="cs-act">{overdue ? 'overdue →' : 'close →'}</span>
+                  </button>
+                ) : (
+                  <span key={sp.id} className="cs-chip done">
+                    <span className="dot" style={{ background: spaceDisplayColor(sp) }} />{sp.name}
+                    <span className="cs-ok">✓</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </aside>
       </div>
 
@@ -493,7 +498,6 @@ export default function Home({
         .spchip{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:999px;font-size:13px;font-family:inherit;background:var(--surface-2);color:var(--navy-200);border:1px solid var(--line);cursor:pointer;}
         .spchip:hover{border-color:var(--accent);}
         .spchip.on{border-color:var(--accent);background:var(--accent-dim);color:var(--navy-50);}
-        .closestrip{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:12px 0 2px;padding:9px 14px;border:1px solid var(--line-2);border-radius:12px;background:var(--surface);}
         .cs-chips{display:flex;gap:8px;flex-wrap:wrap;}
         .cs-chip{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;font-size:13px;font-family:inherit;border:1px solid var(--line);background:var(--surface-2);color:var(--navy-100);}
         button.cs-chip{cursor:pointer;}
@@ -528,9 +532,9 @@ export default function Home({
         .mtg .mdot{width:6px;height:6px;border-radius:50%;background:var(--navy-500);flex-shrink:0;}
         .mtg .mt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .mtg .tm{font-family:var(--font-mono);color:var(--navy-400);font-variant-numeric:tabular-nums;flex-shrink:0;}
-        .allday{font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-        .allday.ev{background:#1c2436;color:#9db8e8;}
-        .allday.holiday{background:var(--nw-caution-bg,#251a08);color:var(--nw-caution-text,#f5b840);}
+        .allday{font-size:11px;padding:3px 8px;border-radius:6px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border:1px solid transparent;}
+        .allday.ev{background:var(--accent-bg);color:var(--accent);border-color:var(--accent-line);}
+        .allday.holiday{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-bg);}
         .dmore{font-size:11px;color:var(--navy-400);padding:1px 0 0 2px;}
 
         .nowline{position:absolute;top:0;bottom:0;width:2px;background:#e8c060;box-shadow:0 0 8px rgba(232,192,96,.5);z-index:5;pointer-events:none;}
