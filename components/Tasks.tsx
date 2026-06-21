@@ -250,13 +250,20 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     })
   }, [tasks, scope, tagsByTask, today])
 
-  // Section the filtered list by due bucket. Sections render in this
-  // fixed order. We compute the buckets up-front to keep the JSX flat.
+  // Open vs completed split. Completed tasks are pooled into ONE "Done" section
+  // at the bottom of every scope (rather than interleaved per-section), rendered
+  // once below the add-task bar and collapsible via the header toggle. The
+  // open-only list feeds the due buckets + section groups above it. (Smart
+  // views already exclude completed upstream, so completedFiltered is empty
+  // there and neither the pool nor the toggle appears.)
+  const openFiltered = useMemo(() => filtered.filter(t => !t.completed_at), [filtered])
+  const completedFiltered = useMemo(() => filtered.filter(t => !!t.completed_at), [filtered])
+
+  // Section the OPEN list by due bucket. Sections render in this fixed order.
   const dueBuckets = useMemo(() => {
     const thisWeek: Task[] = []
     const nextWeek: Task[] = []
     const later: Task[] = []
-    const done: Task[] = []
     // Week boundaries: "This week" = today through Sunday of current calendar
     // week. "Next week" = Mon-Sun of next calendar week. Overdue rolls into
     // This Week (rows still get row-level rust coloring on the date pill).
@@ -267,8 +274,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     const sundayOfThisWeek = isoAddDays(today, daysUntilSunday)
     const sundayOfNextWeek = isoAddDays(sundayOfThisWeek, 7)
 
-    for (const t of filtered) {
-      if (t.completed_at) { done.push(t); continue }
+    for (const t of openFiltered) {
       if (!t.due_date)    { later.push(t); continue }
       if (t.due_date <= sundayOfThisWeek)       thisWeek.push(t)
       else if (t.due_date <= sundayOfNextWeek)  nextWeek.push(t)
@@ -278,9 +284,8 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
       { name: 'This week', tasks: thisWeek, accent: undefined },
       { name: 'Next week', tasks: nextWeek, accent: undefined },
       { name: 'Later',     tasks: later,    accent: undefined },
-      { name: 'Done',      tasks: done,     accent: 'var(--navy-400)' },
     ].filter(s => s.tasks.length > 0)
-  }, [filtered, today])
+  }, [openFiltered, today])
 
   // The container (List or Space) the current scope represents, if any.
   const scopeContainer = useMemo<{ kind: 'list' | 'space'; id: string } | null>(() => {
@@ -310,7 +315,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     const validIds = new Set(scopeSections.map(s => s.id))
     const byId = new Map<string, Task[]>()
     const ungrouped: Task[] = []
-    for (const t of filtered) {
+    for (const t of openFiltered) {
       if (t.section_id && validIds.has(t.section_id)) {
         const arr = byId.get(t.section_id) ?? []
         arr.push(t)
@@ -322,7 +327,7 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
     const groups: { section: TaskSection | null; tasks: Task[] }[] = [{ section: null, tasks: ungrouped }]
     for (const s of scopeSections) groups.push({ section: s, tasks: byId.get(s.id) ?? [] })
     return groups
-  }, [useSectionView, scopeSections, filtered])
+  }, [useSectionView, scopeSections, openFiltered])
 
   const selected = useMemo(
     () => selectedId ? tasks.find(t => t.id === selectedId) ?? null : null,
@@ -817,16 +822,36 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
 
       {/* ── Main task list ── */}
       <main style={{ overflowY: 'auto', padding: isMobile ? '14px 14px 80px' : '20px 24px 60px' }}>
-        <header style={{ marginBottom: 14 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Daily · Tasks</div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, margin: 0, color: 'var(--navy-50)', letterSpacing: '-.02em' }}>{heading.title}</h1>
-          {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
+        <header style={{ marginBottom: 14, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Daily · Tasks</div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, margin: 0, color: 'var(--navy-50)', letterSpacing: '-.02em' }}>{heading.title}</h1>
+            {heading.subtitle && <div style={{ fontSize: 13, color: 'var(--navy-300)', marginTop: 2 }}>{heading.subtitle}</div>}
+          </div>
+          {completedFiltered.length > 0 && (
+            <button onClick={toggleShowDone} title={showDone ? 'Hide completed tasks' : 'Show completed tasks'}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 7, flexShrink: 0,
+                fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.14em', textTransform: 'uppercase',
+                color: showDone ? 'var(--navy-300)' : 'var(--navy-400)',
+                background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 7,
+                padding: '7px 11px', cursor: 'pointer',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--navy-500)'; e.currentTarget.style.color = 'var(--navy-100)' }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--navy-600)'; e.currentTarget.style.color = showDone ? 'var(--navy-300)' : 'var(--navy-400)' }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>
+                {!showDone && <line x1="3" y1="3" x2="21" y2="21"/>}
+              </svg>
+              {showDone ? 'Hide done' : 'Show done'}
+            </button>
+          )}
         </header>
 
         {useSectionView ? (
           // ── Section view (List always; Space once it has sections) ──
           <>
-            {filtered.length === 0 && (
+            {openFiltered.length === 0 && (
               <div style={{ padding: 40, textAlign: 'center', color: 'var(--navy-300)', fontSize: 13 }}>
                 Nothing here yet. Add a task below, or a section to organize this {scope.kind === 'space' ? 'space' : 'list'}.
               </div>
@@ -915,41 +940,20 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
                 Nothing here. {scope.kind === 'smart' && scope.view === 'today' && 'Enjoy your day.'}
               </div>
             )}
-            {dueBuckets.map(section => {
-              const isDone = section.name === 'Done'
-              const collapsed = isDone && !showDone
-              return (
+            {dueBuckets.map(section => (
               <section key={section.name} style={{ marginTop: 22 }}>
-                {isDone ? (
-                  <button onClick={toggleShowDone}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label-dim)',
-                      letterSpacing: '.18em', textTransform: 'uppercase',
-                      margin: '0 0 8px', padding: '0 12px',
-                      background: 'none', border: 'none', cursor: 'pointer',
-                    }}>
-                    <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
-                      style={{ transform: collapsed ? 'rotate(-90deg)' : 'rotate(0)', transition: 'transform .15s' }}>
-                      <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                    {section.name} · {section.tasks.length}
-                  </button>
-                ) : (
-                  <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', letterSpacing: '.18em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
-                    {section.name} · {section.tasks.length}
-                  </h2>
-                )}
-                {!collapsed && section.tasks.map(renderTaskWithKids)}
+                <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', letterSpacing: '.18em', textTransform: 'uppercase', margin: '0 0 8px', padding: '0 12px' }}>
+                  {section.name} · {section.tasks.length}
+                </h2>
+                {section.tasks.map(renderTaskWithKids)}
               </section>
-              )
-            })}
+            ))}
             {/* Space can opt into section grouping by adding its first section */}
             {scope.kind === 'space' && addSectionControl}
           </>
         )}
 
-        {/* Quick-add — sits at the bottom of the list, after all sections */}
+        {/* Quick-add — sits after the open tasks and ABOVE the Done pool. */}
         <form onSubmit={e => { e.preventDefault(); onQuickAdd() }} style={{ marginTop: 18 }}>
           <input ref={quickAddRef}
             value={quickAdd}
@@ -964,6 +968,29 @@ export default function Tasks({ spaces, activeSpaceId, objectives, roadmapItems,
             onFocus={e => { e.currentTarget.style.borderStyle = 'solid'; e.currentTarget.style.borderColor = 'var(--accent)' }}
             onBlur={e => { e.currentTarget.style.borderStyle = 'dashed'; e.currentTarget.style.borderColor = 'var(--navy-500)' }} />
         </form>
+
+        {/* Done pool — completed tasks from every section/bucket, collected here
+            below the add bar. Collapsed by default; the header toggle reveals it.
+            Mirrors the header button so either control flips the same state. */}
+        {completedFiltered.length > 0 && (
+          <section style={{ marginTop: 22 }}>
+            <button onClick={toggleShowDone}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label-dim)',
+                letterSpacing: '.18em', textTransform: 'uppercase',
+                margin: '0 0 8px', padding: '0 12px',
+                background: 'none', border: 'none', cursor: 'pointer',
+              }}>
+              <svg width="9" height="9" viewBox="0 0 12 12" fill="none"
+                style={{ transform: showDone ? 'rotate(0)' : 'rotate(-90deg)', transition: 'transform .15s' }}>
+                <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              Done · {completedFiltered.length}
+            </button>
+            {showDone && completedFiltered.map(renderTaskWithKids)}
+          </section>
+        )}
       </main>
 
       {/* ── Detail panel ── On desktop, occupies the right grid column (340px).
@@ -1158,12 +1185,16 @@ function TaskRow({ task, tags, space, list, krTitle, subtaskProgress, selected, 
   // Deadline chip shows only when there's a hard deadline distinct from the
   // scheduled due date — otherwise it'd just duplicate the due pill.
   const showDeadline = !!task.deadline_date && task.deadline_date !== task.due_date
-  const hasMeta = space || tags.length > 0 || task.recurrence_text || krTitle || durLabel || subtaskProgress || showDeadline
+  const desc = task.description?.trim()
+  // Row 3 (schedule/tags) renders only when something lives in it. The due pill
+  // now lives here too (moved off the old trailing column), so its presence
+  // counts toward whether the row appears.
+  const hasMeta = !!task.due_date || !!space || tags.length > 0 || !!task.recurrence_text || !!krTitle || !!durLabel || !!subtaskProgress || showDeadline
   return (
     <button onClick={onClick}
       style={{
-        width: '100%', display: 'grid', gridTemplateColumns: '22px 10px 1fr auto auto', gap: 10, alignItems: 'center',
-        padding: '8px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
+        width: '100%', display: 'grid', gridTemplateColumns: '22px 12px 1fr', gap: 10, alignItems: 'start',
+        padding: '9px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
         background: selected ? 'var(--accent-dim)' : 'none', textAlign: 'left',
         fontFamily: 'inherit',
       }}
@@ -1171,21 +1202,34 @@ function TaskRow({ task, tags, space, list, krTitle, subtaskProgress, selected, 
       onMouseLeave={e => { if (!selected) e.currentTarget.style.background = 'none' }}>
       <span onClick={e => { e.stopPropagation(); onToggle() }}
         style={{
-          width: 17, height: 17, borderRadius: '50%',
+          marginTop: 1, width: 17, height: 17, borderRadius: '50%',
           border: `1.5px solid ${done ? 'var(--teal-text)' : 'var(--navy-400)'}`,
           background: done ? 'var(--teal-text)' : 'transparent',
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', fontSize: 10, transition: 'all .15s',
+          color: '#fff', fontSize: 10, transition: 'all .15s', flexShrink: 0,
         }}>
         {done && '✓'}
       </span>
-      <span style={{ width: 10, height: 10, borderRadius: 2, background: task.priority < 4 ? PRIORITY_COLOR[task.priority] : 'transparent' }} />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-        <span style={{ fontSize: 13.5, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {task.title}
+      <span style={{ marginTop: 5, width: 10, height: 10, borderRadius: 2, background: task.priority < 4 ? PRIORITY_COLOR[task.priority] : 'transparent' }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0 }}>
+        {/* Row 1 — name (always) */}
+        <span style={{ fontSize: 13.5, lineHeight: 1.3, color: done ? 'var(--navy-400)' : 'var(--navy-50)', textDecoration: done ? 'line-through' : 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {task.title || 'Untitled'}
         </span>
+        {/* Row 2 — description (only when set; clamped to one line) */}
+        {desc && (
+          <span style={{ fontSize: 12, lineHeight: 1.4, color: done ? 'var(--navy-500)' : 'var(--navy-300)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {desc}
+          </span>
+        )}
+        {/* Row 3 — schedule / due date + tags + chips (only when present) */}
         {hasMeta && (
-          <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', marginTop: 1 }}>
+            {task.due_date && (
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 500, color: done ? 'var(--navy-400)' : dueColor(task.due_date) }}>
+                {formatDue(task.due_date, task.due_time)}
+              </span>
+            )}
             {space && <span title={space.name} style={{ width: 6, height: 6, borderRadius: '50%', background: space.color, flexShrink: 0 }} />}
             {krTitle && (
               <span title={`Advances KR: ${krTitle}`} style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>◆ {krTitle}</span>
@@ -1212,9 +1256,6 @@ function TaskRow({ task, tags, space, list, krTitle, subtaskProgress, selected, 
           </span>
         )}
       </div>
-      <span style={{ fontSize: 11, color: dueColor(task.due_date), fontWeight: 500 }}>
-        {formatDue(task.due_date, task.due_time)}
-      </span>
     </button>
   )
 }
