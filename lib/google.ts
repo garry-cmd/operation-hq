@@ -325,3 +325,37 @@ export async function setReadCalendarIds(userId: string, ids: string[]): Promise
   const { error } = await admin.from('user_google_tokens').update({ read_calendar_ids: ids }).eq('user_id', userId)
   if (error) throw error
 }
+
+// ── Drive (Files feature) ────────────────────────────────────────────
+const DRIVE_API = 'https://www.googleapis.com/drive/v3'
+
+export interface DriveFileMeta {
+  id: string
+  name: string
+  mimeType: string
+  modifiedTime: string | null
+  webViewLink: string | null
+  iconLink: string | null
+}
+
+/** Metadata for a single Drive file. Under the drive.file scope this only
+ *  succeeds for files HQ created or that the user granted via the Google Picker
+ *  — a 404 means the id isn't picker-granted to HQ (expected for arbitrary ids,
+ *  which is the whole point of the per-file model). */
+export async function getDriveFileMeta(accessToken: string, fileId: string): Promise<DriveFileMeta> {
+  const fields = 'id,name,mimeType,modifiedTime,webViewLink,iconLink'
+  const r = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=${encodeURIComponent(fields)}&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  if (!r.ok) throw new Error(`drive file meta failed: ${r.status} ${await r.text()}`)
+  const j = await r.json()
+  return {
+    id: j.id as string,
+    name: (j.name as string) ?? '',
+    mimeType: (j.mimeType as string) ?? '',
+    modifiedTime: (j.modifiedTime as string | undefined) ?? null,
+    webViewLink: (j.webViewLink as string | undefined) ?? null,
+    iconLink: (j.iconLink as string | undefined) ?? null,
+  }
+}

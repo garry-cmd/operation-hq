@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase'
-import type { CalendarBlock } from '@/lib/types'
+import type { CalendarBlock, TrackedFile } from '@/lib/types'
+import { fromRow as trackedFileFromRow } from '@/lib/db/trackedFiles'
 
 /**
  * Client-side wrappers for the /api/google/* routes. Each call attaches the
@@ -82,4 +83,27 @@ export async function createCalendarEvent(
   })
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `create event ${r.status}`)
   return (await r.json()).block as CalendarBlock
+}
+
+// ── Drive / Files ──
+/** Fresh Google access token for the browser Google Picker (calendar +
+ *  drive.file scope only). The Picker needs an OAuth token client-side. */
+export async function getDriveAccessToken(): Promise<string> {
+  const r = await authedFetch('/api/google/drive/access-token')
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `drive token ${r.status}`)
+  return (await r.json()).access_token as string
+}
+
+/** Track a Picker-selected Drive file. Server fetches its metadata (proving
+ *  drive.file access) and upserts the tracked_files row. Idempotent. */
+export async function trackDriveFile(
+  fileId: string, spaceId?: string | null,
+): Promise<{ file: TrackedFile; existed: boolean }> {
+  const r = await authedFetch('/api/google/drive/track', {
+    method: 'POST',
+    body: JSON.stringify({ fileId, spaceId: spaceId ?? null }),
+  })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `track ${r.status}`)
+  const j = await r.json()
+  return { file: trackedFileFromRow(j.file), existed: Boolean(j.existed) }
 }

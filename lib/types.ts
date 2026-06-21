@@ -410,3 +410,47 @@ export interface NewCalendarBlockInput {
   end_minute: number
   status?: CalendarBlockStatus
 }
+
+// ── Files (Drive-backed client document tracking) ────────────────────
+export type TrackedFileStatus = 'new_in' | 'editing' | 'with_client' | 'sent'
+
+export interface TrackedFile {
+  id: string
+  space_id: string | null            // null = Files Inbox (untriaged)
+  drive_file_id: string              // canonical working copy in Drive (source of truth)
+  name: string
+  mime_type: string | null
+  drive_modified_time: string | null
+  status: TrackedFileStatus
+  roadmap_item_id: string | null
+  note_id: string | null
+  task_id: string | null
+  archived: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type FileVersionDirection = 'received' | 'sent'
+
+export interface FileVersion {
+  id: string
+  tracked_file_id: string
+  direction: FileVersionDirection
+  drive_file_id: string | null       // frozen copy in the HQ archive folder
+  snapshot_name: string
+  source: string | null              // where it came from (received)
+  dest: string | null                // where it went (sent)
+  note: string | null
+  created_at: string
+}
+
+export interface NewFileVersionInput {
+  tracked_file_id: string
+  direction: FileVersionDirection
+  drive_file_id?: string | null
+  snapshot_name?: string
+  source?: string | null
+  dest?: string | null
+  note?: string | null
+}
