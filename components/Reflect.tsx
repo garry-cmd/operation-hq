@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import * as reviewsDb from '@/lib/db/reviews'
 import { WeeklyReview, ReviewRating, Space } from '@/lib/types'
-import { formatWeek } from '@/lib/utils'
+import { formatWeek, getMonday } from '@/lib/utils'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 
 // --- Rating icons (kept from the old Reflect for visual continuity) -------
@@ -52,6 +52,7 @@ type Props = {
 export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, toast }: Props) {
   const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
   const spaceById = new Map(spaces.map(s => [s.id, s]))
+  const thisMonday = getMonday()
   const isWeekClosed = (spaceId: string, week: string) =>
     reviews.some(r => r.space_id === spaceId && r.week_start === week && r.closed_at != null)
   // Drafts (closed_at = null) don't belong in the archive — they're
@@ -77,13 +78,21 @@ export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onC
           {orderedSpaces.map(sp => {
             const wk = weekForSpace(sp.id)
             const closed = isWeekClosed(sp.id, wk)
+            // After a close the cursor advances to the next (future) week. Don't
+            // re-offer a close for a week that hasn't ended — show caught-up so
+            // the just-completed close reads as done, not as a fresh prompt.
+            const caughtUp = !closed && wk > thisMonday
             return (
               <div key={sp.id} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
                 <span style={{ width: 9, height: 9, borderRadius: '50%', background: spaceDisplayColor(sp), flexShrink: 0 }} />
                 <span style={{ flex: 1, fontSize: 14, color: 'var(--navy-100)' }}>{sp.name}</span>
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>week of {formatWeek(wk)}</span>
-                {closed ? (
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-nominal-text, #7fe27a)', padding: '5px 12px' }}>✓ closed</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>
+                  {caughtUp ? `next · week of ${formatWeek(wk)}` : `week of ${formatWeek(wk)}`}
+                </span>
+                {closed || caughtUp ? (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-nominal-text, #7fe27a)', padding: '5px 12px' }}>
+                    {closed ? '✓ closed' : '✓ up to date'}
+                  </span>
                 ) : (
                   <button onClick={() => onCloseWeek(sp.id, wk)}
                     style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--navy-50)', cursor: 'pointer' }}>
