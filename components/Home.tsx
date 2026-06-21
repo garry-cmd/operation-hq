@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState } from 'react'
-import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, WeeklyReview } from '@/lib/types'
+import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, WeeklyReview, ActionTag } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import { quoteForDay } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
@@ -21,6 +21,14 @@ function daysBetween(a: string, b: string): number {
 }
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const DOW_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+// Mirrors ActionPanel/Focus TAG_STYLE — the backlog/waiting/doing pill, shown
+// read-only on Home's action rows (set in ActionPanel, the canonical picker).
+const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }> = {
+  backlog: { bg: 'var(--navy-600)', color: 'var(--navy-200)', label: 'backlog' },
+  waiting: { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'waiting' },
+  doing:   { bg: 'var(--teal-bg)',   color: 'var(--teal-text)',   label: 'doing' },
+}
 function shortDow(dateStr: string): string {
   return DOW[(parseDateLocal(dateStr).getDay() + 6) % 7]
 }
@@ -363,6 +371,7 @@ export default function Home({
                   <div key={a.id} className={`act${a.completed ? ' is-done' : ''}`}>
                     <button className={`bub${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
                     <span className="atitle">{a.title}</span>
+                    {a.tag && <span className="atag" style={{ background: TAG_STYLE[a.tag].bg, color: TAG_STYLE[a.tag].color }}>{TAG_STYLE[a.tag].label}</span>}
                     {!a.completed && health === 'off_track' && <span className="status off">off track</span>}
                     {!a.completed && health === 'blocked' && <span className="status blocked">blocked</span>}
                     {kr && (
@@ -541,6 +550,7 @@ export default function Home({
         .bub.done{background:var(--nw-nominal-text,#7fe27a);border-color:var(--nw-nominal-text,#7fe27a);}
         .atitle{flex:1;font-size:15px;color:var(--navy-100);}
         .act.is-done .atitle{color:var(--navy-500);text-decoration:line-through;}
+        .atag{font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;flex-shrink:0;}
         .status{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:6px;}
         .status.off{background:var(--nw-alarm-bg,#2e0a08);color:var(--nw-alarm-text,#ff6452);}
         .status.blocked{background:var(--nw-caution-bg,#251a08);color:var(--nw-caution-text,#f5b840);}

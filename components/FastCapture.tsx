@@ -92,7 +92,7 @@ export default function FastCapture({ objectives, roadmapItems, weekStart, activ
           week_start: weekStart,
         })
         setActions(prev => [...prev, created])
-        toast('Action added to Focus!')
+        toast('Action added!')
       }
       if (active === 'parking') {
         // Standalone — not tied to any objective. The whole point of parking
