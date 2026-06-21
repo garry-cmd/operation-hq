@@ -22,7 +22,6 @@ import * as googleTokensDb from '@/lib/db/googleTokens'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
-import Focus from '@/components/Focus'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Home from '@/components/Home'
@@ -44,7 +43,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'focus' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags' | 'settings'
+type Screen = 'home' | 'agent' | 'reflect' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags' | 'settings'
 
 
 export default function HQPage() {
@@ -112,11 +111,8 @@ export default function HQPage() {
   const [closingWizard, setClosingWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [planningWizard, setPlanningWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
-  // Currently-open action panel on the Focus tab. Lifted to page level so
+  // Currently-open objective panel on the OKRs tab. Lifted to page level so
   // <main> can widen its max-width when the panel is open (push-aside layout).
-  const [openActionId, setOpenActionId] = useState<string | null>(null)
-  // Currently-open objective panel on the OKRs tab. Same pattern as
-  // openActionId — lifted to page level so <main> can widen for it.
   const [openObjectiveId, setOpenObjectiveId] = useState<string | null>(null)
   // Set when the command palette deep-links to a KR; OKRs/Roadmap consume it to
   // scroll the KR into view and flash it, then clear it.
@@ -408,7 +404,7 @@ export default function HQPage() {
         id: `act:${a.id}`, kind: 'Action', icon: '▸', title: a.title,
         ...spaceMeta(sid), hint: thisWeek ? 'this week' : undefined,
         done: a.completed, rec: thisWeek ? 8 : 2,
-        route: { screen: 'focus', spaceId: sid, weekStart: a.week_start, actionId: a.id },
+        route: { screen: 'okr', spaceId: sid, krId: a.roadmap_item_id },
       })
     }
 
@@ -503,14 +499,7 @@ export default function HQPage() {
     if (r.spaceId) switchSpace(r.spaceId)
     if (r.taskId) setTasksInitialId(r.taskId)
     if (r.noteId) setNotesInitialId(r.noteId)
-    if (r.objectiveId) { setOpenObjectiveId(r.objectiveId); setOpenActionId(null) }
-    if (r.actionId) {
-      // Actions on past/future weeks need their week committed so Focus surfaces
-      // them. Use the explicit-space variant — activeSpaceId hasn't propagated
-      // from switchSpace yet.
-      if (r.spaceId && r.weekStart) setWeekStartForSpace(r.spaceId, () => r.weekStart!)
-      setOpenActionId(r.actionId); setOpenObjectiveId(null)
-    }
+    if (r.objectiveId) setOpenObjectiveId(r.objectiveId)
     if (r.screen === 'reflect' && r.spaceId && r.weekStart) {
       setWeekStartForSpace(r.spaceId, () => r.weekStart!)
     }
@@ -543,22 +532,9 @@ export default function HQPage() {
   // first match is fine.
   const draftReview = spaceReviews.find(r => r.closed_at == null) ?? null
 
-  // Nav click handler. Just setScreen, plus a focus-week snap.
-  //
-  // Focus snap: if weekStart is in the past, advance it to today's Monday.
-  // Past weeks are read-only territory for the Reflect tab; Focus from the
-  // nav should land on "now," not wherever the user last walked backward to
-  // with Focus's own ‹ button (which persisted to localStorage). Forward
-  // weekStart values (e.g. pre-planned next week) are left alone. Other
-  // entry points to Focus that intentionally target a specific week —
-  // openActionFromSummary, the close-week wizard's commitFinish — set
-  // weekStart directly without going through goToScreen, so they're
-  // unaffected by this snap.
+  // Nav click handler — just setScreen now (the Focus week-snap was removed
+  // along with the Focus screen).
   function goToScreen(target: Screen) {
-    if (target === 'focus') {
-      const today = getMonday()
-      if (weekStart < today) setWeekStart(() => today)
-    }
     setScreen(target)
   }
 
@@ -583,7 +559,6 @@ export default function HQPage() {
           const today = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, '0')}-${String(td.getDate()).padStart(2, '0')}`
           return tasks.filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date < today).length
         })()}
-        focusOpenCount={spaceActions.filter(a => a.week_start === weekStart && !a.completed).length}
         tasksOverdueCount={(() => {
           // Matches the Tasks "Today" smart view filter: open tasks with a
           // due_date on or before today. Empty due_date is "Later" — doesn't
@@ -746,7 +721,7 @@ export default function HQPage() {
       ) : screen === 'settings' && !loading ? (
         <Settings toast={setToast} />
       ) : (
-      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'roadmap' || (screen === 'focus' && openActionId) || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'roadmap' || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
@@ -776,7 +751,6 @@ export default function HQPage() {
               </div>
             )}
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} spaceName={activeSpace?.name ?? 'My OKRs'} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
-            {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard({ spaceId: activeSpaceId, week })} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} tasks={spaceTasks} setTasks={setTasks} onOpenTask={id => { setTasksInitialId(id); setScreen('tasks') }} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
             {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} onPlanWeek={(spaceId, week) => setPlanningWizard({ spaceId, week })} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}

@@ -1,7 +1,7 @@
 {
   "name": "Operation HQ",
   "short_name": "Op HQ",
-  "description": "Personal mission control — Roadmap, OKRs, Weekly Focus",
+  "description": "Personal mission control — Roadmap, OKRs, Calendar",
   "start_url": "/hq",
   "display": "standalone",
   "orientation": "portrait",

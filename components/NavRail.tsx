@@ -6,7 +6,7 @@
  * and the user/settings footer.
  *
  * Screens are organized into three groups by use frequency:
- *   - Daily:     Focus, Tasks, Notes   (the many-times-a-day tools)
+ *   - Daily:     Tasks, Notes          (the many-times-a-day tools)
  *   - Strategic: OKRs, Roadmap          (planning / weekly cadence)
  *   - Archive:   Reflect, Parking      (consulted, not daily)
  *
@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'agent' | 'focus' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
+export type Screen = 'home' | 'agent' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
 
 interface Props {
   screen: Screen
@@ -34,7 +34,6 @@ interface Props {
 
   // Badges on nav rows. All optional / zero-friendly.
   homeAttentionCount?: number
-  focusOpenCount?: number
   tasksOverdueCount?: number
   parkedCount?: number
   reviewsCount?: number
@@ -70,7 +69,6 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
     items: [
       { id: 'home', label: 'Home', icon: <HomeIcon /> },
       { id: 'agent', label: 'Chief of Staff', icon: <AgentIcon /> },
-      { id: 'focus', label: 'Focus', icon: <FocusIcon /> },
       { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
       { id: 'calendar', label: 'Calendar', icon: <CalendarIcon /> },
@@ -116,7 +114,6 @@ export default function NavRail(props: Props) {
 
   function badge(id: Screen): number | undefined {
     if (id === 'home') return props.homeAttentionCount
-    if (id === 'focus') return props.focusOpenCount
     if (id === 'tasks') return props.tasksOverdueCount
     if (id === 'park') return props.parkedCount
     if (id === 'reflect') return props.reviewsCount
@@ -351,9 +348,6 @@ function CalendarIcon() {
 }
 function HomeIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M2.5 7L8 2.5 13.5 7" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/><path d="M3.7 6.4V13h8.6V6.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-}
-function FocusIcon() {
-  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="1" fill="currentColor"/></svg>
 }
 function TasksIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="1.7" y="1.7" width="12.6" height="12.6" rx="2.3" stroke="currentColor" strokeWidth="1.4"/><path d="M4.5 8.2l2.2 2.2 4.8-4.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
