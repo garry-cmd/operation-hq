@@ -97,6 +97,7 @@ export default function HQPage() {
   const [capacityBlocks, setCapacityBlocks] = useState<CapacityBlock[]>([])
   const [calendarBlocks, setCalendarBlocks] = useState<CalendarBlock[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
+  const [driveGranted, setDriveGranted] = useState(false)
   // Notes state (Jun 2026). Lifted from Notes.tsx so global search can match
   // note titles and body text. Same pattern as the Tasks lift (May 18).
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
@@ -278,7 +279,7 @@ export default function HQPage() {
       notesDb.listAll().catch(fallback('notes', [] as Note[])),
       capacityDb.listAll().catch(fallback('calendar_capacity_blocks', [] as CapacityBlock[])),
       calBlocksDb.listAll().catch(fallback('calendar_blocks', [] as CalendarBlock[])),
-      googleTokensDb.getStatus().catch(fallback('google_status', { connected: false, hqCalendarId: null, readCalendarIds: [] })),
+      googleTokensDb.getStatus().catch(fallback('google_status', { connected: false, driveGranted: false, hqCalendarId: null, readCalendarIds: [] })),
     ])
     setObjectives(o)
     setRoadmapItems(r)
@@ -299,6 +300,7 @@ export default function HQPage() {
     setCapacityBlocks(cap)
     setCalendarBlocks(calb)
     setGoogleConnected(gstat.connected)
+    setDriveGranted(gstat.driveGranted)
     // Tags follow tasks — a second query keyed by the loaded task ids. If
     // it fails we silently fall back to empty (tag-driven UI degrades to
     // "no tags," which is preferable to blocking task load).
@@ -754,7 +756,7 @@ export default function HQPage() {
           toast={setToast}
         />
       ) : screen === 'settings' && !loading ? (
-        <Settings toast={setToast} />
+        <Settings toast={setToast} googleConnected={googleConnected} driveGranted={driveGranted} onConnectGoogle={connectGoogle} />
       ) : (
       <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'roadmap' || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (

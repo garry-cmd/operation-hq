@@ -31,7 +31,12 @@ const memInput: React.CSSProperties = {
   color: 'var(--nw-cream, var(--navy-100))', resize: 'vertical', fontFamily: 'inherit',
 }
 
-export default function Settings({ toast }: { toast: (m: string) => void }) {
+export default function Settings({ toast, googleConnected, driveGranted, onConnectGoogle }: {
+  toast: (m: string) => void
+  googleConnected: boolean
+  driveGranted: boolean
+  onConnectGoogle: () => void
+}) {
   const [state, setState] = useState<PushState | null>(null)
   const [busy, setBusy] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -144,6 +149,34 @@ export default function Settings({ toast }: { toast: (m: string) => void }) {
       <p style={{ fontSize: 13, color: 'var(--navy-400)', margin: '0 0 24px' }}>Preferences for this device.</p>
 
       <div style={card}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))', marginBottom: 4 }}>Google &amp; Drive</div>
+        <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--navy-300)', margin: '0 0 14px' }}>
+          {!googleConnected
+            ? 'Google isn’t connected. Connect to enable the calendar overlay and Drive-backed Files.'
+            : driveGranted
+              ? 'Connected, with Drive file access granted — Files can link and snapshot your client documents.'
+              : 'Connected for Calendar. The Files module needs Drive access (drive.file — per-file only, not a broad read of your Drive). Re-grant to add it; your existing calendar connection is preserved.'}
+        </p>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {!googleConnected ? (
+            <button onClick={onConnectGoogle} style={btn('primary')}>Connect Google</button>
+          ) : !driveGranted ? (
+            <button onClick={onConnectGoogle} style={btn('primary')}>Grant Drive access</button>
+          ) : (
+            <span style={{ fontSize: 12, color: 'var(--ok, #7fe27a)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ok, #7fe27a)' }} />
+              Drive access granted
+            </span>
+          )}
+        </div>
+        {googleConnected && !driveGranted && (
+          <p style={{ fontSize: 11, lineHeight: 1.5, color: 'var(--navy-500, var(--navy-400))', margin: '14px 0 0' }}>
+            You’ll see Google’s consent screen asking for the new Drive permission. <strong>drive.file</strong> only grants access to files you explicitly pick (or that HQ creates) — never your whole Drive.
+          </p>
+        )}
+      </div>
+
+      <div style={{ ...card, marginTop: 18 }}>
         <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))', marginBottom: 4 }}>Daily briefings</div>
         <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--navy-300)', margin: '0 0 14px' }}>{statusText}</p>
 

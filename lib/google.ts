@@ -11,7 +11,18 @@ import { getSupabaseAdmin } from './supabaseAdmin'
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth'
 const TOKEN_URL = 'https://oauth2.googleapis.com/token'
 const CAL_API = 'https://www.googleapis.com/calendar/v3'
-export const GOOGLE_SCOPE = 'https://www.googleapis.com/auth/calendar'
+// Calendar (existing) + Drive per-file access for the Files feature.
+// drive.file is NON-sensitive: no Google verification, no CASA security audit —
+// unlike drive.readonly, which is a *restricted* scope that would trigger both
+// on this Production/External app. Per-file access (Picker-selected or
+// app-created files) is all Files needs. `include_granted_scopes:'true'` in the
+// consent URL makes re-consent incremental: it ADDS drive.file while keeping the
+// existing calendar grant, so no calendar reconnection is required.
+export const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/drive.file',
+]
+export const GOOGLE_SCOPE = GOOGLE_SCOPES.join(' ')
 
 function env(k: string): string {
   const v = process.env[k]
