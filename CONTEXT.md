@@ -51,7 +51,21 @@ running deployment can't see it.
 
 ## Current state — shipped
 
-### Jun 21 (latest) — Home cockpit (master-detail dive) + NoteEditor extraction
+### Jun 21 (latest) — Keyboard shortcut layer + Files/Drive plan (design)
+
+**Shipped (live, commit `47b9ed2`)** — global keyboard layer in `app/hq/page.tsx` + `components/FastCapture.tsx`:
+- ⌘T → new task, ⌘N → new note. Drive the existing `FastCapture` dial via a new `openRequest` prop (FAB untouched, no duplicated create logic). ⌘-combos fire even mid-typing.
+- `g` leader → go-to nav: `h` Home · `t` Tasks · `n` Notes · `o` OKRs · `r` Roadmap · `c` Calendar · `s` Scout · `f` Reflect · `p` Parking. Bare keys are suppressed while focus is in an input / the TipTap editor.
+- ⌘K palette unchanged.
+- **⌘T/⌘N only fire in the installed PWA** — browser tabs reserve new-tab/new-window (incl. ⌘⇧T/⌘⇧N); `g`-nav + ⌘K work anywhere. Pre-existing watch: TipTap uses ⌘K for links vs. the global palette.
+- **Cheat-sheet note** inserted live into `notes` (pinned, Inbox, id `34f2eb73-c93e-46fd-a041-50d5c7ff3fd7`) — a real note, not a coded overlay, by Garry's call. **Drift risk: that note must be hand-updated if the bindings ever change.**
+
+**Decisions this session (no code):**
+- **FAB stays.** Killing it was considered; ⌘K is search-only (not a create surface), so nothing absorbs from-anywhere capture yet. Future options: slim FAB to Task+Note, or build create-verbs into ⌘K (its `SearchEntry[]` + `onPick` branching supports it). Not now.
+- **Desktop app → stay web/PWA.** Native buys ~nothing over the installed PWA except a system-wide capture hotkey. If ever native, it's a thin **Tauri** capture companion only, never a port. (Reinforces: run HQ from the Dock as an installed PWA — that's what makes ⌘T/⌘N work.)
+- **Files / Drive client-document management → APPROVED, build next session.** Full plan in 🔴 backlog item 0; approved mockup `hq-files-mockup.html` (this session).
+
+### Jun 21 — Home cockpit (master-detail dive) + NoteEditor extraction
 
 Home becomes the always-open workspace: from the deck you **dive** into a focused work view and
 **surface** back, instead of being routed to the Notes/Tasks modules. Goal is to kill the
@@ -490,6 +504,40 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
+0. **Files — client-document management (Google Drive-backed). APPROVED — build next.**
+   Approved mockup: `hq-files-mockup.html` (this session). Unlock: stop hunting / duplicating / mis-deleting
+   client Excel files. **It's a version-provenance problem, not a storage problem** — files fork at the
+   handoffs (received / sent), not during the work.
+   **Model (decided):**
+   - **Google Drive is the single cloud home.** iCloud rejected (no developer API a web app can read).
+     OneDrive is smoother for "Open in Excel" but don't split across two clouds.
+   - **How files get in — no upload step.** Garry repoints the Mac default download location to a
+     Drive-synced folder (`HQ Inbox`). HQ **watches that folder via the Drive API**; new arrivals appear
+     in an HQ **Files Inbox** (mirrors the Notes Inbox pattern). Triage = assign to a client space +
+     deliverable, or attach as the next version of a tracked file. Untriaged downloads sit ignored (no noise).
+     This also kills the Downloads → Desktop → "which version?" chaos at the root.
+   - **A tracked file = live working copy + version ladder.** Working copy = the canonical Drive file
+     (source of truth; opens in Excel; returns where you left off). Ladder = frozen handoff snapshots
+     (received ← / sent →) with provenance (where from / where to + a one-line note), each mirrored to a
+     Drive archive folder. Drive's trash + version history is the mis-delete safety net.
+   - **Two file classes, opposite flow.** Note attachments (small, write-once) keep the Supabase-primary
+     model. Client working files are **Drive source-of-truth, HQ links/indexes by Drive file id — never
+     copied into HQ, never mirrored *from* HQ** (a mirror-from-HQ goes stale the instant the file is
+     edited in Excel).
+   - **HQ's moat over raw Drive:** files linked to space (client) + KR + note + task; unified ⌘K search;
+     findable by context ("the Meridian pricing model"), not by folder.
+   **Honest boundaries (don't oversell):** HQ launches Excel, can't embed it (web app) — "Open in Excel"
+   = open the Drive file in Excel-web or reveal the synced local copy. **Send-back stays manual** (client
+   SharePoint access issues HQ can't fix); Garry hits "snapshot & mark sent" at upload. **Required behavior
+   shift:** the working copy lives in the synced Drive folder, never loose in Downloads/Desktop.
+   **Plumbing to build:** add a Drive scope to the existing Google OAuth (currently
+   `https://www.googleapis.com/auth/calendar`; need `drive.readonly` to link existing files, or `drive.file`)
+   — re-consent with `prompt=consent&access_type=offline` (refresh token only returned on first consent).
+   New `tracked_files` + `file_versions` tables (Drive file id, client `space_id`, optional
+   `roadmap_item_id`/`note_id`/`task_id`; snapshot rows carry direction/source/dest/note). A Files surface
+   per space + a Files Inbox + ⌘K indexing. **Phase 2 (deferred):** Microsoft 365 is connected — for
+   Garry's *own* SharePoint/OneDrive, Graph could auto-read version history (turn manual "mark sent" into
+   auto-track); client-owned sites stay manual.
 1. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
 2. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
@@ -513,7 +561,7 @@ redirect URIs for prod + `localhost:3000`.
 15. **Calendar:** per-user timezone (kills the `APP_TZ` hardcode); all-day event handling in overlay; recurring HQ blocks; DnD edge auto-scroll.
 
 ### 🟢 Nice to have
-Share-page query optimization · PWA install prompt · keyboard shortcuts (⌘Enter save, Esc close) · Reflect history sparkline.
+Share-page query optimization · PWA install prompt · more keyboard shortcuts (⌘Enter save, Esc close — note ⌘T/⌘N/`g`-nav already shipped) · Reflect history sparkline.
 
 ### ❄️ Deferred indefinitely
 - **Multi-user SaaS-ification** (Mel + shared spaces) — needs real RLS, `spaces.owner_user_id`
