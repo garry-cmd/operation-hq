@@ -108,7 +108,7 @@ export default function HQPage() {
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
-  const [closingWizard, setClosingWizard] = useState<string | null>(null)
+  const [closingWizard, setClosingWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
   // Currently-open action panel on the Focus tab. Lifted to page level so
   // <main> can widen its max-width when the panel is open (push-aside layout).
@@ -172,6 +172,9 @@ export default function HQPage() {
   // key (one-time migration aid), then to today's Monday. Derived rather than
   // stored so it stays in sync with activeSpaceId.
   const weekStart = weekStartBySpace[activeSpaceId] ?? legacyWeekStart ?? getMonday()
+
+  // Same resolution for any space — used by Reflect's per-space close launcher.
+  const weekForSpace = (spaceId: string) => weekStartBySpace[spaceId] ?? legacyWeekStart ?? getMonday()
 
   // Per-space setter wrapper: writes to `weekStartBySpace[activeSpaceId]` and
   // persists. Same `(prev: string) => string` updater signature as before so
@@ -379,7 +382,7 @@ export default function HQPage() {
     })
     if (!hadActions && !hadHabits) return
 
-    setClosingWizard(lastMonday)
+    setClosingWizard({ spaceId: activeSpaceId, week: lastMonday })
   }, [loading, activeSpaceId, reviews, actions, habitCheckins, objectives, roadmapItems, closingWizard])
 
   // Search index — a flat list of every searchable thing, rebuilt only when
@@ -797,7 +800,7 @@ export default function HQPage() {
                   <strong style={{ fontWeight: 600 }}>Close in progress</strong> — you started reflecting on the week of <strong style={{ fontWeight: 600 }}>{formatWeek(draftReview.week_start)}</strong> but haven&apos;t finished planning yet.
                 </div>
                 <button
-                  onClick={() => setClosingWizard(draftReview.week_start)}
+                  onClick={() => setClosingWizard({ spaceId: draftReview.space_id, week: draftReview.week_start })}
                   style={{
                     fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 999,
                     background: 'var(--amber-text)', color: 'var(--navy-900)', border: 'none',
@@ -809,9 +812,9 @@ export default function HQPage() {
               </div>
             )}
             {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} spaceName={activeSpace?.name ?? 'My OKRs'} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
-            {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard(week)} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} tasks={spaceTasks} setTasks={setTasks} onOpenTask={id => { setTasksInitialId(id); setScreen('tasks') }} />}
+            {screen === 'focus'   && <Focus objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} actions={spaceActions} setActions={setActions} habitCheckins={spaceHabitCheckins} setHabitCheckins={setHabitCheckins} weekStart={weekStart} setWeekStart={setWeekStart} toast={setToast} onRequestCloseWeek={week => setClosingWizard({ spaceId: activeSpaceId, week })} logs={spaceLogs} setLogs={setLogs} openActionId={openActionId} setOpenActionId={setOpenActionId} tasks={spaceTasks} setTasks={setTasks} onOpenTask={id => { setTasksInitialId(id); setScreen('tasks') }} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
-            {screen === 'reflect' && <Reflect reviews={spaceReviews} setReviews={setReviews} toast={setToast} />}
+            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
@@ -836,27 +839,33 @@ export default function HQPage() {
       )}
 
       {/* Close-week wizard — lifted to page level so forced launch can overlay
-          any screen, not just Focus. Launched either by Focus's "Close week →"
-          button (via onRequestCloseWeek) or by the forced-launch effect above. */}
-      {closingWizard && (
-        <CloseWeekWizard
-          closingWeek={closingWizard}
-          objectives={spaceObjectives}
-          roadmapItems={spaceRoadmapItems}
-          setRoadmapItems={setRoadmapItems}
-          actions={spaceActions}
-          setActions={setActions}
-          habitCheckins={spaceHabitCheckins}
-          metricCheckins={spaceMetricCheckins}
-          setMetricCheckins={setMetricCheckins}
-          reviews={spaceReviews}
-          setReviews={setReviews}
-          setWeekStart={setWeekStart}
-          activeSpaceId={activeSpaceId}
-          toast={setToast}
-          onClose={() => setClosingWizard(null)}
-        />
-      )}
+          any screen. Launched by Focus's "Close week →", Reflect's per-space
+          launcher, or the forced-launch effect. Data is re-derived for the
+          target space so any space closes correctly, not just the active one. */}
+      {closingWizard && (() => {
+        const cs = closingWizard.spaceId
+        const csKRs = roadmapItems.filter(i => i.space_id === cs)
+        const csKRIds = new Set(csKRs.map(i => i.id))
+        return (
+          <CloseWeekWizard
+            closingWeek={closingWizard.week}
+            objectives={objectives.filter(o => o.space_id === cs)}
+            roadmapItems={csKRs}
+            setRoadmapItems={setRoadmapItems}
+            actions={actions.filter(a => csKRIds.has(a.roadmap_item_id))}
+            setActions={setActions}
+            habitCheckins={habitCheckins.filter(h => csKRIds.has(h.roadmap_item_id))}
+            metricCheckins={metricCheckins.filter(m => csKRIds.has(m.roadmap_item_id))}
+            setMetricCheckins={setMetricCheckins}
+            reviews={reviews.filter(r => r.space_id === cs)}
+            setReviews={setReviews}
+            setWeekStart={updater => setWeekStartForSpace(cs, updater)}
+            activeSpaceId={cs}
+            toast={setToast}
+            onClose={() => setClosingWizard(null)}
+          />
+        )
+      })()}
 
       {/* Metric log modal — lives at page level so any screen can open it.
           Today only triggered from OKR cards, but Reflect history / wizard

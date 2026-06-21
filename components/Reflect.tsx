@@ -1,8 +1,9 @@
 'use client'
 import { useState } from 'react'
 import * as reviewsDb from '@/lib/db/reviews'
-import { WeeklyReview, ReviewRating } from '@/lib/types'
+import { WeeklyReview, ReviewRating, Space } from '@/lib/types'
 import { formatWeek } from '@/lib/utils'
+import { spaceDisplayColor } from '@/lib/spaceColor'
 
 // --- Rating icons (kept from the old Reflect for visual continuity) -------
 const StrongIcon = ({ size = 12 }: { size?: number }) => (
@@ -40,12 +41,19 @@ const ratingMeta = (r: ReviewRating) => RATINGS.find(x => x.value === r) ?? RATI
 // ==========================================================================
 
 type Props = {
-  reviews: WeeklyReview[]
+  reviews: WeeklyReview[]   // all spaces — Reflect is the all-spaces ritual hub
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
+  spaces: Space[]
+  weekForSpace: (spaceId: string) => string
+  onCloseWeek: (spaceId: string, week: string) => void
   toast: (m: string) => void
 }
 
-export default function Reflect({ reviews, setReviews, toast }: Props) {
+export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, toast }: Props) {
+  const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
+  const spaceById = new Map(spaces.map(s => [s.id, s]))
+  const isWeekClosed = (spaceId: string, week: string) =>
+    reviews.some(r => r.space_id === spaceId && r.week_start === week && r.closed_at != null)
   // Drafts (closed_at = null) don't belong in the archive — they're
   // half-finished ceremonies, not historical entries. The page-level draft
   // banner brings the user back to finish them; the forced-launcher in
@@ -59,26 +67,57 @@ export default function Reflect({ reviews, setReviews, toast }: Props) {
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 5 }}>Archive · Reflect</div>
       <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.02em', marginBottom: 3 }}>Reflect</h1>
       <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>
-        Weekly archive — tap a card to read or edit the entry.
+        Close a week per space, then read or edit past entries below.
       </p>
+
+      {/* Close-a-week launcher — per space, opens the wizard for that space's current week */}
+      <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '14px 16px', marginBottom: 22, boxShadow: 'var(--card-shadow)' }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 10 }}>Close a week</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {orderedSpaces.map(sp => {
+            const wk = weekForSpace(sp.id)
+            const closed = isWeekClosed(sp.id, wk)
+            return (
+              <div key={sp.id} style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                <span style={{ width: 9, height: 9, borderRadius: '50%', background: spaceDisplayColor(sp), flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 14, color: 'var(--navy-100)' }}>{sp.name}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>week of {formatWeek(wk)}</span>
+                {closed ? (
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-nominal-text, #7fe27a)', padding: '5px 12px' }}>✓ closed</span>
+                ) : (
+                  <button onClick={() => onCloseWeek(sp.id, wk)}
+                    style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--navy-50)', cursor: 'pointer' }}>
+                    Close week →
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
 
       {sorted.length === 0 ? (
         <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '40px 24px', textAlign: 'center', color: 'var(--navy-300)' }}>
           <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--navy-100)', marginBottom: 6 }}>No weeks closed yet</div>
           <div style={{ fontSize: 12, lineHeight: 1.6 }}>
-            Hit <strong style={{ color: 'var(--accent)' }}>Close week →</strong> on the Focus tab to record your first reflection.
+            Use <strong style={{ color: 'var(--accent)' }}>Close week →</strong> above to record your first reflection.
           </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {sorted.map(review => (
-            <ReviewCard
-              key={review.id}
-              review={review}
-              setReviews={setReviews}
-              toast={toast}
-            />
-          ))}
+          {sorted.map(review => {
+            const sp = spaceById.get(review.space_id)
+            return (
+              <ReviewCard
+                key={review.id}
+                review={review}
+                spaceName={sp?.name ?? ''}
+                spaceColor={sp ? spaceDisplayColor(sp) : 'var(--navy-500)'}
+                setReviews={setReviews}
+                toast={toast}
+              />
+            )
+          })}
         </div>
       )}
     </div>
@@ -89,9 +128,11 @@ export default function Reflect({ reviews, setReviews, toast }: Props) {
 // Individual review card — collapsed summary, expand to edit
 // ==========================================================================
 function ReviewCard({
-  review, setReviews, toast,
+  review, spaceName, spaceColor, setReviews, toast,
 }: {
   review: WeeklyReview
+  spaceName: string
+  spaceColor: string
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   toast: (m: string) => void
 }) {
@@ -141,10 +182,11 @@ function ReviewCard({
       {/* Header — always visible, taps toggle expand */}
       <button onClick={() => setExpanded(v => !v)}
         style={{ width: '100%', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        <span style={{ width: 9, height: 9, borderRadius: '50%', background: spaceColor, flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>Week of {formatWeek(review.week_start)}</div>
           <div style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 2 }}>
-            {review.krs_hit}/{review.krs_total} KRs hit
+            {spaceName ? `${spaceName} · ` : ''}{review.krs_hit}/{review.krs_total} KRs hit
           </div>
         </div>
         <span style={{
