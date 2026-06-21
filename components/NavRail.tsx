@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'agent' | 'tasks' | 'notes' | 'calendar' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
+export type Screen = 'home' | 'agent' | 'tasks' | 'notes' | 'calendar' | 'files' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
 
 interface Props {
   screen: Screen
@@ -72,6 +72,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
       { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
       { id: 'calendar', label: 'Calendar', icon: <CalendarIcon /> },
+      { id: 'files', label: 'Files', icon: <FilesIcon /> },
     ],
   },
   {
@@ -373,6 +374,14 @@ function ParkIcon() {
 }
 function TagsIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 1.5L4.5 14.5M11.5 1.5L10 14.5M1.5 5h13M1.5 11h13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
+}
+function FilesIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6" />
+    </svg>
+  )
 }
 function SettingsIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="2.25" stroke="currentColor" strokeWidth="1.4"/><path d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5L3.4 3.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>

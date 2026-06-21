@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note, CapacityBlock, CalendarBlock } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note, CapacityBlock, CalendarBlock, TrackedFile, FileVersion } from '@/lib/types'
 import { getMonday, ACTIVE_Q, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
@@ -19,6 +19,7 @@ import * as notesDb from '@/lib/db/notes'
 import * as capacityDb from '@/lib/db/capacityBlocks'
 import * as calBlocksDb from '@/lib/db/calendarBlocks'
 import * as googleTokensDb from '@/lib/db/googleTokens'
+import * as trackedFilesDb from '@/lib/db/trackedFiles'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import OKRs from '@/components/OKRs'
@@ -31,6 +32,7 @@ import Notes from '@/components/Notes'
 import Calendar from '@/components/Calendar'
 import Tags from '@/components/Tags'
 import Settings from '@/components/Settings'
+import Files from '@/components/Files'
 import { ensurePushSubscription } from '@/lib/push/ensurePush'
 import FastCapture from '@/components/FastCapture'
 import Toast from '@/components/Toast'
@@ -43,7 +45,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'tags' | 'settings'
+type Screen = 'home' | 'agent' | 'reflect' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'files' | 'tags' | 'settings'
 
 
 export default function HQPage() {
@@ -98,6 +100,8 @@ export default function HQPage() {
   const [calendarBlocks, setCalendarBlocks] = useState<CalendarBlock[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
   const [driveGranted, setDriveGranted] = useState(false)
+  const [trackedFiles, setTrackedFiles] = useState<TrackedFile[]>([])
+  const [fileVersions, setFileVersions] = useState<FileVersion[]>([])
   // Notes state (Jun 2026). Lifted from Notes.tsx so global search can match
   // note titles and body text. Same pattern as the Tasks lift (May 18).
   const [notebooks, setNotebooks] = useState<Notebook[]>([])
@@ -260,7 +264,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt, cap, calb, gstat] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt, cap, calb, gstat, tf, fv] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -280,6 +284,8 @@ export default function HQPage() {
       capacityDb.listAll().catch(fallback('calendar_capacity_blocks', [] as CapacityBlock[])),
       calBlocksDb.listAll().catch(fallback('calendar_blocks', [] as CalendarBlock[])),
       googleTokensDb.getStatus().catch(fallback('google_status', { connected: false, driveGranted: false, hqCalendarId: null, readCalendarIds: [] })),
+      trackedFilesDb.listAll().catch(fallback('tracked_files', [] as TrackedFile[])),
+      trackedFilesDb.listAllVersions().catch(fallback('file_versions', [] as FileVersion[])),
     ])
     setObjectives(o)
     setRoadmapItems(r)
@@ -301,6 +307,8 @@ export default function HQPage() {
     setCalendarBlocks(calb)
     setGoogleConnected(gstat.connected)
     setDriveGranted(gstat.driveGranted)
+    setTrackedFiles(tf)
+    setFileVersions(fv)
     // Tags follow tasks — a second query keyed by the loaded task ids. If
     // it fails we silently fall back to empty (tag-driven UI degrades to
     // "no tags," which is preferable to blocking task load).
@@ -726,6 +734,19 @@ export default function HQPage() {
           googleConnected={googleConnected}
           onConnectGoogle={connectGoogle}
           onDisconnectGoogle={disconnectGoogle}
+          toast={setToast}
+        />
+      ) : screen === 'files' && !loading ? (
+        <Files
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          roadmapItems={roadmapItems}
+          trackedFiles={trackedFiles}
+          setTrackedFiles={setTrackedFiles}
+          fileVersions={fileVersions}
+          setFileVersions={setFileVersions}
+          driveGranted={driveGranted}
+          onConnectGoogle={connectGoogle}
           toast={setToast}
         />
       ) : screen === 'agent' && !loading ? (
