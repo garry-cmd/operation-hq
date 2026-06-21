@@ -124,6 +124,17 @@ export default function Home({
   // Fresh quote on every mount (page open / refresh / nav back to Home).
   const [quote] = useState(() => randomQuote())
 
+  // A space-week that's been closed is off the deck. At close, incomplete
+  // actions are carried forward into the next week as fresh rows; the originals
+  // stay in the now-closed week with completed=false. Without this guard those
+  // carried originals keep rendering as live "open" items on the current-week
+  // board even though you've already rolled them on. Drop any space whose review
+  // for the displayed week is closed.
+  const closedSpaceIds = useMemo(
+    () => new Set(reviews.filter(r => r.week_start === weekMonday && r.closed_at != null).map(r => r.space_id)),
+    [reviews, weekMonday],
+  )
+
   // ── Key actions: this week's weekly_actions, grouped by space ──
   const actionGroups = useMemo(() => {
     const weekActions = actions.filter(a => a.week_start === weekMonday)
@@ -136,7 +147,7 @@ export default function Home({
     }
     let doneTotal = 0, total = 0
     const groups = orderedSpaces
-      .filter(sp => bySpace.has(sp.id) && (spaceFilter === null || sp.id === spaceFilter))
+      .filter(sp => bySpace.has(sp.id) && !closedSpaceIds.has(sp.id) && (spaceFilter === null || sp.id === spaceFilter))
       .map(sp => {
         const full = bySpace.get(sp.id) ?? []
         const list = full.filter(a => !a.completed) // completed rows fall off the deck
@@ -146,7 +157,7 @@ export default function Home({
       })
       .filter(g => g.list.length > 0) // a space whose actions are all done drops out
     return { groups, doneTotal, total }
-  }, [actions, weekMonday, krById, orderedSpaces, spaceFilter])
+  }, [actions, weekMonday, krById, orderedSpaces, spaceFilter, closedSpaceIds])
 
   // ── Tasks due this week (open, non-subtask, due in week) ──
   const dueThisWeek = useMemo(() =>

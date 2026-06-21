@@ -150,7 +150,11 @@ export default function NavRail(props: Props) {
           Operation <span style={{ color: 'var(--accent)' }}>HQ</span>
         </div>
 
-        {props.spaces.length > 0 && (
+        {/* Home owns its own all-spaces filter pills, so the rail's space
+            switcher would be a confusing second control there. Suppress it on
+            Home; every other screen still uses the switcher as its space
+            control (and as the only place to create/edit spaces). */}
+        {props.spaces.length > 0 && props.screen !== 'home' && (
           <div style={{ marginBottom: 10 }}>
             <SpaceSwitcher
               spaces={props.spaces}

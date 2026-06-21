@@ -765,13 +765,16 @@ export default function HQPage() {
           space at all (no-op edge case for fresh users with zero spaces). */}
       {activeSpaceId && (
       <FastCapture
-        objectives={spaceObjectives}
-        roadmapItems={spaceRoadmapItems}
+        spaces={spaces}
+        objectives={objectives}
+        roadmapItems={roadmapItems}
         weekStart={weekStart}
         activeSpaceId={activeSpaceId}
         setObjectives={setObjectives}
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}
+        setTasks={setTasks}
+        setNotes={setNotes}
         toast={setToast}
       />
       )}
