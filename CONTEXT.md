@@ -11,7 +11,7 @@
 
 A single-user life-management + OKR system. Desktop-first, used many times a day.
 Modules: **Home** (all-spaces weekly deck + space filter + weekly-close strip; default landing) ·
-**Chief of Staff** (AI agent, voice) · **OKRs + Roadmap** (strategic) · **Tasks + Notes + Calendar**
+**Chief of Staff** (AI agent, voice) · **Home + Roadmap** (strategic — work the plan / shape the plan) · **Tasks + Notes + Calendar**
 (daily) · **Reflect** (per-space weekly ritual hub — Plan + Close + archive) · **Settings** ·
 **Parking** (archive). Proactive web-push briefings layer on top. Garry is the sole user
 (Mel/multi-user is deferred indefinitely — see Backlog).
@@ -51,7 +51,21 @@ running deployment can't see it.
 
 ## Current state — shipped
 
-### Jun 21 (latest) — Files/Drive SHIPPED + Home → KR-primary working area (head `93dbe34`)
+### Jun 21 (latest) — OKR→Home merge: objective-spine Home, OKR tab deleted (head `2fce55f`)
+
+The OKR tab and Home were fighting; Home absorbed it. End state: **Roadmap = shape the plan, Home = work the plan**, OKR tab gone. Shipped in phases.
+
+**Phase 1 — metrics relocated (`ef07987`).** New `components/VitalsStrip.tsx` (slim mono metric readout) replaces the flip-card "Key metrics" band on Home. The full `MetricKPICard` flip cards + habit % cards moved to a new **Vitals band at the top of Reflect** (all-spaces, current quarter). Home stays lean; Reflect is where you study the numbers. (Supersedes the prior entry's "Key metrics band of flip cards on Home.")
+
+**Phase 2 — objective spine (`df22c55`).** Home's KR board ("In motion / All key results") became an **objective-as-collapsible-card spine** (`renderObjCard` in `Home.tsx`): each objective is a card with a segmented health-rollup bar; **active objectives** (≥1 KR with a this-week or backlog action) start expanded, the rest collapsed. KR rows carry health pill, inline metric readout, this-week/backlog action groups, +action, dive chevron. The gold `.nowline` time-bar is gone — replaced by a **rolling 7-day calendar ribbon** (today + 6, amber "TODAY" tag; `fetchCalendarEvents` repointed to the window). **Sticky view state** in localStorage via SSR-safe `loadLS<T>(key,fallback)`: `hq-home-space-filter`, `hq-home-qtr-scope`, `hq-home-obj-open` (per-objective collapse overrides).
+
+**Overflow fix (`cb9f02b`).** Selecting All/Keeply overflowed horizontally (right rail pushed off-screen, 722px). Cause: the plain `1fr` left track has implicit `min-width:auto` → expands to its widest child (long KR/objective text). Fix: `.hd-body` grid `1fr 380px` → **`minmax(0,1fr) 380px`**. Diagnosed live via Chrome MCP (JS-measured the overflow, proved causation by toggling minmax).
+
+**Phase 3a — edit on Home + ObjectivePanel rehomed (`91f7de2`).** Extracted `EditObjectiveModal` out of `OKRs.tsx` into shared `components/EditObjectiveModal.tsx`. Home gained objective ✎/⋯ + KR ✎ affordances (full create/edit now reachable without the OKR tab) and renders `EditKRModal`/`EditObjectiveModal` in place. `ObjectivePanel` (objective links + dated logs) rehomed as a **page-level right drawer** opened from Home (`openObjectiveId` lifted to `page.tsx`), not an OKR-tab inline panel. Split from 3b to de-risk the destructive cut — 8 links + 7 logs were reachable only through OKRs.
+
+**Phase 3b — OKR tab deleted (`2fce55f`).** Removed `components/OKRs.tsx` + its exclusive child `components/ObjectiveCard.tsx`, the NavRail entry + `OKRIcon`, the `okr` screen type (page + NavRail), the OKRs render branch, and the six OKR-only `space*` derived slices in `page.tsx` (`spaceObjectiveIds/spaceActions/spaceHabitCheckins/spaceMetricCheckins/spaceLinks/spaceLogs`). ⌘K / deep-links rerouted via the generic `handleSearchPick`: objectives open Home's drawer, **active-quarter KRs + actions land on Home and dive into the KR** (Home now consumes `initialKRId`), future-quarter KRs still route to Roadmap. Dropped the `g o` go-key. Copy swept (`manifest.json` + `layout.tsx` description, `FastCapture.tsx` hint no longer say "OKRs"). Roadmap keeps all creation; **Home is the sole work-and-edit surface.**
+
+### Jun 21 — Files/Drive SHIPPED + Home → KR-primary working area (head `93dbe34`)
 
 Multi-deploy session. Two arcs: the Drive-backed Files feature, then a Home redesign making it a real working area (the three "core function" problems Garry hit: orphaned actions, empty-week dead Home, metrics only on the OKR tab).
 
@@ -498,6 +512,14 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **Orphaned CSS in `Home.tsx`** — the objective-spine rewrite (Phase 2) left the old KR-band classes
+  (`.kb-card/.kb-top/.kb-grow/.kb-name/.kb-actions/.kb-asec/.kb-addbtn/.kb-objgrp/.kb-oname/.kb-ocrumb/
+  .kb-obar/.kb-mgrid/.kb-metrics` etc.) defined but unused. Cosmetic dead CSS; sweep when convenient.
+- **Space deep-links land on Home unfiltered.** ⌘K "go to a space" now routes to Home but doesn't set
+  Home's sticky `hq-home-space-filter`, so Home opens on whatever filter was last persisted. Push the
+  space into Home's filter from the route if the mismatch bugs Garry. ~15min.
+- **`ObjectivePanel` (links/logs) is desktop-drawer only** — opens as a fixed ~520px right drawer from
+  Home; no mobile treatment. Folded into the responsive `ActionPanel`/`ObjectivePanel` backlog item.
 - **Per-space week vs Home week divergence (root of the orphan bug) only partially closed.** Phase 1 fixed
   the *symptom* — new KR actions default to backlog (`week_start: null`), and the OKR card's "this week"
   now uses real `getMonday()` instead of the stale per-space `weekStart`/`legacyWeekStart` fallback. But the
@@ -555,9 +577,9 @@ redirect URIs for prod + `localhost:3000`.
    - **Auto-watch Inbox** (the folder-watch the original plan wanted) is NOT built — drive.file can't enumerate
      a folder. Escape hatch if ever wanted: service-account + shared-folder watch. drive.file + Picker is the
      shipped model; revisit only if manual Picker tracking proves too heavy.
-1. **Home — closed-space suppression from "In motion"** — the KR board dropped the old "closed spaces fall off"
-   filter (it's week-agnostic now), so a closed space's completed this-week actions can still show in the
-   in-motion band. Harmless; suppress if it bugs Garry. ~15min.
+1. **Home — closed-space suppression** — the objective spine auto-expands an objective whenever any KR has a
+   this-week or backlog action, regardless of the space's status, so a closed space's objective can still
+   surface as "active". Harmless; drop closed spaces from the active set if it bugs Garry. ~15min.
 2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
 3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
@@ -640,6 +662,18 @@ Share-page query optimization · PWA install prompt · more keyboard shortcuts (
     (`supabaseUrl is required`), which is the known cosmetic false-positive. Restore the real
     `layout.tsx` (grep-confirm `next/font/google` present) before staging. Garry's Mac has open
     network → his build fetches the fonts and succeeds.
+
+17. **`minmax(0,1fr)` for grid tracks holding wide content.** A plain `1fr` track has implicit
+    `min-width:auto` and expands past its share to fit its widest child (long KR/objective text) →
+    horizontal overflow that shoves sibling tracks off-screen. Use `minmax(0,1fr)` so the track can shrink.
+18. **Sticky view-state via localStorage** (`hq-home-*` keys, SSR-safe `loadLS<T>(key, fallback)`) — mirror
+    the `tasks-show-done` pattern: read on init, persist in one `useEffect` per key. Home remembers its space
+    filter, quarter scope, and per-objective collapse across reloads.
+19. **Objective-spine + page-level panels.** On Home an objective auto-expands when ≥1 KR has a this-week or
+    backlog action ("active"); the rest collapse. `ObjectivePanel` (links/logs) is a **page-level** drawer
+    (`openObjectiveId` lifted to `page.tsx`), owned by no single screen, so deep-links open it over Home.
+    Editing modals (`EditKRModal`/`EditObjectiveModal`) are shared components rendered in place by whatever
+    surface needs them — extract from a screen before a second caller needs it, not after.
 
 Earlier (May 14): desktop-first; SECURITY DEFINER RPCs for anon validation; NULL as "applies
 broadly" sentinel; paired text+structured forms; rolling state over event logs for recurrence;
