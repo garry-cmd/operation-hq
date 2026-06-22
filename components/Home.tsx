@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef, Fragment } from 'react'
 import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile, MetricCheckin } from '@/lib/types'
-import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q } from '@/lib/utils'
+import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q, formatMinutes } from '@/lib/utils'
 import { getMetricKRs } from '@/lib/krFilters'
 import VitalsStrip from './VitalsStrip'
 import { randomQuote } from '@/lib/quotes'
@@ -44,6 +44,9 @@ const TAG_STYLE: Record<ActionTag, { bg: string; color: string; label: string }>
   waiting: { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'waiting' },
   doing:   { bg: 'var(--teal-bg)',   color: 'var(--teal-text)',   label: 'doing' },
 }
+// Estimated-duration buckets for action items. Tuned for multi-hour project
+// pieces (the calendar falls back to 30m only when an action has no estimate).
+const ACTION_DURATIONS = [30, 60, 90, 120, 180, 240]
 function shortDow(dateStr: string): string {
   return DOW[(parseDateLocal(dateStr).getDay() + 6) % 7]
 }
@@ -377,6 +380,7 @@ export default function Home({
   const [linkQuery, setLinkQuery] = useState('')
   const [krActionInput, setKrActionInput] = useState('')
   const [deckAddKR, setDeckAddKR] = useState<string | null>(null)
+  const [durPickerAction, setDurPickerAction] = useState<string | null>(null) // action id whose duration picker is open
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function dive(t: WorkTarget) {
@@ -472,6 +476,41 @@ export default function Home({
     setActions(prev => prev.map(x => x.id === a.id ? { ...x, week_start: null } : x))
     try { await actionsDb.update(a.id, { week_start: null }) }
     catch { toast('Could not move to backlog'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
+  }
+  // ── Estimated duration on an action (drives the calendar block length; the
+  //    grid falls back to 30m only when this is unset) ──
+  async function setActionDuration(a: WeeklyAction, mins: number | null) {
+    setDurPickerAction(null)
+    setActions(prev => prev.map(x => x.id === a.id ? { ...x, estimated_minutes: mins } : x))
+    try { await actionsDb.update(a.id, { estimated_minutes: mins }) }
+    catch { toast('Could not set duration'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
+  }
+  // Small mono badge on each action row. Shows the estimate when set, a quiet
+  // "+est" affordance (hover-revealed) when not. Tap toggles the picker below.
+  function durBadge(a: WeeklyAction) {
+    const open = durPickerAction === a.id
+    return (
+      <button
+        className={`act-dur${a.estimated_minutes ? ' set' : ''}${open ? ' open' : ''}`}
+        title={a.estimated_minutes ? 'Change estimated duration' : 'Set estimated duration'}
+        onClick={e => { e.stopPropagation(); setDurPickerAction(open ? null : a.id) }}
+      >{a.estimated_minutes ? formatMinutes(a.estimated_minutes) : '+est'}</button>
+    )
+  }
+  // Inline chip row (renders as a sibling under the action row when open).
+  function durPicker(a: WeeklyAction, variant: 'kb' | 'cw') {
+    if (durPickerAction !== a.id) return null
+    return (
+      <div className={`act-durpick ${variant}`} onClick={e => e.stopPropagation()}>
+        {ACTION_DURATIONS.map(m => (
+          <button key={m} className={`act-durchip${a.estimated_minutes === m ? ' on' : ''}`}
+            onClick={() => setActionDuration(a, a.estimated_minutes === m ? null : m)}>{formatMinutes(m)}</button>
+        ))}
+        {a.estimated_minutes != null && (
+          <button className="act-durchip clear" onClick={() => setActionDuration(a, null)}>clear</button>
+        )}
+      </div>
+    )
   }
   // ── Files on the KR (Drive-backed) ──
   const driveApiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
@@ -600,18 +639,26 @@ export default function Home({
                   {(hasActions || deckAddKR === kr.id) && (
                     <div className="kb-sub" onClick={e => e.stopPropagation()}>
                       {thisWeek.map(a => (
-                        <div key={a.id} className={`kb-arow${a.completed ? ' done' : ''}`}>
-                          <button className={`kb-cb${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
-                          <span className="kb-atitle">{a.title}</span>
-                          {!a.completed && <button className="kb-sched" onClick={() => unscheduleAction(a)} title="Move to backlog">backlog</button>}
-                        </div>
+                        <Fragment key={a.id}>
+                          <div className={`kb-arow${a.completed ? ' done' : ''}`}>
+                            <button className={`kb-cb${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
+                            <span className="kb-atitle">{a.title}</span>
+                            {durBadge(a)}
+                            {!a.completed && <button className="kb-sched" onClick={() => unscheduleAction(a)} title="Move to backlog">backlog</button>}
+                          </div>
+                          {durPicker(a, 'kb')}
+                        </Fragment>
                       ))}
                       {backlog.map(a => (
-                        <div key={a.id} className="kb-arow">
-                          <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
-                          <span className="kb-atitle">{a.title}</span>
-                          <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
-                        </div>
+                        <Fragment key={a.id}>
+                          <div className="kb-arow">
+                            <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
+                            <span className="kb-atitle">{a.title}</span>
+                            {durBadge(a)}
+                            <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
+                          </div>
+                          {durPicker(a, 'kb')}
+                        </Fragment>
                       ))}
                       {deckAddKR === kr.id && (
                         <div className="kb-addrow">
@@ -926,20 +973,28 @@ export default function Home({
                       <div className="cw-tasks-sec"><span className="cw-lbl">This week’s actions</span></div>
                       {wkActions.length === 0 && <div className="cw-tasks-empty">Nothing scheduled this week. Pull from the backlog below.</div>}
                       {wkActions.map(a => (
-                        <div key={a.id} className={`cw-trow${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)}>
-                          <span className={`cw-cb${a.completed ? ' done' : ''}`}>{a.completed ? '✓' : ''}</span>
-                          <span className="cw-tt">{a.title}</span>
-                          {!a.completed && <button className="cw-sched" title="Move to backlog" onClick={e => { e.stopPropagation(); unscheduleAction(a) }}>backlog</button>}
-                        </div>
+                        <Fragment key={a.id}>
+                          <div className={`cw-trow${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)}>
+                            <span className={`cw-cb${a.completed ? ' done' : ''}`}>{a.completed ? '✓' : ''}</span>
+                            <span className="cw-tt">{a.title}</span>
+                            {durBadge(a)}
+                            {!a.completed && <button className="cw-sched" title="Move to backlog" onClick={e => { e.stopPropagation(); unscheduleAction(a) }}>backlog</button>}
+                          </div>
+                          {durPicker(a, 'cw')}
+                        </Fragment>
                       ))}
 
                       <div className="cw-tasks-sec brd"><span className="cw-lbl">Backlog</span>{backlogActions.length > 0 && <span className="cw-n"> · {backlogActions.length}</span>}</div>
                       {backlogActions.map(a => (
-                        <div key={a.id} className="cw-trow" onClick={() => toggleAction(a)}>
-                          <span className="cw-cb" />
-                          <span className="cw-tt">{a.title}</span>
-                          <button className="cw-sched pri" title="Schedule for this week" onClick={e => { e.stopPropagation(); scheduleAction(a, weekMonday) }}>▸ this week</button>
-                        </div>
+                        <Fragment key={a.id}>
+                          <div className="cw-trow" onClick={() => toggleAction(a)}>
+                            <span className="cw-cb" />
+                            <span className="cw-tt">{a.title}</span>
+                            {durBadge(a)}
+                            <button className="cw-sched pri" title="Schedule for this week" onClick={e => { e.stopPropagation(); scheduleAction(a, weekMonday) }}>▸ this week</button>
+                          </div>
+                          {durPicker(a, 'cw')}
+                        </Fragment>
                       ))}
                       <div className="cw-add">
                         <input value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
@@ -1171,6 +1226,24 @@ export default function Home({
           border:1px solid var(--line-2);background:var(--surface-2);color:var(--navy-400);cursor:pointer;opacity:0;transition:opacity .12s;}
         .kb-arow:hover .kb-sched{opacity:1;}
         .kb-sched.pri{opacity:1;border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
+        /* shared action duration control (spine + dive) */
+        .act-dur{flex-shrink:0;font-family:var(--font-mono);font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;
+          border:1px solid var(--line-2);background:transparent;color:var(--navy-400);cursor:pointer;line-height:1;
+          transition:opacity .12s,color .12s,border-color .12s;}
+        .act-dur:hover{color:var(--navy-50);border-color:var(--navy-400);}
+        .act-dur.set{color:var(--navy-200);}
+        .act-dur:not(.set){opacity:0;}
+        .kb-arow:hover .act-dur:not(.set),.cw-trow:hover .act-dur:not(.set){opacity:1;}
+        .act-dur.open{opacity:1;color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}
+        .act-durpick{display:flex;flex-wrap:wrap;gap:6px;}
+        .act-durpick.kb{padding:2px 0 7px 26px;}
+        .act-durpick.cw{padding:2px 16px 9px 42px;}
+        .act-durchip{font-family:var(--font-mono);font-size:10px;font-weight:600;padding:4px 10px;border-radius:6px;
+          border:1px solid var(--line-2);background:var(--surface-2);color:var(--navy-300);cursor:pointer;line-height:1;transition:all .12s;}
+        .act-durchip:hover{border-color:var(--accent);color:var(--accent);}
+        .act-durchip.on{border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
+        .act-durchip.clear{color:var(--navy-500);}
+        .act-durchip.clear:hover{color:var(--alarm-text,#ff6452);border-color:var(--alarm-text,#ff6452);}
         .kb-addrow{padding:7px 0 4px;}
         .kb-addrow input{width:100%;background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;
           padding:7px 10px;color:var(--navy-100);font-family:inherit;font-size:12.5px;outline:none;}
