@@ -51,7 +51,34 @@ running deployment can't see it.
 
 ## Current state — shipped
 
-### Jun 21 (latest) — Keyboard shortcut layer + Files/Drive plan (design)
+### Jun 21 (latest) — Files/Drive SHIPPED + Home → KR-primary working area (head `93dbe34`)
+
+Multi-deploy session. Two arcs: the Drive-backed Files feature, then a Home redesign making it a real working area (the three "core function" problems Garry hit: orphaned actions, empty-week dead Home, metrics only on the OKR tab).
+
+**Files / Drive (SHIPPED).** Drive-backed client-document tracking.
+- **Scope = `drive.file` only** (dropped `drive.readonly` — it's a RESTRICTED scope → Google verification + paid CASA audit on the Production/External app). drive.file is non-sensitive. Tradeoff: no auto folder-watch Inbox; files enter via **Google Picker** (the only way drive.file grants access to existing files — can't paste a link). Service-account + shared-folder is the documented escape hatch if auto-watch is ever wanted.
+- **Tables:** `tracked_files` (space_id nullable=Inbox, drive_file_id unique, status `new_in|editing|with_client|sent`, nullable FKs roadmap_item_id/note_id/task_id ON DELETE SET NULL) + `file_versions` (direction `received|sent`, snapshot/source/dest/note). owner_all RLS.
+- **Files surface** (`components/Files.tsx`): Inbox/All/per-space sidebar, status chips, version ladder, +Track via Picker, snapshot logging. **NavRail Files entry** (Daily group).
+- **Files-on-KR:** Files section in Home's KR work view (tasks column) — +Track links file to KR+space in one gesture, open-in-Drive (↗), unlink.
+- New: `lib/db/trackedFiles.ts`, `lib/db/googleApi.ts`, `lib/drivePicker.ts`, `lib/trackViaPicker.ts`, `app/api/google/drive/access-token/route.ts`, `app/api/google/drive/track/route.ts`. `lib/google.ts` gained drive.file scope + `getDriveFileMeta`. Settings "Google & Drive" card with "Grant Drive access" (incremental re-consent).
+- **Picker gotchas (resolved):** drive.file Picker selections 404 on `files.get` unless `setAppId` (Cloud project number, = leading segment of GOOGLE_CLIENT_ID before first `-`) is passed — access-token route returns `app_id` for this. "API developer key invalid" was just wrong-origin: the API key is referrer-restricted to `hq.svirene.com/*`, so Picker must be tested on the live domain, not a vercel deploy URL. Env: `NEXT_PUBLIC_GOOGLE_API_KEY`.
+
+**Actions can be unscheduled (Phase 1).** The whole action model was week-anchored; adding an action from the OKR module stamped it with the per-space `weekStart`, which falls back to a **stale `legacyWeekStart`** → action stranded in a hidden week, invisible on Home (which runs on `getMonday()`) and on the OKR card (which only printed a *count*, never listed actions).
+- Migration `weekly_actions_week_start_nullable` — `week_start` now nullable. **NULL = unscheduled backlog action** on the KR.
+- New KR-added actions (ObjectiveCard + Home) default to **backlog** (`week_start: null`) — can never orphan again.
+- OKR card (`ObjectiveCard.tsx`) now **lists** actions per KR in **This week / Backlog** groups (was a bare count); "this week" = real `getMonday()`, not the stale prop. Home KR work view gained the same groups. Both have a `▸ this week` schedule chip and a `backlog` unschedule chip (new module-level `ActionRow` in ObjectiveCard; `scheduleAction`/`unscheduleAction` in both).
+- Null-safety: CloseWeekWizard skips backlog in the close walkthrough (also dodges a null `.localeCompare` crash); ⌘K action dedupe null-coalesces.
+
+**Home is a KR-primary working area (Phase 2).** Left board was a week-scoped *action* list → empty week = dead screen. Now it's a **KR board**:
+- **In motion this week** — KRs with this-week actions, as expandable cards (this-week + backlog actions inline, schedule chips, inline add).
+- **All key results** — every active KR grouped **by objective** (objective-first, space crumb on "All"), compact rows: health pill, metric readout, this-week/backlog counts, hover `+ action`, dive-in chevron. Always populated → never-empty.
+- Habits excluded (they live in the rail's Habits tracker). `metricCheckins` prop added to Home for the readout.
+
+**Quarter scope + backlog visibility.** Board defaults to **current quarter** (`ACTIVE_Q`, `getMetricKRs`/inline `quarter === ACTIVE_Q`) with a **This quarter / All** toggle pill in the board head — was leaking 3Q/4Q planned KRs. Backlog actions on non-in-motion KRs now render as **inline sub-rows** under their row in All key results (an added action surfaces immediately instead of hiding behind a count).
+
+**Metrics on Home (Phase 3).** Extracted `MetricKPICard` + `MetricSparkline` (+ format helpers) out of `OKRs.tsx` into shared **`components/MetricKPICard.tsx`** (OKRs lost ~260 lines of dup, imports the shared one). New **Key metrics band** at the top of Home's board — current-quarter metric KRs as the full flip cards (hero value, quarter sparkline, flip-to-readings, `+ Log`), space-filtered, always current-quarter (cards are quarter-anchored, ignore the All toggle). `onLogMetric` wired Home → page's `MetricLogModal`; the modal's KR + checkins lookup now uses the **full** `roadmapItems`/`metricCheckins` (was active-space only) so cross-space logging from Home works. OKRs settles into the structural/editing surface; Home carries the day.
+
+### Jun 21 — Keyboard shortcut layer + Files/Drive plan (design)
 
 **Shipped (live, commit `47b9ed2`)** — global keyboard layer in `app/hq/page.tsx` + `components/FastCapture.tsx`:
 - ⌘T → new task, ⌘N → new note. Drive the existing `FastCapture` dial via a new `openRequest` prop (FAB untouched, no duplicated create logic). ⌘-combos fire even mid-typing.
@@ -471,6 +498,18 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **Per-space week vs Home week divergence (root of the orphan bug) only partially closed.** Phase 1 fixed
+  the *symptom* — new KR actions default to backlog (`week_start: null`), and the OKR card's "this week"
+  now uses real `getMonday()` instead of the stale per-space `weekStart`/`legacyWeekStart` fallback. But the
+  underlying split (OKR tab runs on `weekStartBySpace[activeSpaceId] ?? legacyWeekStart ?? getMonday()`,
+  Home deck on its own `getMonday()`-seeded state) still exists. Full week-model unification is its own job.
+- **Daily metric logging** (parked, unchanged) — generalize `metric_checkins` from weekly to dated entries:
+  rename `week_start` → `entry_date` (~4–8 reader files), log modal defaults to today, Close Week reads the
+  latest reading in the week. `week_start` is a plain `date`; weekly-ness is app convention (`MetricLogModal`
+  stamps `getMonday()`), not a schema limit. One migration + ~4 files. Sparkline/flip already plot whatever
+  points exist, so daily "just works."
+- **Image node-level storage GC** (Notes) — deleting an image mid-edit doesn't GC that one file until the
+  note is deleted; needs body-diffing on save.
 - **Push: dedupe subscriptions.** Same machine can leave multiple `push_subscriptions` rows over time;
   `ensurePushSubscription` upserts on endpoint so it self-heals for one browser, but a server-side
   dedupe/cleanup pass would be tidier. Stale endpoints already get pruned on send ('gone' → delete).
@@ -482,8 +521,9 @@ redirect URIs for prod + `localhost:3000`.
   Delete when convenient.
 - **Rotate voice keys** — `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` transited a chat session during
   setup. Rotate in the provider dashboards + update Vercel when convenient. (Low priority.)
-- **Migrations applied via Supabase MCP aren't repo files.** This session's `create_push_subscriptions`
-  + `create_briefings` (and earlier `relax_calendar_block_source_for_freeform_events`) live in
+- **Migrations applied via Supabase MCP aren't repo files.** This session's `create_tracked_files`,
+  `create_file_versions`, `weekly_actions_week_start_nullable` (and earlier `create_push_subscriptions`,
+  `create_briefings`, `relax_calendar_block_source_for_freeform_events`) live in
   Supabase's migration history, not as tracked files. Fine operationally; capture as files only if
   repo-side migration tracking is wanted.
 - **Streaming cosmetic (minor):** voice persona keeps replies terse, but long screen replies can
@@ -504,44 +544,24 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-0. **Files — client-document management (Google Drive-backed). APPROVED — build next.**
-   Approved mockup: `hq-files-mockup.html` (this session). Unlock: stop hunting / duplicating / mis-deleting
-   client Excel files. **It's a version-provenance problem, not a storage problem** — files fork at the
-   handoffs (received / sent), not during the work.
-   **Model (decided):**
-   - **Google Drive is the single cloud home.** iCloud rejected (no developer API a web app can read).
-     OneDrive is smoother for "Open in Excel" but don't split across two clouds.
-   - **How files get in — no upload step.** Garry repoints the Mac default download location to a
-     Drive-synced folder (`HQ Inbox`). HQ **watches that folder via the Drive API**; new arrivals appear
-     in an HQ **Files Inbox** (mirrors the Notes Inbox pattern). Triage = assign to a client space +
-     deliverable, or attach as the next version of a tracked file. Untriaged downloads sit ignored (no noise).
-     This also kills the Downloads → Desktop → "which version?" chaos at the root.
-   - **A tracked file = live working copy + version ladder.** Working copy = the canonical Drive file
-     (source of truth; opens in Excel; returns where you left off). Ladder = frozen handoff snapshots
-     (received ← / sent →) with provenance (where from / where to + a one-line note), each mirrored to a
-     Drive archive folder. Drive's trash + version history is the mis-delete safety net.
-   - **Two file classes, opposite flow.** Note attachments (small, write-once) keep the Supabase-primary
-     model. Client working files are **Drive source-of-truth, HQ links/indexes by Drive file id — never
-     copied into HQ, never mirrored *from* HQ** (a mirror-from-HQ goes stale the instant the file is
-     edited in Excel).
-   - **HQ's moat over raw Drive:** files linked to space (client) + KR + note + task; unified ⌘K search;
-     findable by context ("the Meridian pricing model"), not by folder.
-   **Honest boundaries (don't oversell):** HQ launches Excel, can't embed it (web app) — "Open in Excel"
-   = open the Drive file in Excel-web or reveal the synced local copy. **Send-back stays manual** (client
-   SharePoint access issues HQ can't fix); Garry hits "snapshot & mark sent" at upload. **Required behavior
-   shift:** the working copy lives in the synced Drive folder, never loose in Downloads/Desktop.
-   **Plumbing to build:** add a Drive scope to the existing Google OAuth (currently
-   `https://www.googleapis.com/auth/calendar`; need `drive.readonly` to link existing files, or `drive.file`)
-   — re-consent with `prompt=consent&access_type=offline` (refresh token only returned on first consent).
-   New `tracked_files` + `file_versions` tables (Drive file id, client `space_id`, optional
-   `roadmap_item_id`/`note_id`/`task_id`; snapshot rows carry direction/source/dest/note). A Files surface
-   per space + a Files Inbox + ⌘K indexing. **Phase 2 (deferred):** Microsoft 365 is connected — for
-   Garry's *own* SharePoint/OneDrive, Graph could auto-read version history (turn manual "mark sent" into
-   auto-track); client-owned sites stay manual.
-1. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
+0. **Files / Drive — SHIPPED** (see top entry). Residual follow-ups:
+   - **Native "double-click → open in Excel/Acrobat"** — what Garry actually wants for files; the browser
+     can't launch local apps. Needs a thin **Tauri** capture/companion shell exposing `openLocalFile(path)`
+     (capture Drive files' local synced paths; degrade to "Open in Drive" in plain browser). Same shell would
+     unlock the system-wide ⌘T/⌘N capture hotkey (see keyboard layer). Interim: Drive-for-Desktop "open Office
+     files in their default app" setting (zero code).
+   - **"Link an already-tracked file to this KR"** picker on Home (attach-existing, symmetric with the note
+     shelf's "Link a note") — deferred from the files-on-KR build; today only +Track (new) links.
+   - **Auto-watch Inbox** (the folder-watch the original plan wanted) is NOT built — drive.file can't enumerate
+     a folder. Escape hatch if ever wanted: service-account + shared-folder watch. drive.file + Picker is the
+     shipped model; revisit only if manual Picker tracking proves too heavy.
+1. **Home — closed-space suppression from "In motion"** — the KR board dropped the old "closed spaces fall off"
+   filter (it's week-agnostic now), so a closed space's completed this-week actions can still show in the
+   in-motion band. Harmless; suppress if it bugs Garry. ~15min.
+2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
-2. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
-3. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
+3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
+4. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
    `delete_kr`; calendar event **edit/delete** (two systems: `calendar_blocks` row + Google event);
    note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context);
    **autonomy rung 3** (autonomous low-risk acting on an allowlist — the watcher already surfaces at
@@ -684,7 +704,7 @@ spaces
   ├── annual_objectives (space_id)  .notes DORMANT (→ objective_logs)
   │     ├── roadmap_items (space_id, annual_objective_id)
   │     │     .health_status: not_started|backlog|on_track|off_track|blocked|done
-  │     │     ├── weekly_actions (roadmap_item_id)  .estimated_minutes
+  │     │     ├── weekly_actions (roadmap_item_id)  .estimated_minutes  .week_start NULLABLE (NULL = unscheduled backlog)
   │     │     ├── habit_checkins / metric_checkins (UNIQUE roadmap_item_id, week_start) / daily_checkins
   │     ├── objective_links (objective_id)
   │     └── objective_logs (objective_id)
@@ -712,6 +732,12 @@ push_subscriptions — id, user_id, endpoint (UNIQUE), p256dh, auth, user_agent,
   last_sent_at.  RLS owner_all. Web-push subscriptions (one row per browser/endpoint).
 briefings — id, user_id, title, body, for_date (date), source 'manual'|'cron', created_at.
   RLS owner_all. Persisted Chief-of-Staff morning briefs (read in BriefingsFeed).
+tracked_files — id, space_id NULLABLE (NULL=Inbox), drive_file_id (UNIQUE), name, mime_type,
+  drive_modified_time, status 'new_in'|'editing'|'with_client'|'sent', archived, sort_order,
+  roadmap_item_id/note_id/task_id NULLABLE FKs (ON DELETE SET NULL).  RLS owner_all. Drive-backed
+  client-doc tracking (drive.file scope + Google Picker).
+file_versions — id, tracked_file_id (FK CASCADE), direction 'received'|'sent', drive_file_id NULLABLE,
+  snapshot_name, source, dest, note, created_at.  RLS owner_all. Per-file version ladder.
 
 (root) task_tags (task_id, tag) · note_tags (note_id, tag) — global tag namespaces
 ```
