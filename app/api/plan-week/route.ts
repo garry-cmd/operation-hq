@@ -11,9 +11,17 @@ export const dynamic = 'force-dynamic'
  * windows, schedulable items, busy time). Claude returns which day each item
  * should be worked, in scheduling order, with a short rationale and a skipped
  * list. It does NOT compute exact minutes — that deterministic math runs
- * client-side in calendarPlan.planFromAssignments around real busy time.
+ * client-side in calendarPlan.planFromAssignments.
  *
  * Fails closed (503) without ANTHROPIC_API_KEY so the UI can say so plainly.
+ *
+ * NOTE on max_tokens: the model emits one JSON object whose `plan` array has an
+ * entry (with a short reason) per scheduled item. A real week of ~20 items plus
+ * a long busy block used to push the response past a tight 2000-token cap, which
+ * truncated the JSON mid-string → JSON.parse threw → intermittent 502
+ * ("unparseable output"). The cap is now generous and reasons are explicitly
+ * terse so the output can't run long; parse failures also log the stop reason
+ * and the raw tail so this is never a black box again.
  */
 
 interface PlanDay { date: string; name: string }
@@ -87,11 +95,11 @@ RULES
 - Use judgment a good chief of staff would: batch same-space work, protect a block of deep work rather than fragmenting it, and don't cram a day that's already heavy with meetings — spread load across the week.
 - It's fine to skip items if the week is genuinely full. Be honest in the rationale about what didn't fit and why.
 
-OUTPUT — return ONLY valid JSON, no markdown, no prose outside the JSON:
+OUTPUT — return ONLY valid JSON, no markdown, no prose outside the JSON. Keep it COMPACT: every "reason" must be 8 words or fewer, and the "rationale" must be 2–4 short sentences. Do not pad.
 {
-  "rationale": "2–4 plain sentences on how you shaped the week",
-  "plan": [ { "key": "<item key exactly as given>", "day": "YYYY-MM-DD", "reason": "<short>" } ],
-  "skipped": [ { "key": "<item key>", "reason": "<why it didn't fit>" } ]
+  "rationale": "2–4 short sentences on how you shaped the week",
+  "plan": [ { "key": "<item key exactly as given>", "day": "YYYY-MM-DD", "reason": "<≤8 words>" } ],
+  "skipped": [ { "key": "<item key>", "reason": "<≤8 words>" } ]
 }
 The "plan" array order IS the scheduling priority order (earlier = placed first). Every item must appear in either "plan" or "skipped".`
 }
@@ -147,13 +155,17 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 2000,
+        // Generous ceiling: a real week is ~20 items, so the JSON answer is well
+        // under this. The old 2000 cap truncated the response on busy weeks and
+        // caused intermittent "unparseable output" 502s.
+        max_tokens: 8000,
         messages: [{ role: 'user', content: buildPrompt(body) }],
       }),
     })
 
     if (!res.ok) {
       const detail = await res.text().catch(() => '')
+      console.error('[plan-week] upstream error', res.status, detail.slice(0, 500))
       return NextResponse.json(
         { error: `planner upstream ${res.status}`, detail: detail.slice(0, 500) },
         { status: 502 },
@@ -161,19 +173,40 @@ export async function POST(req: Request) {
     }
 
     const data = await res.json()
+    const stopReason: string | undefined = data?.stop_reason
     const text: string = Array.isArray(data?.content)
       ? data.content.filter((b: { type?: string }) => b?.type === 'text').map((b: { text?: string }) => b.text ?? '').join('\n')
       : ''
-    if (!text.trim()) return NextResponse.json({ error: 'empty planner response' }, { status: 502 })
+    if (!text.trim()) {
+      console.error('[plan-week] empty response', { stopReason })
+      return NextResponse.json({ error: 'empty planner response' }, { status: 502 })
+    }
 
     let plan: PlanResponse
     try {
       plan = parsePlan(text)
-    } catch {
-      return NextResponse.json({ error: 'planner returned unparseable output' }, { status: 502 })
+    } catch (err) {
+      // Surface exactly why parsing failed so a future regression is diagnosable
+      // from the logs (stop_reason === 'max_tokens' ⇒ truncation; raise the cap).
+      console.error('[plan-week] unparseable output', {
+        stopReason,
+        textLen: text.length,
+        tail: text.slice(-400),
+        err: err instanceof Error ? err.message : String(err),
+      })
+      return NextResponse.json(
+        {
+          error: stopReason === 'max_tokens'
+            ? 'planner output was cut off (token limit) — try again'
+            : 'planner returned unparseable output',
+          stopReason,
+        },
+        { status: 502 },
+      )
     }
     return NextResponse.json(plan)
-  } catch {
+  } catch (err) {
+    console.error('[plan-week] request failed', err instanceof Error ? err.message : String(err))
     return NextResponse.json({ error: 'planner request failed' }, { status: 502 })
   }
 }
