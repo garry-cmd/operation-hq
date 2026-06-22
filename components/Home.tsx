@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile } from '@/lib/types'
+import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile, MetricCheckin } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
@@ -70,6 +70,7 @@ interface Props {
   roadmapItems: RoadmapItem[]
   actions: WeeklyAction[]
   setActions: React.Dispatch<React.SetStateAction<WeeklyAction[]>>
+  metricCheckins: MetricCheckin[]
   tasks: Task[]
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   habitCheckins: HabitCheckin[]
@@ -92,8 +93,31 @@ interface Props {
   toast: (m: string) => void
 }
 
+// KR health → night-watch tone for the board pills.
+const HEALTH_TONE: Record<string, { cls: string; label: string }> = {
+  on_track:    { cls: 't-nominal', label: 'on track' },
+  off_track:   { cls: 't-alarm',   label: 'off track' },
+  blocked:     { cls: 't-alarm',   label: 'blocked' },
+  waiting:     { cls: 't-caution', label: 'waiting' },
+  backlog:     { cls: 't-standby', label: 'backlog' },
+  not_started: { cls: 't-standby', label: 'not started' },
+}
+function healthTone(s: string | null | undefined) {
+  return HEALTH_TONE[s ?? 'not_started'] ?? HEALTH_TONE.not_started
+}
+// Compact metric readout. Supabase numerics arrive as strings — coerce.
+function fmtMetric(v: number | string | null | undefined, unit: string | null | undefined): string {
+  if (v == null || v === '') return '—'
+  const n = Number(v)
+  const s = isFinite(n) ? n.toLocaleString() : String(v)
+  if (unit === '$') return '$' + s
+  if (!unit || unit === '#') return s
+  return `${s} ${unit}`
+}
+
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions, tasks, setTasks,
+  metricCheckins,
   habitCheckins, setHabitCheckins, notes, setNotes, notebooks, tagsByNote, setTagsByNote,
   googleConnected, driveGranted, trackedFiles, setTrackedFiles, reviews, weekForSpace, onCloseWeek,
   onOpenTasks, onOpenCalendar, toast,
@@ -111,6 +135,7 @@ export default function Home({
 
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])
+  const objById = useMemo(() => new Map(objectives.map(o => [o.id, o])), [objectives])
   const orderedSpaces = useMemo(() => [...spaces].sort((a, b) => a.sort_order - b.sort_order), [spaces])
   const colorForSpace = (id: string | null) => {
     const sp = id ? spaceById.get(id) : null
@@ -157,34 +182,41 @@ export default function Home({
   // carried originals keep rendering as live "open" items on the current-week
   // board even though you've already rolled them on. Drop any space whose review
   // for the displayed week is closed.
-  const closedSpaceIds = useMemo(
-    () => new Set(reviews.filter(r => r.week_start === weekMonday && r.closed_at != null).map(r => r.space_id)),
-    [reviews, weekMonday],
-  )
-
-  // ── Key actions: this week's weekly_actions, grouped by space ──
-  const actionGroups = useMemo(() => {
-    const weekActions = actions.filter(a => a.week_start === weekMonday)
-    const bySpace = new Map<string, WeeklyAction[]>()
-    for (const a of weekActions) {
-      const kr = krById.get(a.roadmap_item_id)
-      if (!kr) continue
-      const arr = bySpace.get(kr.space_id) ?? []
-      arr.push(a); bySpace.set(kr.space_id, arr)
+  // ── Latest metric reading per KR (for the readout on metric KR rows) ──
+  const latestMetricByKR = useMemo(() => {
+    const m = new Map<string, MetricCheckin>()
+    for (const c of metricCheckins) {
+      const cur = m.get(c.roadmap_item_id)
+      if (!cur || (c.week_start ?? '') > (cur.week_start ?? '')) m.set(c.roadmap_item_id, c)
     }
-    let doneTotal = 0, total = 0
-    const groups = orderedSpaces
-      .filter(sp => bySpace.has(sp.id) && !closedSpaceIds.has(sp.id) && (spaceFilter === null || sp.id === spaceFilter))
-      .map(sp => {
-        const full = bySpace.get(sp.id) ?? []
-        const list = full.filter(a => !a.completed) // completed rows fall off the deck
-        const done = full.length - list.length
-        doneTotal += done; total += full.length
-        return { space: sp, list, open: list.length, done }
+    return m
+  }, [metricCheckins])
+
+  // ── KR board: active objectives → their KRs, with this-week + backlog
+  // actions. This is the working backbone of Home — present whether or not
+  // the week has any scheduled work, so an empty week is never a dead screen.
+  // Habits are excluded (they live in the Habits tracker on the rail).
+  const krBoard = useMemo(() => {
+    const objs = objectives
+      .filter(o => o.status !== 'abandoned' && (spaceFilter === null || o.space_id === spaceFilter))
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+    const groups = objs
+      .map(o => {
+        const krs = roadmapItems
+          .filter(k => k.annual_objective_id === o.id && !k.is_habit && !k.is_parked && k.health_status !== 'done')
+          .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+          .map(kr => ({
+            kr,
+            thisWeek: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday),
+            backlog: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start == null && !a.completed),
+          }))
+        return { obj: o, krs }
       })
-      .filter(g => g.list.length > 0) // a space whose actions are all done drops out
-    return { groups, doneTotal, total }
-  }, [actions, weekMonday, krById, orderedSpaces, spaceFilter, closedSpaceIds])
+      .filter(g => g.krs.length > 0)
+    const inMotion = groups.flatMap(g => g.krs).filter(x => x.thisWeek.length > 0)
+    const totalKRs = groups.reduce((n, g) => n + g.krs.length, 0)
+    return { groups, inMotion, totalKRs }
+  }, [objectives, roadmapItems, actions, weekMonday, spaceFilter])
 
   // ── Tasks due this week (open, non-subtask, due in week) ──
   const dueThisWeek = useMemo(() =>
@@ -300,6 +332,7 @@ export default function Home({
   const [fileBusy, setFileBusy] = useState(false)
   const [linkQuery, setLinkQuery] = useState('')
   const [krActionInput, setKrActionInput] = useState('')
+  const [deckAddKR, setDeckAddKR] = useState<string | null>(null)
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function dive(t: WorkTarget) {
@@ -383,7 +416,7 @@ export default function Home({
     const t = krActionInput.trim(); if (!t) return
     try {
       const created = await actionsDb.create({ roadmap_item_id: kr.id, title: t, week_start: null })
-      setActions(prev => [...prev, created]); setKrActionInput('')
+      setActions(prev => [...prev, created]); setKrActionInput(''); setDeckAddKR(null)
     } catch { toast('Could not add action') }
   }
   async function scheduleAction(a: WeeklyAction, week: string) {
@@ -505,37 +538,108 @@ export default function Home({
 
       {/* body */}
       <div className="hd-body">
-        {/* LEFT: key actions */}
+        {/* LEFT: KR board — the working backbone */}
         <section>
-          <div className="ka-head">
-            <span className="label">Key actions · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
-            <span className="kadone">{actionGroups.total === 0 ? 'no actions this week' : `${actionGroups.doneTotal} of ${actionGroups.total} done`}</span>
+          <div className="kb-head">
+            <span className="label">Key results · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
+            <span className="kb-sum">
+              {krBoard.inMotion.length > 0
+                ? <><b>{krBoard.inMotion.length}</b> in motion · {krBoard.totalKRs} active</>
+                : <>{krBoard.totalKRs} active key result{krBoard.totalKRs === 1 ? '' : 's'}</>}
+            </span>
           </div>
-          {actionGroups.groups.length === 0 ? (
-            <div className="empty">{actionGroups.total > 0 ? 'All key actions complete for this week. ✓' : 'No key actions planned for this week.'}</div>
-          ) : actionGroups.groups.map(({ space, list, open, done }) => (
-            <div key={space.id} className="spgrp">
-              <div className="sphead">
-                <span className="dot" style={{ background: spaceDisplayColor(space) }} />
-                {space.name}
-                <span className="cnt">· {open > 0 ? `${open} open` : `${done} done`}</span>
+
+          {/* band — in motion this week */}
+          <div className="kb-band"><span className="label">In motion this week</span><span className="kb-hr" /></div>
+          {krBoard.inMotion.length === 0 ? (
+            <div className="kb-hint">
+              <span className="ic">◇</span>
+              <span><b>Nothing scheduled this week yet.</b> Pull a key result into motion below — tap <span className="kb-mono">▸ this week</span> on a backlog item, or add an action.</span>
+            </div>
+          ) : krBoard.inMotion.map(({ kr, thisWeek, backlog }) => {
+            const tone = healthTone(kr.health_status)
+            const mc = kr.is_metric ? latestMetricByKR.get(kr.id) : null
+            return (
+              <div key={kr.id} className="kb-card">
+                <div className="kb-top" style={{ borderLeftColor: colorForSpace(kr.space_id) }} onClick={() => dive({ kind: 'kr', id: kr.id })} title="Open this KR">
+                  <span className="dot" style={{ background: colorForSpace(kr.space_id) }} />
+                  <div className="kb-grow">
+                    <div className="kb-name">{kr.title}</div>
+                    <div className="kb-obj">{objById.get(kr.annual_objective_id ?? '')?.name ?? ''}</div>
+                  </div>
+                  {mc && <span className="kb-metric"><b>{fmtMetric(mc.value, kr.metric_unit)}</b></span>}
+                  <span className={`kb-hpill ${tone.cls}`}><span className="pd" />{tone.label}</span>
+                  <span className="kb-chev">›</span>
+                </div>
+                <div className="kb-actions" onClick={e => e.stopPropagation()}>
+                  <div className="kb-asec">This week</div>
+                  {thisWeek.map(a => (
+                    <div key={a.id} className={`kb-arow${a.completed ? ' done' : ''}`}>
+                      <button className={`kb-cb${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
+                      <span className="kb-atitle">{a.title}</span>
+                      {!a.completed && <button className="kb-sched" onClick={() => unscheduleAction(a)} title="Move to backlog">backlog</button>}
+                    </div>
+                  ))}
+                  {backlog.length > 0 && <div className="kb-asec">Backlog · {backlog.length}</div>}
+                  {backlog.map(a => (
+                    <div key={a.id} className="kb-arow">
+                      <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
+                      <span className="kb-atitle">{a.title}</span>
+                      <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
+                    </div>
+                  ))}
+                  {deckAddKR === kr.id ? (
+                    <div className="kb-addrow">
+                      <input autoFocus value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr); if (e.key === 'Escape') { setDeckAddKR(null); setKrActionInput('') } }}
+                        placeholder="+ Add an action (lands in backlog)…" />
+                    </div>
+                  ) : (
+                    <button className="kb-addbtn" onClick={() => { setDeckAddKR(kr.id); setKrActionInput('') }}>+ Add an action</button>
+                  )}
+                </div>
               </div>
-              {list.map(a => {
-                const kr = krById.get(a.roadmap_item_id)
-                const health = kr?.health_status
+            )
+          })}
+
+          {/* band — all key results, grouped by objective */}
+          <div className="kb-band"><span className="label">All key results</span><span className="kb-hr" /></div>
+          {krBoard.groups.length === 0 ? (
+            <div className="empty">No active key results{spaceFilter ? ' in this space' : ''} yet.</div>
+          ) : krBoard.groups.map(({ obj, krs }) => (
+            <div key={obj.id} className="kb-objgrp">
+              <div className="kb-objhead">
+                <span className="dot" style={{ background: colorForSpace(obj.space_id) }} />
+                <span className="kb-oname">{obj.name}</span>
+                {spaceFilter === null && <span className="kb-ocrumb">{spaceById.get(obj.space_id)?.name ?? ''}</span>}
+                <span className="kb-obar" />
+              </div>
+              {krs.map(({ kr, thisWeek, backlog }) => {
+                const tone = healthTone(kr.health_status)
+                const mc = kr.is_metric ? latestMetricByKR.get(kr.id) : null
+                const openTW = thisWeek.filter(a => !a.completed).length
                 return (
-                  <div key={a.id} className={`act${a.completed ? ' is-done' : ''}${kr ? ' tappable' : ''}`}
-                    onClick={() => kr && dive({ kind: 'kr', id: kr.id })}
-                    title={kr ? 'Open this KR' : undefined}>
-                    <button className={`bub${a.completed ? ' done' : ''}`} onClick={e => { e.stopPropagation(); toggleAction(a) }} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
-                    <span className="atitle">{a.title}</span>
-                    {a.tag && <span className="atag" style={{ background: TAG_STYLE[a.tag].bg, color: TAG_STYLE[a.tag].color }}>{TAG_STYLE[a.tag].label}</span>}
-                    {!a.completed && health === 'off_track' && <span className="status off">off track</span>}
-                    {!a.completed && health === 'blocked' && <span className="status blocked">blocked</span>}
-                    {kr && (
-                      <button className="krpill" onClick={e => { e.stopPropagation(); dive({ kind: 'kr', id: kr.id }) }} title="Open this KR">
-                        <span className="di">◆</span><span className="kt">{kr.title}</span>
-                      </button>
+                  <div key={kr.id} className="kb-krwrap">
+                    <div className={`kb-krrow${thisWeek.length > 0 ? ' inmotion' : ''}`} onClick={() => dive({ kind: 'kr', id: kr.id })} title="Open this KR">
+                      <span className="dot" style={{ background: colorForSpace(kr.space_id) }} />
+                      <span className="kb-kt">{kr.title}</span>
+                      {mc && <span className="kb-metric"><b>{fmtMetric(mc.value, kr.metric_unit)}</b></span>}
+                      <span className={`kb-hpill ${tone.cls}`}><span className="pd" />{tone.label}</span>
+                      <span className="kb-meta">
+                        {thisWeek.length > 0 && <span className="on">in motion · {openTW > 0 ? openTW : thisWeek.length}</span>}
+                        {thisWeek.length > 0 && backlog.length > 0 && <span> · </span>}
+                        {backlog.length > 0 && <span>backlog {backlog.length}</span>}
+                        {thisWeek.length === 0 && backlog.length === 0 && <span>—</span>}
+                      </span>
+                      <button className="kb-add" onClick={e => { e.stopPropagation(); setDeckAddKR(kr.id); setKrActionInput('') }}>+ action</button>
+                      <span className="kb-chev">›</span>
+                    </div>
+                    {deckAddKR === kr.id && (
+                      <div className="kb-addrow rowadd">
+                        <input autoFocus value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr); if (e.key === 'Escape') { setDeckAddKR(null); setKrActionInput('') } }}
+                          placeholder="+ Add an action (lands in backlog)…" />
+                      </div>
                     )}
                   </div>
                 )
@@ -941,25 +1045,79 @@ export default function Home({
         .hd-body{display:grid;grid-template-columns:1fr 380px;gap:26px;align-items:start;}
         @media (max-width:1100px){.hd-body{grid-template-columns:1fr;}}
 
-        .ka-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;}
-        .kadone{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.1em;color:var(--navy-400);text-transform:uppercase;font-variant-numeric:tabular-nums;}
-        .spgrp{margin-bottom:18px;}
-        .sphead{display:flex;align-items:center;gap:9px;margin:0 0 8px 2px;font-size:13px;font-weight:700;color:var(--navy-100);}
-        .sphead .cnt{font-family:var(--font-mono);color:var(--navy-400);font-weight:500;font-size:11px;}
-        .act{display:flex;align-items:center;gap:14px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:10px;box-shadow:var(--card-inset);}
-        .bub{width:22px;height:22px;border-radius:50%;border:2px solid var(--line-strong);background:none;flex-shrink:0;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#06140a;font-size:13px;font-weight:800;font-family:inherit;}
-        .bub.done{background:var(--nw-nominal-text,#7fe27a);border-color:var(--nw-nominal-text,#7fe27a);}
-        .atitle{flex:1;font-size:15px;color:var(--navy-100);}
-        .act.is-done .atitle{color:var(--navy-500);text-decoration:line-through;}
-        .atag{font-size:10px;font-weight:700;padding:1px 8px;border-radius:99px;flex-shrink:0;}
-        .status{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:6px;}
-        .status.off{background:var(--nw-alarm-bg,#2e0a08);color:var(--nw-alarm-text,#ff6452);}
-        .status.blocked{background:var(--nw-caution-bg,#251a08);color:var(--nw-caution-text,#f5b840);}
-        .krpill{display:inline-flex;align-items:center;gap:8px;padding:6px 13px;border-radius:9px;font-size:13px;background:var(--surface-2);color:var(--navy-100);cursor:pointer;border:1px solid transparent;white-space:nowrap;max-width:240px;font-family:inherit;}
-        .krpill:hover{border-color:var(--accent);}
-        .krpill.on{border-color:var(--accent);background:var(--accent-dim);color:var(--navy-50);}
-        .krpill .di{color:var(--navy-300);font-size:11px;}
-        .krpill .kt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .kb-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
+        .kb-sum{font-family:var(--font-mono);font-size:11px;color:var(--navy-400);font-variant-numeric:tabular-nums;}
+        .kb-sum b{color:var(--nw-nominal-text,#7fe27a);font-weight:600;}
+        .kb-band{display:flex;align-items:center;gap:10px;margin:22px 0 12px;}
+        .kb-band:first-of-type{margin-top:8px;}
+        .kb-hr{flex:1;height:1px;background:var(--line);}
+        .kb-mono{font-family:var(--font-mono);color:var(--accent);}
+
+        /* in-motion KR card */
+        .kb-card{border:1px solid var(--line-2);border-radius:14px;background:var(--surface);margin-bottom:12px;overflow:hidden;}
+        .kb-top{display:flex;align-items:center;gap:11px;padding:13px 16px;cursor:pointer;border-left:3px solid transparent;}
+        .kb-top:hover{background:var(--hover);}
+        .kb-grow{flex:1;min-width:0;}
+        .kb-name{font-family:var(--font-display);font-size:15.5px;font-weight:600;color:var(--nw-cream);line-height:1.3;}
+        .kb-obj{font-size:11px;color:var(--navy-400);margin-top:1px;}
+        .kb-chev{color:var(--navy-500);font-size:20px;font-weight:300;flex-shrink:0;}
+        .kb-top:hover .kb-chev,.kb-krrow:hover .kb-chev{color:var(--accent);}
+        .kb-actions{padding:2px 16px 8px;border-top:1px solid var(--line);}
+        .kb-asec{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label-dim);padding:9px 0 4px;}
+        .kb-arow{display:flex;align-items:center;gap:10px;padding:5px 0;}
+        .kb-cb{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--navy-500);flex-shrink:0;cursor:pointer;padding:0;
+          display:inline-flex;align-items:center;justify-content:center;font-size:11px;color:var(--navy-900);background:transparent;font-family:inherit;}
+        .kb-cb.done{background:var(--nw-nominal-text,#7fe27a);border-color:var(--nw-nominal-text,#7fe27a);}
+        .kb-atitle{flex:1;font-size:13.5px;color:var(--navy-100);}
+        .kb-arow.done .kb-atitle{color:var(--navy-500);text-decoration:line-through;}
+        .kb-sched{flex-shrink:0;font-family:var(--font-mono);font-size:10px;font-weight:600;padding:3px 9px;border-radius:6px;
+          border:1px solid var(--line-2);background:var(--surface-2);color:var(--navy-400);cursor:pointer;opacity:0;transition:opacity .12s;}
+        .kb-arow:hover .kb-sched{opacity:1;}
+        .kb-sched.pri{opacity:1;border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
+        .kb-addrow{padding:7px 0 4px;}
+        .kb-addrow input{width:100%;background:var(--surface-2);border:1px solid var(--line-2);border-radius:8px;
+          padding:7px 10px;color:var(--navy-100);font-family:inherit;font-size:12.5px;outline:none;}
+        .kb-addrow input::placeholder{color:var(--navy-500);}
+        .kb-addrow input:focus{border-color:var(--accent);}
+        .kb-addrow.rowadd{padding:2px 0 8px 26px;}
+        .kb-addbtn{font-family:var(--font-mono);font-size:10px;font-weight:600;color:var(--navy-400);background:none;border:none;
+          cursor:pointer;padding:8px 0 4px;letter-spacing:.04em;}
+        .kb-addbtn:hover{color:var(--accent);}
+
+        /* health pill + metric readout */
+        .kb-hpill{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+          padding:3px 8px;border-radius:99px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;flex-shrink:0;}
+        .kb-hpill .pd{width:4px;height:4px;border-radius:99px;background:currentColor;}
+        .kb-hpill.t-nominal{background:var(--nw-nominal-bg,#0a2014);color:var(--nw-nominal-text,#7fe27a);}
+        .kb-hpill.t-alarm{background:var(--nw-alarm-bg,#2e0a08);color:var(--nw-alarm-text,#ff6452);}
+        .kb-hpill.t-caution{background:var(--nw-caution-bg,#251a08);color:var(--nw-caution-text,#f5b840);}
+        .kb-hpill.t-standby{background:var(--nw-standby-bg,#15191f);color:var(--nw-standby-text,#8e96a8);}
+        .kb-metric{font-family:var(--font-mono);font-size:11px;color:var(--navy-300);flex-shrink:0;}
+        .kb-metric b{color:var(--nw-cream);font-weight:600;font-size:13px;}
+
+        /* in-motion empty hint */
+        .kb-hint{border:1px dashed var(--line-strong);border-radius:12px;padding:15px 16px;color:var(--navy-400);font-size:13px;
+          display:flex;align-items:center;gap:11px;background:var(--accent-bg);line-height:1.45;}
+        .kb-hint .ic{font-size:18px;color:var(--accent-2);}
+        .kb-hint b{color:var(--navy-100);font-weight:600;}
+
+        /* all-KRs objective groups */
+        .kb-objgrp{margin-bottom:6px;}
+        .kb-objhead{display:flex;align-items:center;gap:9px;padding:14px 2px 8px;}
+        .kb-oname{font-family:var(--font-display);font-size:13px;font-weight:600;color:var(--navy-200);}
+        .kb-ocrumb{font-size:11px;color:var(--navy-500);}
+        .kb-obar{flex:1;height:1px;background:var(--line);}
+        .kb-krwrap{margin-bottom:5px;}
+        .kb-krrow{display:flex;align-items:center;gap:11px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;
+          background:var(--surface);cursor:pointer;border-left:3px solid transparent;}
+        .kb-krrow:hover{background:var(--hover);border-color:var(--line-2);}
+        .kb-krrow.inmotion{border-left-color:var(--accent);}
+        .kb-kt{flex:1;min-width:0;font-size:14px;color:var(--navy-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .kb-meta{font-family:var(--font-mono);font-size:10px;color:var(--navy-500);white-space:nowrap;flex-shrink:0;}
+        .kb-meta .on{color:var(--accent-2);}
+        .kb-add{opacity:0;transition:opacity .12s;font-family:var(--font-mono);font-size:10px;font-weight:600;
+          padding:3px 8px;border-radius:6px;border:1px dashed var(--line-strong);background:transparent;color:var(--navy-400);cursor:pointer;flex-shrink:0;}
+        .kb-krrow:hover .kb-add{opacity:1;}
 
         .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--card-shadow);}
         .card + .card{margin-top:18px;}
@@ -1008,7 +1166,6 @@ export default function Home({
         .home-deck.work-on .survey{position:absolute;inset:0;opacity:0;transform:scale(1.012);pointer-events:none;}
         .home-deck.work-on .workview{position:relative;opacity:1;transform:scale(1);pointer-events:auto;}
         @media (prefers-reduced-motion: reduce){ .home-deck .layer{transition:opacity .12s ease;transform:none!important;} }
-        .act.tappable{cursor:pointer;}
         .note .nprev{font-size:11.5px;color:var(--navy-400);margin-top:3px;line-height:1.45;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 
         .cw-back{display:flex;align-items:center;gap:14px;padding:2px 4px 14px;}

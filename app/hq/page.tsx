@@ -665,6 +665,7 @@ export default function HQPage() {
             roadmapItems={roadmapItems}
             actions={actions}
             setActions={setActions}
+            metricCheckins={metricCheckins}
             tasks={tasks}
             setTasks={setTasks}
             habitCheckins={habitCheckins}
