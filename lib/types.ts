@@ -114,7 +114,7 @@ export interface WeeklyAction {
   id: string
   roadmap_item_id: string
   title: string
-  week_start: string
+  week_start: string | null   // null = unscheduled (backlog action on the KR)
   completed: boolean
   carried_over: boolean
   is_recurring: boolean

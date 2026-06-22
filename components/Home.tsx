@@ -382,9 +382,19 @@ export default function Home({
   async function addKRAction(kr: RoadmapItem) {
     const t = krActionInput.trim(); if (!t) return
     try {
-      const created = await actionsDb.create({ roadmap_item_id: kr.id, title: t, week_start: weekMonday })
+      const created = await actionsDb.create({ roadmap_item_id: kr.id, title: t, week_start: null })
       setActions(prev => [...prev, created]); setKrActionInput('')
     } catch { toast('Could not add action') }
+  }
+  async function scheduleAction(a: WeeklyAction, week: string) {
+    setActions(prev => prev.map(x => x.id === a.id ? { ...x, week_start: week } : x))
+    try { await actionsDb.update(a.id, { week_start: week }) }
+    catch { toast('Could not schedule'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
+  }
+  async function unscheduleAction(a: WeeklyAction) {
+    setActions(prev => prev.map(x => x.id === a.id ? { ...x, week_start: null } : x))
+    try { await actionsDb.update(a.id, { week_start: null }) }
+    catch { toast('Could not move to backlog'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
   }
   // ── Files on the KR (Drive-backed) ──
   const driveApiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
@@ -661,6 +671,7 @@ export default function Home({
               const krNotesList = notes.filter(n => n.roadmap_item_id === kr.id).sort(byPinned)
               const sel = krNotesList.find(n => n.id === krNoteId) ?? krNotesList[0] ?? null
               const wkActions = actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday)
+              const backlogActions = actions.filter(a => a.roadmap_item_id === kr.id && a.week_start == null && !a.completed)
               const linkedTasks = tasks.filter(t => t.roadmap_item_id === kr.id && !t.parent_task_id)
               const krFiles = trackedFiles.filter(f => f.roadmap_item_id === kr.id && !f.archived)
               return (
@@ -717,13 +728,29 @@ export default function Home({
                     {/* tasks */}
                     <div className="cw-tasks">
                       <div className="cw-tasks-sec"><span className="cw-lbl">This week’s actions</span></div>
-                      {wkActions.length === 0 && <div className="cw-tasks-empty">No actions this week.</div>}
+                      {wkActions.length === 0 && <div className="cw-tasks-empty">Nothing scheduled this week. Pull from the backlog below.</div>}
                       {wkActions.map(a => (
                         <div key={a.id} className={`cw-trow${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)}>
                           <span className={`cw-cb${a.completed ? ' done' : ''}`}>{a.completed ? '✓' : ''}</span>
                           <span className="cw-tt">{a.title}</span>
+                          {!a.completed && <button className="cw-sched" title="Move to backlog" onClick={e => { e.stopPropagation(); unscheduleAction(a) }}>backlog</button>}
                         </div>
                       ))}
+
+                      <div className="cw-tasks-sec brd"><span className="cw-lbl">Backlog</span>{backlogActions.length > 0 && <span className="cw-n"> · {backlogActions.length}</span>}</div>
+                      {backlogActions.map(a => (
+                        <div key={a.id} className="cw-trow" onClick={() => toggleAction(a)}>
+                          <span className="cw-cb" />
+                          <span className="cw-tt">{a.title}</span>
+                          <button className="cw-sched pri" title="Schedule for this week" onClick={e => { e.stopPropagation(); scheduleAction(a, weekMonday) }}>▸ this week</button>
+                        </div>
+                      ))}
+                      <div className="cw-add">
+                        <input value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr) }}
+                          placeholder="+ Add an action (lands in backlog)…" />
+                      </div>
+
                       <div className="cw-tasks-sec brd"><span className="cw-lbl">Linked tasks</span></div>
                       {linkedTasks.length === 0 && <div className="cw-tasks-empty">No linked tasks.</div>}
                       {linkedTasks.map(t => (
@@ -732,11 +759,6 @@ export default function Home({
                           <span className="cw-tt">{t.title}</span>
                         </div>
                       ))}
-                      <div className="cw-add">
-                        <input value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr) }}
-                          placeholder="+ Add an action to this KR…" />
-                      </div>
 
                       {/* files */}
                       <div className="cw-tasks-sec brd">
@@ -1054,6 +1076,10 @@ export default function Home({
         .cw-cb.done{background:var(--nw-nominal-text,#7fe27a);border-color:var(--nw-nominal-text,#7fe27a);}
         .cw-tt{font-size:13px;color:var(--navy-100);line-height:1.4;}
         .cw-trow.done .cw-tt{color:var(--navy-500);text-decoration:line-through;}
+        .cw-sched{flex-shrink:0;font-family:inherit;font-size:10px;font-weight:600;padding:3px 8px;border-radius:6px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--navy-400);cursor:pointer;opacity:0;transition:opacity .12s;}
+        .cw-trow:hover .cw-sched{opacity:1;}
+        .cw-sched:hover{color:var(--navy-50);border-color:var(--navy-400);}
+        .cw-sched.pri{opacity:1;border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
         .cw-add{padding:10px 14px 4px;}
         .cw-add input{width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--navy-50);font-family:inherit;outline:none;}
         .cw-add input:focus{border-color:var(--accent);}

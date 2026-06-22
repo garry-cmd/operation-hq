@@ -288,9 +288,10 @@ export default function CloseWeekWizard({
     const seen = new Map<string, WeeklyAction>()
     for (const a of actions) {
       if (a.completed) continue
+      if (a.week_start == null) continue   // backlog (unscheduled) isn't part of closing a week
       const key = `${a.roadmap_item_id}::${a.title}`
       const existing = seen.get(key)
-      if (!existing || a.week_start > existing.week_start) seen.set(key, a)
+      if (!existing || a.week_start > (existing.week_start ?? '')) seen.set(key, a)
     }
     // Keep just-completed next-week rows visible.
     for (const a of actions) {
@@ -765,7 +766,7 @@ function Step2({
   const currentActions = currentKR
     ? walkthroughActions
         .filter(a => a.roadmap_item_id === currentKR.id)
-        .sort((a, b) => a.week_start.localeCompare(b.week_start))
+        .sort((a, b) => (a.week_start ?? '').localeCompare(b.week_start ?? ''))
     : []
   const done = safeIndex >= total - 1
 
@@ -862,7 +863,7 @@ function Step2({
                             background: 'var(--amber-bg)', color: 'var(--amber-text)',
                             fontWeight: 700, flexShrink: 0,
                           }}>
-                            {a.week_start === closingWeek ? 'this wk' : `from ${formatWeek(a.week_start)}`}
+                            {a.week_start === closingWeek ? 'this wk' : `from ${formatWeek(a.week_start ?? '')}`}
                           </span>
                         )}
                         <button onClick={() => onRemoveAction(a.id)} aria-label="Remove action"

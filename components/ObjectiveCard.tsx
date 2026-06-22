@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as actionsDb from '@/lib/db/actions'
 import { AnnualObjective, RoadmapItem, WeeklyAction, HealthStatus, MetricCheckin } from '@/lib/types'
-import { ACTIVE_Q, parseDateLocal } from '@/lib/utils'
+import { ACTIVE_Q, parseDateLocal, getMonday } from '@/lib/utils'
 import { getDefaultNewKRRange, formatDateRange } from '@/lib/dateBuckets'
 import KRDateChip from '@/components/KRDateChip'
 
@@ -71,7 +71,10 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
   const [titleHover, setTitleHover] = useState(false)
   const [hoveredKRId, setHoveredKRId] = useState<string | null>(null)
 
-  const weekActions = actions.filter(a => a.week_start === weekStart)
+  // "This week" for the action list means the REAL current week — not the
+  // per-space weekStart prop, which can fall back to a stale stored value and
+  // strand actions in a week nothing is showing (the orphaning bug).
+  const thisWeekMonday = getMonday()
   // Full health-status breakdown for the header pills (May 21 cleanup). The
   // old design only surfaced offTrack + blocked as chips; the new pill row
   // shows one dot-pill per non-zero status so the user can read the entire
@@ -172,16 +175,26 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
       const created = await actionsDb.create({
         roadmap_item_id: krId,
         title: newActionTitle.trim(),
-        week_start: weekStart,
+        week_start: null,   // unscheduled → lands in the KR's backlog, always visible
       })
       setActions(prev => [...prev, created])
       setNewActionTitle('')
       setAddingActionKRId(null)
-      toast('Action added.')
+      toast('Action added to backlog.')
     } catch (err) {
       console.error('addAction failed:', err)
     }
     setSavingAction(false)
+  }
+  async function toggleActionDone(a: WeeklyAction) {
+    setActions(prev => prev.map(x => x.id === a.id ? { ...x, completed: !x.completed } : x))
+    try { await actionsDb.update(a.id, { completed: !a.completed }) }
+    catch { setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
+  }
+  async function scheduleAction(a: WeeklyAction, week: string | null) {
+    setActions(prev => prev.map(x => x.id === a.id ? { ...x, week_start: week } : x))
+    try { await actionsDb.update(a.id, { week_start: week }) }
+    catch { setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
   }
 
   // Polish pass (May 17): object color becomes a 3px left-border accent on a
@@ -360,7 +373,8 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
           return sortedKRs.map((kr, i) => {
           const isFirst = i === 0
           const isLast = i === sortedKRs.length - 1
-          const actCount = weekActions.filter(a => a.roadmap_item_id === kr.id).length
+          const krThisWeek = actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === thisWeekMonday)
+          const krBacklog = actions.filter(a => a.roadmap_item_id === kr.id && a.week_start == null && !a.completed)
           const h = kr.health_status ?? 'not_started'
           const hs = HEALTH[h]
           // Metric KR context — latest value + whether this week's been logged.
@@ -419,7 +433,7 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                   ) : (
                     <div style={{ fontSize: 11, color: 'var(--nw-label-dim)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <KRDateChip kr={kr} />
-                      <span>{actCount === 0 ? 'No actions this week' : `${actCount} action${actCount > 1 ? 's' : ''} this week`}</span>
+                      <span>{krThisWeek.length === 0 && krBacklog.length === 0 ? 'No actions yet' : `${krThisWeek.length} this week · ${krBacklog.length} backlog`}</span>
                     </div>
                   )}
                 </div>
@@ -451,6 +465,16 @@ export default function ObjectiveCard({ obj, krs, actions, weekStart, metricChec
                   </button>
                 </div>
               </div>
+              {(krThisWeek.length > 0 || krBacklog.length > 0) && (
+                <div style={{ borderTop: `1px solid ${divColor}`, background: 'var(--navy-850, var(--navy-800))', padding: '6px 18px 8px' }}>
+                  {krThisWeek.map(a => (
+                    <ActionRow key={a.id} a={a} onToggle={() => toggleActionDone(a)} onMove={() => scheduleAction(a, null)} moveLabel="backlog" moveTitle="Move to backlog" />
+                  ))}
+                  {krBacklog.map(a => (
+                    <ActionRow key={a.id} a={a} onToggle={() => toggleActionDone(a)} onMove={() => scheduleAction(a, thisWeekMonday)} moveLabel="▸ this week" moveTitle="Schedule for this week" primary />
+                  ))}
+                </div>
+              )}
               {addingActionKRId === kr.id && (
                 <div style={{ padding: '11px 14px', borderTop: `1px solid ${divColor}`, background: 'var(--navy-700)' }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
@@ -574,5 +598,45 @@ function StatusPill({
       <span style={{ fontWeight: 700, color: 'var(--nw-cream)' }}>{count}</span>
       <span>{label}</span>
     </span>
+  )
+}
+
+// One action row in the OKR card's per-KR action list (this-week + backlog).
+// The move button schedules a backlog item to this week, or sends a this-week
+// item back to the backlog; it stays revealed for backlog (primary) and shows
+// on hover for scheduled rows.
+function ActionRow({ a, onToggle, onMove, moveLabel, moveTitle, primary }: {
+  a: WeeklyAction
+  onToggle: () => void
+  onMove: () => void
+  moveLabel: string
+  moveTitle: string
+  primary?: boolean
+}) {
+  const [hover, setHover] = useState(false)
+  return (
+    <div onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{ display: 'flex', alignItems: 'center', gap: 9, padding: '4px 0' }}>
+      <button onClick={onToggle} title={a.completed ? 'Mark not done' : 'Mark done'}
+        style={{
+          width: 15, height: 15, borderRadius: 5, flexShrink: 0, cursor: 'pointer', padding: 0,
+          border: a.completed ? '1px solid var(--nw-nominal-text,#7fe27a)' : '1.5px solid var(--navy-500)',
+          background: a.completed ? 'var(--nw-nominal-text,#7fe27a)' : 'transparent',
+          color: 'var(--navy-900)', fontSize: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+        {a.completed ? '✓' : ''}
+      </button>
+      <span style={{ flex: 1, fontSize: 12.5, lineHeight: 1.4, color: a.completed ? 'var(--navy-500)' : 'var(--navy-100)', textDecoration: a.completed ? 'line-through' : 'none' }}>{a.title}</span>
+      <button onClick={onMove} title={moveTitle}
+        style={{
+          flexShrink: 0, fontFamily: 'inherit', fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 6, cursor: 'pointer',
+          opacity: primary || hover ? 1 : 0, transition: 'opacity .12s',
+          border: primary ? '1px solid var(--accent)' : '1px solid var(--navy-600)',
+          background: primary ? 'var(--accent-dim)' : 'transparent',
+          color: primary ? 'var(--accent)' : 'var(--navy-400)',
+        }}>
+        {moveLabel}
+      </button>
+    </div>
   )
 }

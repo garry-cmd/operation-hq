@@ -17,7 +17,7 @@ import type { WeeklyAction } from '@/lib/types'
 export type NewActionInput = {
   roadmap_item_id: string
   title: string
-  week_start: string
+  week_start?: string | null   // omit / null = unscheduled backlog action
   completed?: boolean
   carried_over?: boolean
   is_recurring?: boolean

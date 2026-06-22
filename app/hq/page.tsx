@@ -406,7 +406,7 @@ export default function HQPage() {
       if (!cur) { bestAction.set(key, a); continue }
       const aThis = isThisWeek(a), curThis = isThisWeek(cur)
       if (aThis && !curThis) bestAction.set(key, a)
-      else if (aThis === curThis && a.week_start > cur.week_start) bestAction.set(key, a)
+      else if (aThis === curThis && (a.week_start ?? '') > (cur.week_start ?? '')) bestAction.set(key, a)
     }
     for (const a of bestAction.values()) {
       const sid = spaceForKR.get(a.roadmap_item_id)
