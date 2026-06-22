@@ -768,6 +768,7 @@ function WeekView(props: {
                 return (
                   <div
                     key={key}
+                    title={it.title}
                     onPointerDown={(e) => startDrag(`new:${key}`, it.kind, it.space_id, it.duration, it.title, e)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 9,
@@ -777,7 +778,7 @@ function WeekView(props: {
                     }}
                   >
                     <span style={{ width: 4, alignSelf: 'stretch', minHeight: 26, borderRadius: 3, background: col, flexShrink: 0 }} />
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, color: 'var(--navy-100)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 12.5, lineHeight: 1.3, color: 'var(--navy-100)', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                       {it.kind === 'kr_action' && <span title="KR action" style={{ color: 'var(--navy-400)', marginRight: 4 }}>◆</span>}
                       {it.title}
                     </span>
