@@ -100,6 +100,8 @@ interface Props {
   setObjectives: React.Dispatch<React.SetStateAction<AnnualObjective[]>>
   setRoadmapItems: React.Dispatch<React.SetStateAction<RoadmapItem[]>>
   onOpenObjective: (objectiveId: string) => void
+  initialKRId?: string | null
+  onConsumeInitialKRId?: () => void
   toast: (m: string) => void
 }
 
@@ -137,7 +139,7 @@ export default function Home({
   googleConnected, driveGranted, trackedFiles, setTrackedFiles, reviews, weekForSpace, onCloseWeek,
   onOpenTasks, onOpenCalendar, toast,
   onLogMetric,
-  setObjectives, setRoadmapItems, onOpenObjective,
+  setObjectives, setRoadmapItems, onOpenObjective, initialKRId, onConsumeInitialKRId,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   // Sticky view settings — persisted across navigation (localStorage).
@@ -167,6 +169,13 @@ export default function Home({
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
   useEffect(() => { try { window.localStorage.setItem('hq-home-obj-open', JSON.stringify(objOverrides)) } catch {} }, [objOverrides])
+  // Command-palette / deep-link into a KR → open its work view.
+  useEffect(() => {
+    if (!initialKRId) return
+    dive({ kind: 'kr', id: initialKRId })
+    onConsumeInitialKRId?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialKRId])
 
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])

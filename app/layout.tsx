@@ -10,7 +10,7 @@ const fontMono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-mono', d
 
 export const metadata: Metadata = {
   title: 'Operation HQ',
-  description: 'Personal mission control — Roadmap, OKRs, Calendar',
+  description: 'Personal mission control — Home, Roadmap, Calendar',
   manifest: '/manifest.json',
   appleWebApp: {
     capable: true,

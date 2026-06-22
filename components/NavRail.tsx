@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'agent' | 'tasks' | 'notes' | 'calendar' | 'files' | 'okr' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
+export type Screen = 'home' | 'agent' | 'tasks' | 'notes' | 'calendar' | 'files' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
 
 interface Props {
   screen: Screen
@@ -78,7 +78,6 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
   {
     label: 'Strategic',
     items: [
-      { id: 'okr', label: 'OKRs', icon: <OKRIcon /> },
       { id: 'roadmap', label: 'Roadmap', icon: <RoadmapIcon /> },
     ],
   },
@@ -359,9 +358,6 @@ function TasksIcon() {
 }
 function NotesIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 1.7h7.5L13 4.2v10.1H3z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M5.5 6.5h5M5.5 9h5M5.5 11.5h3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>
-}
-function OKRIcon() {
-  return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.4"/><circle cx="8" cy="8" r="2.4" fill="currentColor"/></svg>
 }
 function RoadmapIcon() {
   return <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="9" height="2.4" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="2" y="6.8" width="12" height="2.4" rx="1.2" stroke="currentColor" strokeWidth="1.4"/><rect x="2" y="10.6" width="6" height="2.4" rx="1.2" stroke="currentColor" strokeWidth="1.4"/></svg>

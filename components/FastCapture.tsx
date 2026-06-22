@@ -278,7 +278,7 @@ export default function FastCapture({
 
             {active === 'objective' && (
               <div style={{ fontSize: 11, color: 'var(--navy-400)', marginBottom: 14, lineHeight: 1.4 }}>
-                Color is auto-assigned. Change it later via the Edit link in OKRs or Roadmap.
+                Color is auto-assigned. Change it later via the Edit control in Home or Roadmap.
               </div>
             )}
 

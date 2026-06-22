@@ -23,7 +23,6 @@ import * as trackedFilesDb from '@/lib/db/trackedFiles'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import ObjectivePanel from '@/components/ObjectivePanel'
-import OKRs from '@/components/OKRs'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Home from '@/components/Home'
@@ -46,7 +45,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'okr' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'files' | 'tags' | 'settings'
+type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'files' | 'tags' | 'settings'
 
 
 export default function HQPage() {
@@ -118,10 +117,10 @@ export default function HQPage() {
   const [closingWizard, setClosingWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [planningWizard, setPlanningWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
-  // Currently-open objective panel on the OKRs tab. Lifted to page level so
+  // Currently-open objective panel (links/logs), opened from Home. Lifted to page level so
   // <main> can widen its max-width when the panel is open (push-aside layout).
   const [openObjectiveId, setOpenObjectiveId] = useState<string | null>(null)
-  // Set when the command palette deep-links to a KR; OKRs/Roadmap consume it to
+  // Set when the command palette deep-links to a KR; Home/Roadmap consume it to
   // scroll the KR into view and flash it, then clear it.
   const [initialKRId, setInitialKRId] = useState<string | null>(null)
   // Cross-app jump targets. Set by Tags clicks; consumed (and cleared) by
@@ -379,7 +378,7 @@ export default function HQPage() {
       out.push({
         id: `obj:${o.id}`, kind: 'Objective', icon: '◎', title: o.name,
         ...spaceMeta(o.space_id), rec: recency(o.created_at),
-        route: { screen: 'okr', spaceId: o.space_id, objectiveId: o.id },
+        route: { screen: 'home', spaceId: o.space_id, objectiveId: o.id },
       })
     }
 
@@ -391,7 +390,7 @@ export default function HQPage() {
         rec: recency(i.created_at),
         route: parked
           ? { screen: 'park', spaceId: i.space_id }
-          : { screen: i.quarter === ACTIVE_Q ? 'okr' : 'roadmap', spaceId: i.space_id, krId: i.id },
+          : { screen: i.quarter === ACTIVE_Q ? 'home' : 'roadmap', spaceId: i.space_id, krId: i.id },
       })
     }
 
@@ -416,7 +415,7 @@ export default function HQPage() {
         id: `act:${a.id}`, kind: 'Action', icon: '▸', title: a.title,
         ...spaceMeta(sid), hint: thisWeek ? 'this week' : undefined,
         done: a.completed, rec: thisWeek ? 8 : 2,
-        route: { screen: 'okr', spaceId: sid, krId: a.roadmap_item_id },
+        route: { screen: 'home', spaceId: sid, krId: a.roadmap_item_id },
       })
     }
 
@@ -462,7 +461,7 @@ export default function HQPage() {
       out.push({
         id: `space:${s.id}`, kind: 'Space', icon: '⬡', title: s.name,
         spaceColor: s.color,
-        route: { screen: 'okr', spaceId: s.id },
+        route: { screen: 'home', spaceId: s.id },
       })
     }
 
@@ -472,12 +471,12 @@ export default function HQPage() {
   // Global keyboard layer:
   //   ⌘K  command palette
   //   ⌘T  new task   ·  ⌘N  new note   (PWA only — browser tabs reserve ⌘T/⌘N)
-  //   g <key>  go-to nav:  h Home · t Tasks · n Notes · o OKRs · r Roadmap
+  //   g <key>  go-to nav:  h Home · t Tasks · n Notes · r Roadmap
   //                        c Calendar · s Scout · f Reflect · p Parking
   useEffect(() => {
     let gLeaderAt = 0
     const GO: Record<string, Screen> = {
-      h: 'home', t: 'tasks', n: 'notes', o: 'okr', r: 'roadmap',
+      h: 'home', t: 'tasks', n: 'notes', r: 'roadmap',
       c: 'calendar', s: 'agent', f: 'reflect', p: 'park',
     }
     function isTyping(t: EventTarget | null): boolean {
@@ -555,15 +554,9 @@ export default function HQPage() {
   // un-scoped lists directly through Summary and doesn't read these slices.
   const activeSpace = spaces.find(s => s.id === activeSpaceId)
   const spaceObjectives = objectives.filter(o => o.space_id === activeSpaceId)
-  const spaceObjectiveIds = new Set(spaceObjectives.map(o => o.id))
   const spaceRoadmapItems = roadmapItems.filter(i => i.space_id === activeSpaceId)
   const spaceRoadmapItemIds = new Set(spaceRoadmapItems.map(i => i.id))
-  const spaceActions = actions.filter(a => spaceRoadmapItemIds.has(a.roadmap_item_id))
   const spaceCheckins = checkins.filter(c => spaceRoadmapItemIds.has(c.roadmap_item_id))
-  const spaceHabitCheckins = habitCheckins.filter(h => spaceRoadmapItemIds.has(h.roadmap_item_id))
-  const spaceMetricCheckins = metricCheckins.filter(m => spaceRoadmapItemIds.has(m.roadmap_item_id))
-  const spaceLinks = links.filter(l => spaceObjectiveIds.has(l.objective_id))
-  const spaceLogs = logs.filter(l => spaceObjectiveIds.has(l.objective_id))
   const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
   const spaceTasks = tasks.filter(t => t.space_id === activeSpaceId)
   // In-progress draft for this space (Step 1 saved, Step 2 abandoned).
@@ -690,6 +683,8 @@ export default function HQPage() {
             setObjectives={setObjectives}
             setRoadmapItems={setRoadmapItems}
             onOpenObjective={setOpenObjectiveId}
+            initialKRId={initialKRId}
+            onConsumeInitialKRId={() => setInitialKRId(null)}
             toast={setToast}
           />
         </main>
@@ -788,7 +783,7 @@ export default function HQPage() {
       ) : screen === 'settings' && !loading ? (
         <Settings toast={setToast} googleConnected={googleConnected} driveGranted={driveGranted} onConnectGoogle={connectGoogle} />
       ) : (
-      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'roadmap' || (screen === 'okr' && openObjectiveId) ? 1280 : 800, width: '100%', margin: '0 auto' }}>
+      <main style={{ padding: isMobile ? '16px 14px' : '24px 28px', maxWidth: screen === 'roadmap' ? 1280 : 800, width: '100%', margin: '0 auto' }}>
         {loading ? (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 80, gap: 10, color: 'var(--navy-400)', fontSize: 13 }}>
             <div style={{ width: 18, height: 18, borderRadius: '50%', border: '2px solid var(--navy-600)', borderTopColor: 'var(--accent)', animation: 'spin .6s linear infinite' }} />
@@ -817,7 +812,6 @@ export default function HQPage() {
                 </button>
               </div>
             )}
-            {screen === 'okr'     && <OKRs objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} actions={spaceActions} setActions={setActions} weekStart={weekStart} links={spaceLinks} logs={spaceLogs} setLinks={setLinks} setLogs={setLogs} openObjectiveId={openObjectiveId} setOpenObjectiveId={setOpenObjectiveId} activeSpaceId={activeSpaceId} habitCheckins={spaceHabitCheckins} metricCheckins={spaceMetricCheckins} toast={setToast} onLogMetric={krId => setLoggingMetricKRId(krId)} spaceName={activeSpace?.name ?? 'My OKRs'} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
             {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} onPlanWeek={(spaceId, week) => setPlanningWizard({ spaceId, week })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
@@ -830,7 +824,7 @@ export default function HQPage() {
       {/* Objective panel (links/logs) — opened from Home's objective cards.
           Page-level right drawer so it overlays any non-OKR screen. The OKR tab
           still renders its own inline panel. */}
-      {screen !== 'okr' && openObjectiveId && (() => {
+      {openObjectiveId && (() => {
         const openObj = objectives.find(o => o.id === openObjectiveId)
         if (!openObj) return null
         const objKRs = roadmapItems.filter(i => i.annual_objective_id === openObjectiveId)
