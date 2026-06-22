@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile, MetricCheckin } from '@/lib/types'
-import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
+import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q } from '@/lib/utils'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
@@ -124,6 +124,7 @@ export default function Home({
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   const [spaceFilter, setSpaceFilter] = useState<string | null>(null) // null = All spaces
+  const [quarterScope, setQuarterScope] = useState<'current' | 'all'>('current') // board defaults to ACTIVE_Q
   const [busyEvents, setBusyEvents] = useState<GoogleBusyEvent[]>([])
   const [allDayEvents, setAllDayEvents] = useState<GoogleAllDayEvent[]>([])
   const [nowTick, setNowTick] = useState(() => Date.now())
@@ -203,7 +204,8 @@ export default function Home({
     const groups = objs
       .map(o => {
         const krs = roadmapItems
-          .filter(k => k.annual_objective_id === o.id && !k.is_habit && !k.is_parked && k.health_status !== 'done')
+          .filter(k => k.annual_objective_id === o.id && !k.is_habit && !k.is_parked && k.health_status !== 'done'
+            && (quarterScope === 'all' || k.quarter === ACTIVE_Q))
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
           .map(kr => ({
             kr,
@@ -216,7 +218,7 @@ export default function Home({
     const inMotion = groups.flatMap(g => g.krs).filter(x => x.thisWeek.length > 0)
     const totalKRs = groups.reduce((n, g) => n + g.krs.length, 0)
     return { groups, inMotion, totalKRs }
-  }, [objectives, roadmapItems, actions, weekMonday, spaceFilter])
+  }, [objectives, roadmapItems, actions, weekMonday, spaceFilter, quarterScope])
 
   // ── Tasks due this week (open, non-subtask, due in week) ──
   const dueThisWeek = useMemo(() =>
@@ -542,11 +544,17 @@ export default function Home({
         <section>
           <div className="kb-head">
             <span className="label">Key results · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
-            <span className="kb-sum">
-              {krBoard.inMotion.length > 0
-                ? <><b>{krBoard.inMotion.length}</b> in motion · {krBoard.totalKRs} active</>
-                : <>{krBoard.totalKRs} active key result{krBoard.totalKRs === 1 ? '' : 's'}</>}
-            </span>
+            <div className="kb-headright">
+              <div className="kb-qseg">
+                <button className={quarterScope === 'current' ? 'on' : ''} onClick={() => setQuarterScope('current')}>This quarter</button>
+                <button className={quarterScope === 'all' ? 'on' : ''} onClick={() => setQuarterScope('all')}>All</button>
+              </div>
+              <span className="kb-sum">
+                {krBoard.inMotion.length > 0
+                  ? <><b>{krBoard.inMotion.length}</b> in motion · {krBoard.totalKRs} active</>
+                  : <>{krBoard.totalKRs} active key result{krBoard.totalKRs === 1 ? '' : 's'}</>}
+              </span>
+            </div>
           </div>
 
           {/* band — in motion this week */}
@@ -639,6 +647,19 @@ export default function Home({
                         <input autoFocus value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr); if (e.key === 'Escape') { setDeckAddKR(null); setKrActionInput('') } }}
                           placeholder="+ Add an action (lands in backlog)…" />
+                      </div>
+                    )}
+                    {/* Backlog items show inline under their KR here (in-motion KRs
+                        already list everything in the top card, so skip those). */}
+                    {thisWeek.length === 0 && backlog.length > 0 && (
+                      <div className="kb-sub">
+                        {backlog.map(a => (
+                          <div key={a.id} className="kb-arow">
+                            <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
+                            <span className="kb-atitle">{a.title}</span>
+                            <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
@@ -1045,7 +1066,11 @@ export default function Home({
         .hd-body{display:grid;grid-template-columns:1fr 380px;gap:26px;align-items:start;}
         @media (max-width:1100px){.hd-body{grid-template-columns:1fr;}}
 
-        .kb-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;}
+        .kb-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:14px;flex-wrap:wrap;}
+        .kb-headright{display:flex;align-items:center;gap:14px;}
+        .kb-qseg{display:inline-flex;border:1px solid var(--line-2);border-radius:99px;overflow:hidden;}
+        .kb-qseg button{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.04em;padding:5px 12px;background:var(--surface);color:var(--navy-400);border:none;cursor:pointer;}
+        .kb-qseg button.on{background:var(--accent-bg);color:var(--accent-2);}
         .kb-sum{font-family:var(--font-mono);font-size:11px;color:var(--navy-400);font-variant-numeric:tabular-nums;}
         .kb-sum b{color:var(--nw-nominal-text,#7fe27a);font-weight:600;}
         .kb-band{display:flex;align-items:center;gap:10px;margin:22px 0 12px;}
@@ -1118,6 +1143,8 @@ export default function Home({
         .kb-add{opacity:0;transition:opacity .12s;font-family:var(--font-mono);font-size:10px;font-weight:600;
           padding:3px 8px;border-radius:6px;border:1px dashed var(--line-strong);background:transparent;color:var(--navy-400);cursor:pointer;flex-shrink:0;}
         .kb-krrow:hover .kb-add{opacity:1;}
+        .kb-sub{padding:2px 0 6px 26px;}
+        .kb-sub .kb-arow{padding:4px 0;}
 
         .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--card-shadow);}
         .card + .card{margin-top:18px;}
