@@ -1,9 +1,12 @@
 'use client'
 import { useState } from 'react'
 import * as reviewsDb from '@/lib/db/reviews'
-import { WeeklyReview, ReviewRating, Space } from '@/lib/types'
-import { formatWeek, getMonday } from '@/lib/utils'
+import { WeeklyReview, ReviewRating, Space, RoadmapItem, MetricCheckin, HabitCheckin } from '@/lib/types'
+import { formatWeek, getMonday, ACTIVE_Q } from '@/lib/utils'
 import { spaceDisplayColor } from '@/lib/spaceColor'
+import { calculateRollingAggregate } from '@/lib/habitUtils'
+import { getMetricKRs } from '@/lib/krFilters'
+import MetricKPICard from './MetricKPICard'
 
 // --- Rating icons (kept from the old Reflect for visual continuity) -------
 const StrongIcon = ({ size = 12 }: { size?: number }) => (
@@ -47,13 +50,20 @@ type Props = {
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
   onPlanWeek: (spaceId: string, week: string) => void
+  roadmapItems: RoadmapItem[]
+  metricCheckins: MetricCheckin[]
+  habitCheckins: HabitCheckin[]
+  onLogMetric: (krId: string) => void
   toast: (m: string) => void
 }
 
-export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, onPlanWeek, toast }: Props) {
+export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, onPlanWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
   const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
   const spaceById = new Map(spaces.map(s => [s.id, s]))
   const thisMonday = getMonday()
+  // Vitals — all-spaces metric + habit KRs (relocated from the OKR tab).
+  const habitKRs = roadmapItems.filter(k => k.is_habit && !k.is_parked && k.health_status !== 'done')
+  const metricKRs = getMetricKRs(roadmapItems, ACTIVE_Q)
   const isWeekClosed = (spaceId: string, week: string) =>
     reviews.some(r => r.space_id === spaceId && r.week_start === week && r.closed_at != null)
   // Drafts (closed_at = null) don't belong in the archive — they're
@@ -71,6 +81,42 @@ export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onC
       <p style={{ fontSize: 12, color: 'var(--navy-300)', marginBottom: 18 }}>
         Plan or close a week per space; past entries are below.
       </p>
+
+      {/* Vitals — metric + habit KPI cards, all spaces (relocated from the OKR tab) */}
+      {(habitKRs.length > 0 || metricKRs.length > 0) && (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 12px 0' }}>Vitals</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
+            {habitKRs.map(kr => {
+              const aggregate = calculateRollingAggregate(kr, habitCheckins, 4)
+              const tone = aggregate.sessions === 0 ? 'standby'
+                         : aggregate.percent >= 80 ? 'nominal'
+                         : aggregate.percent >= 50 ? 'caution'
+                         : 'alarm'
+              const heroColor = tone === 'nominal' ? 'var(--nw-nominal-text)'
+                              : tone === 'caution' ? 'var(--nw-hero-amber)'
+                              : tone === 'alarm'   ? 'var(--nw-alarm-text)'
+                              : 'var(--nw-standby-text)'
+              const borderAccent = tone === 'nominal' ? 'var(--nw-nominal-text)'
+                                 : tone === 'caution' ? 'var(--nw-caution-text)'
+                                 : tone === 'alarm'   ? 'var(--nw-alarm-text)'
+                                 : 'var(--nw-standby-text)'
+              return (
+                <div key={kr.id} title={`${aggregate.sessions}/${aggregate.expected} sessions`}
+                  style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderLeft: `3px solid ${borderAccent}`, borderRadius: 14, boxShadow: 'var(--card-shadow)', padding: '14px 16px' }}>
+                  <p style={{ fontSize: 12, color: 'var(--nw-cream)', fontWeight: 500, margin: '0 0 6px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{kr.title}</p>
+                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: 28, fontWeight: 600, color: heroColor, margin: 0, letterSpacing: '-.01em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                    {aggregate.percent}<span style={{ fontSize: 16 }}>%</span>
+                  </p>
+                </div>
+              )
+            })}
+            {metricKRs.map(kr => (
+              <MetricKPICard key={kr.id} kr={kr} checkins={metricCheckins} onTap={() => onLogMetric(kr.id)} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Plan/close launcher — per space, opens the matching wizard for that space's current week */}
       <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '14px 16px', marginBottom: 22, boxShadow: 'var(--card-shadow)' }}>

@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile, MetricCheckin } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q } from '@/lib/utils'
 import { getMetricKRs } from '@/lib/krFilters'
-import MetricKPICard from './MetricKPICard'
+import VitalsStrip from './VitalsStrip'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
@@ -555,14 +555,7 @@ export default function Home({
         {/* LEFT: KR board — the working backbone */}
         <section>
           {metricKRs.length > 0 && (
-            <div className="kb-metrics">
-              <div className="kb-band" style={{ marginTop: 4 }}><span className="label">Key metrics</span><span className="kb-hr" /></div>
-              <div className="kb-mgrid">
-                {metricKRs.map(kr => (
-                  <MetricKPICard key={kr.id} kr={kr} checkins={metricCheckins} onTap={() => onLogMetric(kr.id)} />
-                ))}
-              </div>
-            </div>
+            <VitalsStrip krs={metricKRs} checkins={metricCheckins} onLog={onLogMetric} />
           )}
           <div className="kb-head">
             <span className="label">Key results · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
