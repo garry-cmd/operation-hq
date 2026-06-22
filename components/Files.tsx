@@ -81,7 +81,6 @@ export default function Files({
   const [picking, setPicking] = useState(false)
 
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
-  const appId = process.env.NEXT_PUBLIC_GOOGLE_APP_ID
 
   const visible = useMemo(() => trackedFiles.filter(f => !f.archived), [trackedFiles])
   const counts = useMemo(() => {
@@ -115,9 +114,16 @@ export default function Files({
     if (!driveGranted) { onConnectGoogle(); return }
     if (!apiKey) { toast('Add a Google API key in Vercel to enable file picking'); return }
     setPicking(true)
+    let picked: { id: string; name: string; mimeType: string }[] = []
     try {
-      const token = await getDriveAccessToken()
-      const picked = await openDrivePicker({ accessToken: token, apiKey, appId })
+      const { accessToken, appId } = await getDriveAccessToken()
+      picked = await openDrivePicker({ accessToken, apiKey, appId })
+    } catch {
+      toast('Could not open the file picker')
+      setPicking(false)
+      return
+    }
+    try {
       if (picked.length === 0) return
       let added = 0
       for (const p of picked) {
@@ -129,8 +135,8 @@ export default function Files({
         if (!existed) added++
       }
       toast(added > 0 ? `Tracked ${added} file${added === 1 ? '' : 's'}` : 'Already tracked')
-    } catch {
-      toast('Could not open the file picker')
+    } catch (e) {
+      toast(e instanceof Error ? `Could not track file: ${e.message}` : 'Could not track file')
     } finally {
       setPicking(false)
     }

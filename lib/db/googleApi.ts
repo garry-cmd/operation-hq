@@ -86,12 +86,15 @@ export async function createCalendarEvent(
 }
 
 // ── Drive / Files ──
-/** Fresh Google access token for the browser Google Picker (calendar +
- *  drive.file scope only). The Picker needs an OAuth token client-side. */
-export async function getDriveAccessToken(): Promise<string> {
+/** Fresh Google access token + Cloud project number (app_id) for the browser
+ *  Google Picker. Both are required: the token authorizes the Picker, and
+ *  setAppId(app_id) is what makes a drive.file-picked file durably accessible to
+ *  the backend (without it, server reads of picked files 404). */
+export async function getDriveAccessToken(): Promise<{ accessToken: string; appId: string }> {
   const r = await authedFetch('/api/google/drive/access-token')
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `drive token ${r.status}`)
-  return (await r.json()).access_token as string
+  const j = await r.json()
+  return { accessToken: j.access_token as string, appId: (j.app_id as string) ?? '' }
 }
 
 /** Track a Picker-selected Drive file. Server fetches its metadata (proving
