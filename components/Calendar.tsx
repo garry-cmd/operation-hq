@@ -605,11 +605,20 @@ function WeekView(props: {
     proposedCount, busy, googleConnected, toast } = props
   const gridH = (GRID_END_H - GRID_START_H) * ROW_H
   const nowMin = new Date().getHours() * 60 + new Date().getMinutes()
-  const [over, setOver] = useState<{ date: string; valid: boolean } | null>(null)
-  // What's being dragged — drives valid-window highlighting + drop validation.
-  const [dragCtx, setDragCtx] = useState<{ kind: 'kr_action' | 'task'; spaceId: string | null; duration: number } | null>(null)
-
-  const itemMap = useMemo(() => new Map(items.map(it => [`${it.source}:${it.id}`, it])), [items])
+  // Pointer-based drag (replaces native HTML5 DnD, which was unreliable on
+  // trackpads and inside the scroll container — it could fail to initiate or
+  // drop silently). One object describes the in-flight drag: what's moving, the
+  // live pointer position (for the floating ghost), and the hovered day + the
+  // resolved snap slot. dragRef mirrors it so the window pointer listeners read
+  // the latest without stale closures.
+  type DragState = {
+    payload: string; kind: 'kr_action' | 'task'; spaceId: string | null
+    duration: number; title: string; color: string
+    x: number; y: number
+    over: { date: string; start: number | null } | null
+  }
+  const [drag, setDrag] = useState<DragState | null>(null)
+  const dragRef = useRef<DragState | null>(null)
 
   // Group the schedulable pool by space so a wall of same-space items reads as a
   // labelled, color-banded cluster instead of an undifferentiated list. Within a
@@ -651,41 +660,59 @@ function WeekView(props: {
     return null
   }
 
-  function ctxFor(payload: string): { kind: 'kr_action' | 'task'; spaceId: string | null; duration: number } | null {
-    if (payload.startsWith('new:')) {
-      const it = itemMap.get(payload.slice(4)); if (!it) return null
-      return { kind: it.kind, spaceId: it.space_id, duration: it.duration }
-    }
-    if (payload.startsWith('move:')) {
-      const b = blocks.find(x => x.id === payload.slice(5)); if (!b) return null
-      return { kind: b.task_id ? 'task' : 'kr_action', spaceId: b.space_id, duration: b.end_minute - b.start_minute }
-    }
-    return null
-  }
-
-  function handleDragOver(date: string, e: React.DragEvent<HTMLDivElement>) {
+  // Begin a pointer drag from a rail item ('new:key') or a placed block
+  // ('move:id'). Window listeners track the pointer to release; columns carry
+  // data-col-date so we hit-test by point regardless of scroll. Release snaps to
+  // the resolved slot, or no-ops with a hint if it isn't over a matching window.
+  function startDrag(
+    payload: string, kind: 'kr_action' | 'task', spaceId: string | null,
+    duration: number, title: string, e: React.PointerEvent,
+  ) {
     e.preventDefault()
-    if (!dragCtx) { e.dataTransfer.dropEffect = 'move'; return }
-    const rect = e.currentTarget.getBoundingClientRect()
-    const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
-    const start = resolveSlot(dragCtx.kind, dragCtx.spaceId, dragCtx.duration, date, minute)
-    const valid = start !== null
-    e.dataTransfer.dropEffect = valid ? 'move' : 'none'
-    setOver(prev => (prev && prev.date === date && prev.valid === valid) ? prev : { date, valid })
-  }
+    const init: DragState = {
+      payload, kind, spaceId, duration, title, color: colorFor(spaceId),
+      x: e.clientX, y: e.clientY, over: null,
+    }
+    dragRef.current = init
+    setDrag(init)
 
-  function handleDrop(date: string, e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault()
-    const payload = e.dataTransfer.getData('text/plain')
-    const ctx = ctxFor(payload)
-    const rect = e.currentTarget.getBoundingClientRect()
-    const minute = GRID_START_H * 60 + ((e.clientY - rect.top) / ROW_H) * 60
-    setOver(null); setDragCtx(null)
-    if (!ctx) return
-    const start = resolveSlot(ctx.kind, ctx.spaceId, ctx.duration, date, minute)
-    if (start === null) { toast('No capacity reserved here for this item — add a matching window in the Template'); return }
-    if (payload.startsWith('new:')) onPlaceItem(payload.slice(4), date, start)
-    else if (payload.startsWith('move:')) onMoveBlock(payload.slice(5), date, start)
+    const move = (ev: PointerEvent) => {
+      const cur = dragRef.current
+      if (!cur) return
+      let over: { date: string; start: number | null } | null = null
+      const el = document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null
+      const col = el?.closest('[data-col-date]') as HTMLElement | null
+      if (col) {
+        const date = col.getAttribute('data-col-date') as string
+        const rect = col.getBoundingClientRect()
+        const minute = GRID_START_H * 60 + ((ev.clientY - rect.top) / ROW_H) * 60
+        over = { date, start: resolveSlot(cur.kind, cur.spaceId, cur.duration, date, minute) }
+      }
+      const next: DragState = { ...cur, x: ev.clientX, y: ev.clientY, over }
+      dragRef.current = next
+      setDrag(next)
+    }
+    const finish = () => {
+      const cur = dragRef.current
+      if (cur?.over && cur.over.start !== null) {
+        if (cur.payload.startsWith('new:')) onPlaceItem(cur.payload.slice(4), cur.over.date, cur.over.start)
+        else onMoveBlock(cur.payload.slice(5), cur.over.date, cur.over.start)
+      } else if (cur?.over) {
+        toast('No capacity reserved here — add a matching window in the Template')
+      }
+      cancel()
+    }
+    const onKey = (ev: KeyboardEvent) => { if (ev.key === 'Escape') cancel() }
+    function cancel() {
+      dragRef.current = null
+      setDrag(null)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('keydown', onKey)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('keydown', onKey)
   }
 
   return (
@@ -741,12 +768,12 @@ function WeekView(props: {
                 return (
                   <div
                     key={key}
-                    draggable
-                    onDragStart={(e) => { e.dataTransfer.setData('text/plain', `new:${key}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: it.kind, spaceId: it.space_id, duration: it.duration }) }}
-                    onDragEnd={() => { setOver(null); setDragCtx(null) }}
+                    onPointerDown={(e) => startDrag(`new:${key}`, it.kind, it.space_id, it.duration, it.title, e)}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 9, padding: '8px 9px', borderRadius: 9,
-                      background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 5, cursor: 'grab',
+                      background: 'var(--navy-700)', border: '1px solid var(--navy-600)', marginBottom: 5,
+                      cursor: 'grab', touchAction: 'none', userSelect: 'none',
+                      opacity: drag?.payload === `new:${key}` ? 0.4 : 1,
                     }}
                   >
                     <span style={{ width: 4, alignSelf: 'stretch', minHeight: 26, borderRadius: 3, background: col, flexShrink: 0 }} />
@@ -790,23 +817,21 @@ function WeekView(props: {
               const caps = capacityByDate.get(date) ?? []
               const dayBlocks = blocks.filter(b => b.block_date === date)
               const dayMeetings = meetings.filter(m => m.date === date)
-              const overThis = over?.date === date
+              const overThis = drag?.over?.date === date
               return (
                 <div
                   key={date}
-                  onDragOver={(e) => handleDragOver(date, e)}
-                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver(o => (o?.date === date ? null : o)) }}
-                  onDrop={(e) => handleDrop(date, e)}
+                  data-col-date={date}
                   style={{
                     position: 'relative', borderRight: '1px solid var(--navy-700)', height: gridH,
-                    background: overThis ? (over!.valid ? 'rgba(74,143,255,.12)' : 'rgba(255,90,80,.09)') : today ? 'rgba(74,143,255,.04)' : 'transparent',
+                    background: overThis ? (drag!.over!.start !== null ? 'rgba(74,143,255,.12)' : 'rgba(255,90,80,.09)') : today ? 'rgba(74,143,255,.04)' : 'transparent',
                   }}
                 >
                   <HourLines />
                   {/* Google meetings (read-only, behind HQ blocks) */}
                   {dayMeetings.map((m, i) => <CommitmentBlock key={`m${i}`} c={m} />)}
                   {caps.map(c => {
-                    const lit = dragCtx ? accepts(c, dragCtx.kind, dragCtx.spaceId) : false
+                    const lit = drag ? accepts(c, drag.kind, drag.spaceId) : false
                     return (
                       <div key={c.id} title={`${c.space_id ? spaceById.get(c.space_id)?.name : 'Any space'} · ${KIND_LABEL[c.kind]}`} style={{
                         position: 'absolute', left: 0, right: 0, top: minToTop(c.start_minute), height: durToH(c.end_minute - c.start_minute),
@@ -817,6 +842,15 @@ function WeekView(props: {
                       }} />
                     )
                   })}
+                  {overThis && drag!.over!.start !== null && (
+                    <div style={{
+                      position: 'absolute', left: 4, right: 4,
+                      top: minToTop(drag!.over!.start!), height: Math.max(durToH(drag!.duration) - 2, 16),
+                      borderRadius: 7, border: `2px dashed ${drag!.color}`,
+                      background: `color-mix(in srgb, ${drag!.color} 20%, transparent)`,
+                      zIndex: 6, pointerEvents: 'none',
+                    }} />
+                  )}
                   {today && nowMin >= GRID_START_H * 60 && nowMin <= GRID_END_H * 60 && (
                     <div style={{ position: 'absolute', left: 0, right: 0, top: minToTop(nowMin), height: 0, borderTop: '2px solid var(--red-text)', zIndex: 5 }} />
                   )}
@@ -827,13 +861,16 @@ function WeekView(props: {
                     return (
                       <div
                         key={b.id}
-                        draggable
-                        onDragStart={(e) => { e.dataTransfer.setData('text/plain', `move:${b.id}`); e.dataTransfer.effectAllowed = 'move'; setDragCtx({ kind: b.task_id ? 'task' : 'kr_action', spaceId: b.space_id, duration: b.end_minute - b.start_minute }) }}
-                        onDragEnd={() => { setOver(null); setDragCtx(null) }}
+                        onPointerDown={(e) => {
+                          if ((e.target as HTMLElement).closest('button')) return // let × handle its own click
+                          startDrag(`move:${b.id}`, b.task_id ? 'task' : 'kr_action', b.space_id, b.end_minute - b.start_minute, b.title, e)
+                        }}
                         title={`Drag to move${spaceName ? ` · ${spaceName}` : ''}`}
                         style={{
                           position: 'absolute', left: 4, right: 4, top: minToTop(b.start_minute), height: Math.max(durToH(b.end_minute - b.start_minute) - 2, 16),
                           borderRadius: 7, padding: '3px 7px', overflow: 'hidden', cursor: 'grab', zIndex: 4,
+                          touchAction: 'none', userSelect: 'none',
+                          opacity: drag?.payload === `move:${b.id}` ? 0.4 : 1,
                           background: proposed ? `color-mix(in srgb, ${col} 36%, transparent)` : col,
                           border: proposed ? `1px dashed ${col}` : `1px solid ${col}`,
                           color: proposed ? 'var(--navy-50)' : '#0b0d10',
@@ -857,6 +894,19 @@ function WeekView(props: {
           </div>
         </div>
       </div>
+
+      {drag && (
+        <div style={{
+          position: 'fixed', left: drag.x + 12, top: drag.y + 12, zIndex: 1000, pointerEvents: 'none',
+          maxWidth: 220, padding: '5px 9px', borderRadius: 8,
+          background: 'var(--navy-800)', border: `1px solid ${drag.color}`,
+          boxShadow: '0 6px 20px rgba(0,0,0,.4)', display: 'flex', alignItems: 'center', gap: 7,
+        }}>
+          <span style={{ width: 4, alignSelf: 'stretch', minHeight: 16, borderRadius: 3, background: drag.color, flexShrink: 0 }} />
+          <span style={{ fontSize: 12, color: 'var(--navy-50)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{drag.title}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-300)', flexShrink: 0 }}>{fmtDur(drag.duration)}</span>
+        </div>
+      )}
     </div>
   )
 }

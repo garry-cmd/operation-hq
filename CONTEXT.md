@@ -81,6 +81,20 @@ Gym/Lunch rows removed → exactly one per day Mon–Sat; Tuesday's keeper was l
 cleanup and recreated via POST. The `note-watch`/agent path that fired the 4 creates wasn't changed — the
 guard makes the create idempotent regardless of caller.
 
+**Calendar drag-and-drop rebuilt on pointer events (`Calendar.tsx` WeekView).** The long-carried
+"can't drag items on the calendar" bug was native HTML5 DnD: the handlers were *correct* (preventDefault
+present, blocks bubble to the column, `resolveSlot` sound), but native drag is unreliable on trackpads
+and inside the scroll container — it can fail to initiate or drop silently, which is why it never
+reproduced in dev. It also hung the browser automation for 4 min, confirming the mechanism is the
+problem. Replaced the entire drag layer: `draggable`/`onDragStart`/`onDragOver`/`onDrop` → pointer events.
+`startDrag(payload,kind,spaceId,duration,title,e)` on rail items (`new:key`) and placed blocks (`move:id`)
+attaches window `pointermove`/`pointerup`/Esc listeners; columns carry `data-col-date` for
+`elementFromPoint` hit-testing (scroll-safe); a `dragRef` mirrors state so listeners read latest without
+stale closures. Adds a floating cursor ghost, live valid-window highlighting, and a dashed snap-preview at
+the resolved slot. Drop is still gated by `resolveSlot` (must land in a matching capacity window). Works on
+trackpad/mouse/touch and is automation-driveable. **Principle:** native HTML5 DnD is a recurring liability
+— pointer events are the reliable substrate for any future drag UX. (Garry kept drag over click-to-place.)
+
 ### Jun 21 — OKR→Home merge: objective-spine Home, OKR tab deleted (head `2fce55f`)
 
 The OKR tab and Home were fighting; Home absorbed it. End state: **Roadmap = shape the plan, Home = work the plan**, OKR tab gone. Shipped in phases.
