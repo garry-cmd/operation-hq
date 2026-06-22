@@ -1125,7 +1125,7 @@ export default function Home({
         .nowcap{position:absolute;top:0;left:50%;transform:translateX(-50%);background:#e8c060;color:#1a1406;font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.1em;padding:2px 6px;border-radius:0 0 5px 5px;text-transform:uppercase;}
         .nowdot{position:absolute;top:-3px;left:50%;width:7px;height:7px;border-radius:50%;background:#e8c060;transform:translateX(-50%);box-shadow:0 0 8px rgba(232,192,96,.5);}
 
-        .hd-body{display:grid;grid-template-columns:1fr 380px;gap:26px;align-items:start;}
+        .hd-body{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:26px;align-items:start;}
         @media (max-width:1100px){.hd-body{grid-template-columns:1fr;}}
 
         .kb-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:14px;flex-wrap:wrap;}
