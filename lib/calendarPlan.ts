@@ -123,6 +123,7 @@ export function planWeek(opts: {
   items: SchedulableItem[]
   busy: BusyInterval[]
   existing?: BusyInterval[]
+  now?: { date: string; minute: number }   // block today's already-passed time
 }): PlanResult {
   const { weekStart, capacity, items } = opts
 
@@ -139,7 +140,17 @@ export function planWeek(opts: {
     }))
     .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start)
 
-  const occupied = buildOccupied([...(opts.busy ?? []), ...(opts.existing ?? [])])
+  // Block the past so nothing lands earlier than now: fully block days before
+  // today, and block today up to the current minute. Derived from the week's own
+  // window dates, so it only touches days actually being scheduled (and is a
+  // no-op when viewing a future week).
+  const cut = opts.now
+  const pastBusy: BusyInterval[] = cut
+    ? [...new Set(windows.map(w => w.date))]
+        .filter(d => d <= cut.date)
+        .map(d => ({ date: d, start_minute: 0, end_minute: d < cut.date ? 24 * 60 : cut.minute }))
+    : []
+  const occupied = buildOccupied([...pastBusy, ...(opts.busy ?? []), ...(opts.existing ?? [])])
 
   const queue = [...items].sort(compareItems)
   const placed: PlacedBlock[] = []
@@ -179,6 +190,7 @@ export function planFromAssignments(opts: {
   items: SchedulableItem[]
   busy: BusyInterval[]
   existing?: BusyInterval[]
+  now?: { date: string; minute: number }        // block today's already-passed time
   order: string[]                               // item keys (`${source}:${id}`) in scheduling order
   preferredDay: Record<string, string | null>   // key → YYYY-MM-DD (or null)
 }): PlanResult {
@@ -192,7 +204,15 @@ export function planFromAssignments(opts: {
     }))
     .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : a.start - b.start)
 
-  const occupied = buildOccupied([...(opts.busy ?? []), ...(opts.existing ?? [])])
+  // Block the past so nothing lands earlier than now (fully block days before
+  // today, today up to the current minute). See planWeek for rationale.
+  const cut = opts.now
+  const pastBusy: BusyInterval[] = cut
+    ? [...new Set(windows.map(w => w.date))]
+        .filter(d => d <= cut.date)
+        .map(d => ({ date: d, start_minute: 0, end_minute: d < cut.date ? 24 * 60 : cut.minute }))
+    : []
+  const occupied = buildOccupied([...pastBusy, ...(opts.busy ?? []), ...(opts.existing ?? [])])
 
   // Claude's order first; any item it didn't mention is appended by the default
   // priority comparator so it still gets a shot at an open slot.

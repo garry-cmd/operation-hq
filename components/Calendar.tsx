@@ -213,6 +213,7 @@ export default function Calendar({
       const existing: BusyInterval[] = commitments.map(c => ({ date: c.date, start_minute: c.start_minute, end_minute: c.end_minute }))
       const { placed, unplaced } = planWeek({
         weekStart: viewWeek, capacity: capacityBlocks, items, busy: [], existing,
+        now: { date: todayStr, minute: new Date().getHours() * 60 + new Date().getMinutes() },
       })
       const created = await calDb.createMany(placed.map(p => ({
         task_id: p.item.source === 'task' ? p.item.id : null,
@@ -291,6 +292,7 @@ export default function Calendar({
       const removed = new Set(removedIds)
       const { placed, unplaced } = planFromAssignments({
         weekStart: viewWeek, capacity: capacityBlocks, items: aiItems, busy: [], existing, order, preferredDay,
+        now: { date: todayStr, minute: new Date().getHours() * 60 + new Date().getMinutes() },
       })
       const created = await calDb.createMany(placed.map(p => ({
         task_id: p.item.source === 'task' ? p.item.id : null,

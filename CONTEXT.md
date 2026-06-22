@@ -67,6 +67,13 @@ rationale to keep output compact, and parse failures now `console.error` the `st
 the deployed build: 200, all 21 items placed, rationale + proposed blocks render, "Commit 21 to Google".
 NOTE: the greedy **"Quick fill"** planner shares the item pool but not this route — it was never affected.
 
+**Planner time-awareness (both planners).** Separate bug: planning placed items into time that had already
+passed (e.g. a 9 AM slot at 2 PM today). `firstFit` had no concept of "now". Fix: `planWeek` and
+`planFromAssignments` take an optional `now: {date, minute}`; they synthesize busy intervals from the
+week's own window dates that fully block days **before** today and block **today up to the current minute**,
+so `firstFit` can never start a placement in the past. Calendar passes `now` from `todayStr` + local clock
+at both call sites. No-op when viewing a future week (no window dates ≤ today).
+
 **Free-form calendar blocks could duplicate (`block route` dedup guard).** The agent's
 `create_calendar_event` and manual block-add both POST `/api/google/block`, which had **no dedup** — so a
 retry / double-click / repeated "set up my week" minted a fresh row + Google event each time. This created
