@@ -102,6 +102,11 @@ the resolved slot. Drop is still gated by `resolveSlot` (must land in a matching
 trackpad/mouse/touch and is automation-driveable. **Principle:** native HTML5 DnD is a recurring liability
 — pointer events are the reliable substrate for any future drag UX. (Garry kept drag over click-to-place.)
 
+**Unscheduled-rail UX (`Calendar.tsx`).** Item titles wrap to two lines instead of single-line ellipsis,
+plus a full-name hover tooltip (`title`). Each space group in the rail is a click-to-collapse header
+(chevron, count·duration stays visible when collapsed), persisted to `hq-cal-collapsed-spaces`. Cosmetic;
+shipped after the readability ask.
+
 ### Jun 21 — OKR→Home merge: objective-spine Home, OKR tab deleted (head `2fce55f`)
 
 The OKR tab and Home were fighting; Home absorbed it. End state: **Roadmap = shape the plan, Home = work the plan**, OKR tab gone. Shipped in phases.
@@ -193,10 +198,9 @@ new `components/notes/NoteEditor.tsx`, `components/Notes.tsx`, `components/Home.
   destructured/used.
 - Same `notes` table throughout — a KR note is a real Note (in the Notes module + search); the shelf
   is just the `roadmap_item_id == KR` view. No schema changes.
-- **Still open from this session: calendar drag-and-drop (fix #4).** Code path verified correct
-  (preventDefault on dragover, valid dataTransfer, capacity windows `pointer-events:none`, 13 windows
-  in DB) but the reported breakage couldn't be reproduced without a live browser click (Garry's
-  Chrome needs his Connect). Needs live repro next session — not faked/patched.
+- **Calendar drag-and-drop (fix #4) — RESOLVED Jun 22.** Root cause was native HTML5 DnD itself
+  (correct handlers, but unreliable on trackpad / inside the scroll container). Rebuilt on pointer
+  events — see the Jun 22 entry. No longer open.
 
 ### Jun 21 (later) — Home polish pass
 
@@ -499,14 +503,18 @@ sailors/stoics/Franklin.
 **Calendar module** — a first-class all-spaces time-blocking view (own NavRail entry).
 - **Template mode:** drag-to-create a standing weekly capacity template. Each window is
   space-scoped (or "Any") and kind-scoped (`kr_action` | `task` | `both`).
-- **Week mode:** Mon–Sun time grid (6 AM–10 PM). HTML5 drag-and-drop to place unscheduled
-  items (KR actions + due tasks, each with a duration) into matching capacity windows;
-  drop validation mirrors the planner's `accepts()` (kind + space must match; clamps to the
-  window; invalid drops rejected with a toast). Drag a placed block to reschedule.
-- **Greedy planner** (`lib/calendarPlan.ts`, pure) — "Plan week" first-fits items into
+- **Week mode:** Mon–Sun time grid (6 AM–10 PM). **Pointer-based** drag-and-drop (rebuilt off native
+  HTML5 DnD Jun 22) to place unscheduled items (KR actions + due tasks, each with a duration) into
+  matching capacity windows: a cursor ghost + live valid-window highlight + dashed snap-preview, Esc to
+  cancel; drop validation mirrors the planner's `accepts()` (kind + space must match; clamps to the
+  window; invalid drops rejected with a toast). Drag a placed block to reschedule. The unscheduled rail
+  groups by space — each group header is a persisted click-to-collapse toggle (`hq-cal-collapsed-spaces`);
+  item titles wrap to two lines with a full-name hover tooltip.
+- **Greedy planner** (`lib/calendarPlan.ts`, pure) — "Quick fill" first-fits items into
   matching windows, off-track KRs first, then priority, then due date; schedules **around**
-  commitments (committed HQ blocks + Google meetings). Blocks are `proposed` (dashed) until
-  committed.
+  commitments (committed HQ blocks + Google meetings) **and the past** (never places earlier than now —
+  prior days fully blocked, today up to the current minute, via the optional `now` cutoff). Blocks are
+  `proposed` (dashed) until committed.
 
 **Todoist strip removed → native FocusTasks.** `TodoistStrip.tsx` + `/api/todoist/*` deleted;
 `components/FocusTasks.tsx` shows native week-scoped (Mon–Sun) space tasks on Focus. **This
@@ -608,7 +616,8 @@ redirect URIs for prod + `localhost:3000`.
 - **Rotate `SUPABASE_SERVICE_ROLE_KEY`** — it transited a chat session during setup. Rotate
   in Supabase + update Vercel when convenient.
 - **All-day Google events skipped** in the meetings overlay (v1). Timed events only.
-- **HTML5 DnD has no auto-scroll** near grid edges on the week view.
+- **Calendar drag has no auto-scroll** near grid edges (pointer-based; window listeners track the
+  cursor but the scroll container isn't nudged when you drag to its top/bottom edge).
 - **Audit #4** — extract `useSpaceData(activeSpaceId)` hook (drops ~100 lines from
   `page.tsx`). **Audit #5** — design-token module `lib/tokens.ts` (incremental).
 
