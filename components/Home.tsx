@@ -118,6 +118,11 @@ function fmtMetric(v: number | string | null | undefined, unit: string | null | 
   return `${s} ${unit}`
 }
 
+function loadLS<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  try { const v = window.localStorage.getItem(key); return v == null ? fallback : (JSON.parse(v) as T) } catch { return fallback }
+}
+
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions, tasks, setTasks,
   metricCheckins,
@@ -127,20 +132,34 @@ export default function Home({
   onLogMetric,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
-  const [spaceFilter, setSpaceFilter] = useState<string | null>(null) // null = All spaces
-  const [quarterScope, setQuarterScope] = useState<'current' | 'all'>('current') // board defaults to ACTIVE_Q
+  // Sticky view settings — persisted across navigation (localStorage).
+  const [spaceFilter, setSpaceFilter] = useState<string | null>(() => {
+    const v = loadLS<string | null>('hq-home-space-filter', null)
+    return v && spaces.some(s => s.id === v) ? v : null
+  })
+  const [quarterScope, setQuarterScope] = useState<'current' | 'all'>(() =>
+    loadLS<'current' | 'all'>('hq-home-qtr-scope', 'current') === 'all' ? 'all' : 'current')
+  const [objOverrides, setObjOverrides] = useState<Record<string, boolean>>(() =>
+    loadLS<Record<string, boolean>>('hq-home-obj-open', {}))
   const [busyEvents, setBusyEvents] = useState<GoogleBusyEvent[]>([])
   const [allDayEvents, setAllDayEvents] = useState<GoogleAllDayEvent[]>([])
-  const [nowTick, setNowTick] = useState(() => Date.now())
 
   const weekEnd = useMemo(() => dateForDow(weekMonday, 6), [weekMonday])
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(weekMonday, i)), [weekMonday])
   const todayStr = ymd(new Date())
   const isCurrentWeek = weekMonday === getMonday()
+  // Rolling 7-day ribbon window — today + next 6 (decoupled from the Mon–Sun action week).
+  const ribbonDates = useMemo(() => Array.from({ length: 7 }, (_, i) => {
+    const d = parseDateLocal(todayStr); d.setDate(d.getDate() + i); return ymd(d)
+  }), [todayStr])
+  const ribbonEnd = ribbonDates[6]
+  // Persist sticky view settings.
+  useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
+  useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
+  useEffect(() => { try { window.localStorage.setItem('hq-home-obj-open', JSON.stringify(objOverrides)) } catch {} }, [objOverrides])
 
   const krById = useMemo(() => new Map(roadmapItems.map(r => [r.id, r])), [roadmapItems])
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])
-  const objById = useMemo(() => new Map(objectives.map(o => [o.id, o])), [objectives])
   const orderedSpaces = useMemo(() => [...spaces].sort((a, b) => a.sort_order - b.sort_order), [spaces])
   const colorForSpace = (id: string | null) => {
     const sp = id ? spaceById.get(id) : null
@@ -161,22 +180,15 @@ export default function Home({
   })
   const anyOpen = closeRows.some(r => r.open)
 
-  // Tick the now-line every minute (only matters on the current week).
-  useEffect(() => {
-    if (!isCurrentWeek) return
-    const t = setInterval(() => setNowTick(Date.now()), 60_000)
-    return () => clearInterval(t)
-  }, [isCurrentWeek])
-
-  // Fetch the week's calendar (busy + all-day) when connected.
+  // Fetch the ribbon's calendar (busy + all-day) when connected — rolling 7-day window.
   useEffect(() => {
     if (!googleConnected) { setBusyEvents([]); setAllDayEvents([]); return }
     let cancelled = false
-    fetchCalendarEvents(weekMonday, weekEnd)
+    fetchCalendarEvents(todayStr, ribbonEnd)
       .then(({ events, allDayEvents }) => { if (!cancelled) { setBusyEvents(events); setAllDayEvents(allDayEvents) } })
       .catch(() => { if (!cancelled) { setBusyEvents([]); setAllDayEvents([]) } })
     return () => { cancelled = true }
-  }, [googleConnected, weekMonday, weekEnd])
+  }, [googleConnected, todayStr, ribbonEnd])
 
   // Fresh quote on every mount (page open / refresh / nav back to Home).
   const [quote] = useState(() => randomQuote())
@@ -227,9 +239,17 @@ export default function Home({
         return { obj: o, krs }
       })
       .filter(g => g.krs.length > 0)
-    const inMotion = groups.flatMap(g => g.krs).filter(x => x.thisWeek.length > 0)
+    const withActive = groups.map(g => ({
+      ...g,
+      active: g.krs.some(x => x.thisWeek.length > 0 || x.backlog.length > 0),
+    }))
     const totalKRs = groups.reduce((n, g) => n + g.krs.length, 0)
-    return { groups, inMotion, totalKRs }
+    return {
+      activeObjs: withActive.filter(g => g.active),
+      restObjs: withActive.filter(g => !g.active),
+      totalKRs,
+      totalObjs: withActive.length,
+    }
   }, [objectives, roadmapItems, actions, weekMonday, spaceFilter, quarterScope])
 
   // ── Tasks due this week (open, non-subtask, due in week) ──
@@ -279,15 +299,6 @@ export default function Home({
     for (const e of allDayEvents) { if (isHold(e.title)) continue; const a = m.get(e.date) ?? []; a.push(e); m.set(e.date, a) }
     return m
   }, [allDayEvents])
-
-  // now-line position (current week only)
-  const nowLeftPct = useMemo(() => {
-    if (!isCurrentWeek) return null
-    const now = new Date(nowTick)
-    const dayIdx = (now.getDay() + 6) % 7 // Mon=0
-    const frac = (now.getHours() * 60 + now.getMinutes()) / 1440
-    return ((dayIdx + frac) / 7) * 100
-  }, [isCurrentWeek, nowTick])
 
   // ── mutations ──
   async function toggleAction(a: WeeklyAction) {
@@ -474,6 +485,114 @@ export default function Home({
     ? `${fmtRange(weekMonday)} · ${DOW_FULL[(new Date().getDay() + 6) % 7]} ${dayPart(new Date().getHours())}`
     : `${fmtRange(weekMonday)}`
 
+  // ── Objective card (the spine unit): collapsible header + KR rows ──────
+  function renderObjCard(g: { obj: AnnualObjective; krs: { kr: RoadmapItem; thisWeek: WeeklyAction[]; backlog: WeeklyAction[] }[]; active: boolean }) {
+    const { obj, krs, active } = g
+    const open = obj.id in objOverrides ? objOverrides[obj.id] : active
+    const toggleOpen = () => setObjOverrides(p => ({ ...p, [obj.id]: !(obj.id in p ? p[obj.id] : active) }))
+    const counts = { ok: 0, alarm: 0, caution: 0, wait: 0, standby: 0 }
+    for (const { kr } of krs) {
+      const h = kr.health_status
+      if (h === 'on_track') counts.ok++
+      else if (h === 'off_track') counts.alarm++
+      else if (h === 'blocked') counts.caution++
+      else if (h === 'waiting') counts.wait++
+      else counts.standby++
+    }
+    const segs: [number, string][] = ([
+      [counts.ok, 'var(--nw-nominal-text)'],
+      [counts.alarm, 'var(--nw-alarm-text)'],
+      [counts.caution, 'var(--nw-caution-text)'],
+      [counts.wait, 'var(--indigo-text)'],
+      [counts.standby, 'var(--nw-standby-text)'],
+    ] as [number, string][]).filter(([n]) => n > 0)
+    const sumParts: string[] = []
+    if (counts.ok) sumParts.push(`${counts.ok} on track`)
+    if (counts.alarm) sumParts.push(`${counts.alarm} off`)
+    if (counts.caution) sumParts.push(`${counts.caution} blocked`)
+    if (counts.wait) sumParts.push(`${counts.wait} waiting`)
+    if (counts.standby) sumParts.push(`${counts.standby} pending`)
+    const metricKr = krs.find(x => x.kr.is_metric)
+    const mTag = metricKr ? latestMetricByKR.get(metricKr.kr.id) : null
+    const actionCount = krs.reduce((n, x) => n + x.thisWeek.filter(a => !a.completed).length + x.backlog.length, 0)
+    const overdue = !!obj.end_date && obj.end_date < todayStr
+
+    return (
+      <div key={obj.id} className={`kb-obj${open ? ' open' : ''}`} style={{ borderLeftColor: colorForSpace(obj.space_id) }}>
+        <div className="kb-ohead" onClick={toggleOpen}>
+          <span className="kb-sdot" style={{ background: colorForSpace(obj.space_id) }} />
+          <div className="kb-oid">
+            <div className="kb-oname2">{obj.name}</div>
+            <div className="kb-ometa">
+              {spaceFilter === null && <span>{spaceById.get(obj.space_id)?.name ?? ''}</span>}
+              {obj.end_date && <span className={overdue ? 'due' : ''}>{overdue ? 'overdue' : `ends ${parseDateLocal(obj.end_date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`}</span>}
+              {active && actionCount > 0 && <span className="live">{actionCount} action{actionCount === 1 ? '' : 's'}</span>}
+            </div>
+          </div>
+          <div className="kb-oroll">
+            {!open && mTag && <span className="kb-mtagh">{fmtMetric(mTag.value, metricKr!.kr.metric_unit)}</span>}
+            <div className="kb-orollcol">
+              <div className="kb-segbar">{segs.map(([n, c], i) => <span key={i} className="kb-seg" style={{ flex: n, background: c }} />)}</div>
+              <div className="kb-osum"><b>{krs.length}</b> KR{krs.length === 1 ? '' : 's'}{sumParts.length ? ` · ${sumParts.join(' · ')}` : ''}</div>
+            </div>
+            <span className="kb-objchev">›</span>
+          </div>
+        </div>
+        {open && (
+          <div className="kb-krs">
+            {krs.map(({ kr, thisWeek, backlog }) => {
+              const tone = healthTone(kr.health_status)
+              const mc = kr.is_metric ? latestMetricByKR.get(kr.id) : null
+              const openTW = thisWeek.filter(a => !a.completed).length
+              const hasActions = thisWeek.length > 0 || backlog.length > 0
+              return (
+                <div key={kr.id} className="kb-krwrap">
+                  <div className="kb-krrow" onClick={() => dive({ kind: 'kr', id: kr.id })} title="Open this KR">
+                    <span className="kb-kt">{kr.title}</span>
+                    {mc && <span className="kb-metric"><b>{fmtMetric(mc.value, kr.metric_unit)}</b></span>}
+                    <span className={`kb-hpill ${tone.cls}`}><span className="pd" />{tone.label}</span>
+                    <span className="kb-meta">
+                      {thisWeek.length > 0 && <span className="on">▸ {openTW > 0 ? openTW : thisWeek.length} this week</span>}
+                      {thisWeek.length > 0 && backlog.length > 0 && <span> · </span>}
+                      {backlog.length > 0 && <span>{backlog.length} backlog</span>}
+                    </span>
+                    <button className="kb-add" onClick={e => { e.stopPropagation(); setDeckAddKR(kr.id); setKrActionInput('') }}>+ action</button>
+                    <span className="kb-chev">›</span>
+                  </div>
+                  {(hasActions || deckAddKR === kr.id) && (
+                    <div className="kb-sub" onClick={e => e.stopPropagation()}>
+                      {thisWeek.map(a => (
+                        <div key={a.id} className={`kb-arow${a.completed ? ' done' : ''}`}>
+                          <button className={`kb-cb${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
+                          <span className="kb-atitle">{a.title}</span>
+                          {!a.completed && <button className="kb-sched" onClick={() => unscheduleAction(a)} title="Move to backlog">backlog</button>}
+                        </div>
+                      ))}
+                      {backlog.map(a => (
+                        <div key={a.id} className="kb-arow">
+                          <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
+                          <span className="kb-atitle">{a.title}</span>
+                          <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
+                        </div>
+                      ))}
+                      {deckAddKR === kr.id && (
+                        <div className="kb-addrow">
+                          <input autoFocus value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr); if (e.key === 'Escape') { setDeckAddKR(null); setKrActionInput('') } }}
+                            placeholder="+ Add an action (lands in backlog)…" />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className={`home-deck stage${entered ? ' work-on' : ''}`}>
       <div className="layer survey">
@@ -502,20 +621,15 @@ export default function Home({
       </div>
       <div className="ribwrap">
         <div className="grid7">
-          {nowLeftPct != null && (
-            <div className="nowline" style={{ left: `${nowLeftPct}%` }}>
-              <span className="nowcap">now</span><span className="nowdot" />
-            </div>
-          )}
-          {weekDates.map((date, i) => {
-            const isToday = date === todayStr
+          {ribbonDates.map((date, i) => {
+            const label = i === 0 ? 'Today' : i === 1 ? 'Tmrw' : shortDow(date)
             const mtgs = busyByDate.get(date) ?? []
             const ads = allDayByDate.get(date) ?? []
             const MAX_M = 4, MAX_A = 2
             return (
-              <div key={date} className={`day${isToday ? ' today' : ''}`}>
+              <div key={date} className={`day${i === 0 ? ' lead' : ''}`}>
                 <div className="dtop">
-                  <span className="dname">{DOW[i]}{isToday ? ' · today' : ''}</span>
+                  <span className="dname">{label}</span>
                   <span className="dnum">{parseDateLocal(date).getDate()}</span>
                 </div>
                 {ads.slice(0, MAX_A).map(e => (
@@ -558,130 +672,34 @@ export default function Home({
             <VitalsStrip krs={metricKRs} checkins={metricCheckins} onLog={onLogMetric} />
           )}
           <div className="kb-head">
-            <span className="label">Key results · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
+            <span className="label">Objectives · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
             <div className="kb-headright">
               <div className="kb-qseg">
                 <button className={quarterScope === 'current' ? 'on' : ''} onClick={() => setQuarterScope('current')}>This quarter</button>
                 <button className={quarterScope === 'all' ? 'on' : ''} onClick={() => setQuarterScope('all')}>All</button>
               </div>
               <span className="kb-sum">
-                {krBoard.inMotion.length > 0
-                  ? <><b>{krBoard.inMotion.length}</b> in motion · {krBoard.totalKRs} active</>
-                  : <>{krBoard.totalKRs} active key result{krBoard.totalKRs === 1 ? '' : 's'}</>}
+                {krBoard.activeObjs.length > 0
+                  ? <><b>{krBoard.activeObjs.length}</b> active · {krBoard.totalObjs} objective{krBoard.totalObjs === 1 ? '' : 's'}</>
+                  : <>{krBoard.totalObjs} objective{krBoard.totalObjs === 1 ? '' : 's'}</>}
               </span>
             </div>
           </div>
 
-          {/* band — in motion this week */}
-          <div className="kb-band"><span className="label">In motion this week</span><span className="kb-hr" /></div>
-          {krBoard.inMotion.length === 0 ? (
+          {/* band — active workstreams (objectives with at least one action) */}
+          <div className="kb-band"><span className="label">Active workstreams</span><span className="kb-hr" /></div>
+          {krBoard.activeObjs.length === 0 ? (
             <div className="kb-hint">
               <span className="ic">◇</span>
-              <span><b>Nothing scheduled this week yet.</b> Pull a key result into motion below — tap <span className="kb-mono">▸ this week</span> on a backlog item, or add an action.</span>
+              <span><b>Nothing in motion yet.</b> Add an action to a key result below, or tap <span className="kb-mono">▸ this week</span> on a backlog item — its objective rises here.</span>
             </div>
-          ) : krBoard.inMotion.map(({ kr, thisWeek, backlog }) => {
-            const tone = healthTone(kr.health_status)
-            const mc = kr.is_metric ? latestMetricByKR.get(kr.id) : null
-            return (
-              <div key={kr.id} className="kb-card">
-                <div className="kb-top" style={{ borderLeftColor: colorForSpace(kr.space_id) }} onClick={() => dive({ kind: 'kr', id: kr.id })} title="Open this KR">
-                  <span className="dot" style={{ background: colorForSpace(kr.space_id) }} />
-                  <div className="kb-grow">
-                    <div className="kb-name">{kr.title}</div>
-                    <div className="kb-obj">{objById.get(kr.annual_objective_id ?? '')?.name ?? ''}</div>
-                  </div>
-                  {mc && <span className="kb-metric"><b>{fmtMetric(mc.value, kr.metric_unit)}</b></span>}
-                  <span className={`kb-hpill ${tone.cls}`}><span className="pd" />{tone.label}</span>
-                  <span className="kb-chev">›</span>
-                </div>
-                <div className="kb-actions" onClick={e => e.stopPropagation()}>
-                  <div className="kb-asec">This week</div>
-                  {thisWeek.map(a => (
-                    <div key={a.id} className={`kb-arow${a.completed ? ' done' : ''}`}>
-                      <button className={`kb-cb${a.completed ? ' done' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
-                      <span className="kb-atitle">{a.title}</span>
-                      {!a.completed && <button className="kb-sched" onClick={() => unscheduleAction(a)} title="Move to backlog">backlog</button>}
-                    </div>
-                  ))}
-                  {backlog.length > 0 && <div className="kb-asec">Backlog · {backlog.length}</div>}
-                  {backlog.map(a => (
-                    <div key={a.id} className="kb-arow">
-                      <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
-                      <span className="kb-atitle">{a.title}</span>
-                      <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
-                    </div>
-                  ))}
-                  {deckAddKR === kr.id ? (
-                    <div className="kb-addrow">
-                      <input autoFocus value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr); if (e.key === 'Escape') { setDeckAddKR(null); setKrActionInput('') } }}
-                        placeholder="+ Add an action (lands in backlog)…" />
-                    </div>
-                  ) : (
-                    <button className="kb-addbtn" onClick={() => { setDeckAddKR(kr.id); setKrActionInput('') }}>+ Add an action</button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
+          ) : krBoard.activeObjs.map(renderObjCard)}
 
-          {/* band — all key results, grouped by objective */}
-          <div className="kb-band"><span className="label">All key results</span><span className="kb-hr" /></div>
-          {krBoard.groups.length === 0 ? (
-            <div className="empty">No active key results{spaceFilter ? ' in this space' : ''} yet.</div>
-          ) : krBoard.groups.map(({ obj, krs }) => (
-            <div key={obj.id} className="kb-objgrp">
-              <div className="kb-objhead">
-                <span className="dot" style={{ background: colorForSpace(obj.space_id) }} />
-                <span className="kb-oname">{obj.name}</span>
-                {spaceFilter === null && <span className="kb-ocrumb">{spaceById.get(obj.space_id)?.name ?? ''}</span>}
-                <span className="kb-obar" />
-              </div>
-              {krs.map(({ kr, thisWeek, backlog }) => {
-                const tone = healthTone(kr.health_status)
-                const mc = kr.is_metric ? latestMetricByKR.get(kr.id) : null
-                const openTW = thisWeek.filter(a => !a.completed).length
-                return (
-                  <div key={kr.id} className="kb-krwrap">
-                    <div className={`kb-krrow${thisWeek.length > 0 ? ' inmotion' : ''}`} onClick={() => dive({ kind: 'kr', id: kr.id })} title="Open this KR">
-                      <span className="dot" style={{ background: colorForSpace(kr.space_id) }} />
-                      <span className="kb-kt">{kr.title}</span>
-                      {mc && <span className="kb-metric"><b>{fmtMetric(mc.value, kr.metric_unit)}</b></span>}
-                      <span className={`kb-hpill ${tone.cls}`}><span className="pd" />{tone.label}</span>
-                      <span className="kb-meta">
-                        {thisWeek.length > 0 && <span className="on">in motion · {openTW > 0 ? openTW : thisWeek.length}</span>}
-                        {thisWeek.length > 0 && backlog.length > 0 && <span> · </span>}
-                        {backlog.length > 0 && <span>backlog {backlog.length}</span>}
-                        {thisWeek.length === 0 && backlog.length === 0 && <span>—</span>}
-                      </span>
-                      <button className="kb-add" onClick={e => { e.stopPropagation(); setDeckAddKR(kr.id); setKrActionInput('') }}>+ action</button>
-                      <span className="kb-chev">›</span>
-                    </div>
-                    {deckAddKR === kr.id && (
-                      <div className="kb-addrow rowadd">
-                        <input autoFocus value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr); if (e.key === 'Escape') { setDeckAddKR(null); setKrActionInput('') } }}
-                          placeholder="+ Add an action (lands in backlog)…" />
-                      </div>
-                    )}
-                    {/* Backlog items show inline under their KR here (in-motion KRs
-                        already list everything in the top card, so skip those). */}
-                    {thisWeek.length === 0 && backlog.length > 0 && (
-                      <div className="kb-sub">
-                        {backlog.map(a => (
-                          <div key={a.id} className="kb-arow">
-                            <button className="kb-cb" onClick={() => toggleAction(a)} title="Mark done" />
-                            <span className="kb-atitle">{a.title}</span>
-                            <button className="kb-sched pri" onClick={() => scheduleAction(a, weekMonday)} title="Schedule for this week">▸ this week</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          ))}
+          {/* band — all objectives */}
+          <div className="kb-band"><span className="label">All objectives</span><span className="kb-hr" /></div>
+          {krBoard.restObjs.length === 0 ? (
+            <div className="empty">{krBoard.activeObjs.length > 0 ? 'Every objective is in motion.' : `No active objectives${spaceFilter ? ' in this space' : ''} yet.`}</div>
+          ) : krBoard.restObjs.map(renderObjCard)}
         </section>
 
         {/* RIGHT rail */}
@@ -1161,6 +1179,34 @@ export default function Home({
         .kb-krrow:hover .kb-add{opacity:1;}
         .kb-sub{padding:2px 0 6px 26px;}
         .kb-sub .kb-arow{padding:4px 0;}
+
+        /* objective-spine cards (Phase 2) */
+        .kb-obj{border:1px solid var(--line-2);border-left:3px solid var(--line-2);border-radius:14px;background:var(--surface);box-shadow:var(--card-shadow);margin-bottom:11px;overflow:hidden;}
+        .kb-ohead{display:flex;align-items:center;gap:12px;padding:13px 15px;cursor:pointer;}
+        .kb-ohead:hover{background:var(--hover);}
+        .kb-sdot{width:11px;height:11px;border-radius:50%;flex:none;box-shadow:0 0 0 3px rgba(255,255,255,.04);}
+        .kb-oid{flex:1;min-width:0;}
+        .kb-oname2{font-family:var(--font-display);font-weight:600;font-size:15.5px;color:var(--nw-cream);letter-spacing:-.005em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .kb-ometa{font-family:var(--font-mono);font-size:9.5px;letter-spacing:.04em;color:var(--navy-500);margin-top:3px;text-transform:uppercase;display:flex;gap:9px;flex-wrap:wrap;align-items:center;}
+        .kb-ometa .due{color:var(--nw-caution-text);}
+        .kb-ometa .live{color:var(--nw-nominal-text);display:inline-flex;align-items:center;gap:4px;}
+        .kb-ometa .live::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--nw-nominal-text);}
+        .kb-oroll{display:flex;align-items:center;gap:12px;flex:none;}
+        .kb-mtagh{font-family:var(--font-mono);font-size:9.5px;color:var(--nw-hero-amber);white-space:nowrap;}
+        .kb-orollcol{display:flex;flex-direction:column;align-items:flex-end;gap:5px;}
+        .kb-segbar{display:flex;width:128px;height:6px;border-radius:4px;overflow:hidden;background:var(--surface-2);border:1px solid var(--line);}
+        .kb-seg{height:100%;}
+        .kb-osum{font-family:var(--font-mono);font-size:9.5px;color:var(--navy-400);letter-spacing:.02em;white-space:nowrap;}
+        .kb-osum b{color:var(--navy-100);font-weight:600;}
+        .kb-objchev{color:var(--navy-500);font-size:17px;transition:transform .16s;flex:none;}
+        .kb-obj.open .kb-objchev{transform:rotate(90deg);}
+        .kb-krs{border-top:1px solid var(--line);padding:6px 8px 9px;}
+        .kb-krs .kb-krrow{border:none;border-radius:9px;padding:9px 9px 9px 11px;}
+        .kb-krs .kb-krrow:hover{background:var(--hover);}
+        .kb-krs .kb-sub{padding-left:11px;}
+        /* rolling ribbon: today is leftmost — amber TODAY tag, no time-bar */
+        .day.lead .dname{color:var(--nw-label);font-weight:700;letter-spacing:.14em;}
+        @media (max-width:560px){.kb-segbar{width:84px;}.kb-oname2{font-size:14px;}.kb-oroll{gap:8px;}}
 
         .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px 18px;box-shadow:var(--card-shadow);}
         .card + .card{margin-top:18px;}
