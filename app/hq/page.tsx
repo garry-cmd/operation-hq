@@ -675,6 +675,9 @@ export default function HQPage() {
             tagsByNote={tagsByNote}
             setTagsByNote={setTagsByNote}
             googleConnected={googleConnected}
+            driveGranted={driveGranted}
+            trackedFiles={trackedFiles}
+            setTrackedFiles={setTrackedFiles}
             reviews={reviews}
             weekForSpace={weekForSpace}
             onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })}

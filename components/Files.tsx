@@ -2,8 +2,7 @@
 import { useMemo, useState } from 'react'
 import type { Space, RoadmapItem, TrackedFile, TrackedFileStatus, FileVersion, FileVersionDirection } from '@/lib/types'
 import * as filesDb from '@/lib/db/trackedFiles'
-import { getDriveAccessToken, trackDriveFile } from '@/lib/db/googleApi'
-import { openDrivePicker } from '@/lib/drivePicker'
+import { trackViaPicker } from '@/lib/trackViaPicker'
 
 interface Props {
   spaces: Space[]
@@ -114,29 +113,16 @@ export default function Files({
     if (!driveGranted) { onConnectGoogle(); return }
     if (!apiKey) { toast('Add a Google API key in Vercel to enable file picking'); return }
     setPicking(true)
-    let picked: { id: string; name: string; mimeType: string }[] = []
     try {
-      const { accessToken, appId } = await getDriveAccessToken()
-      picked = await openDrivePicker({ accessToken, apiKey, appId })
-    } catch {
-      toast('Could not open the file picker')
-      setPicking(false)
-      return
-    }
-    try {
-      if (picked.length === 0) return
-      let added = 0
-      for (const p of picked) {
-        const { file, existed } = await trackDriveFile(p.id, spaceForNew)
-        setTrackedFiles(prev => {
-          const without = prev.filter(t => t.id !== file.id)
-          return [file, ...without]
-        })
-        if (!existed) added++
-      }
-      toast(added > 0 ? `Tracked ${added} file${added === 1 ? '' : 's'}` : 'Already tracked')
+      const tracked = await trackViaPicker({ apiKey, spaceId: spaceForNew })
+      if (tracked.length === 0) return
+      setTrackedFiles(prev => {
+        const ids = new Set(tracked.map(f => f.id))
+        return [...tracked, ...prev.filter(t => !ids.has(t.id))]
+      })
+      toast(`Tracked ${tracked.length} file${tracked.length === 1 ? '' : 's'}`)
     } catch (e) {
-      toast(e instanceof Error ? `Could not track file: ${e.message}` : 'Could not track file')
+      toast(e instanceof Error && e.message ? `Could not track: ${e.message}` : 'Could not open the file picker')
     } finally {
       setPicking(false)
     }

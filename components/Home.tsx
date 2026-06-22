@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
-import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag } from '@/lib/types'
+import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal } from '@/lib/utils'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
@@ -12,6 +12,8 @@ import { extractNoteText } from '@/lib/noteText'
 import { deleteAllMediaForNote } from '@/lib/db/noteMedia'
 import { NoteEditor } from './notes/NoteEditor'
 import { fetchCalendarEvents, type GoogleBusyEvent, type GoogleAllDayEvent } from '@/lib/db/googleApi'
+import * as filesDb from '@/lib/db/trackedFiles'
+import { trackViaPicker } from '@/lib/trackViaPicker'
 
 // Which object the Home cockpit's focused "work" view is showing.
 type WorkTarget = { kind: 'kr'; id: string } | { kind: 'note'; id: string } | { kind: 'task'; id: string }
@@ -49,6 +51,18 @@ function fmtRange(weekStart: string): string {
 function dayPart(h: number): string {
   return h < 12 ? 'morning' : h < 17 ? 'afternoon' : 'evening'
 }
+// File row helpers for the KR work view's Files section.
+const FILE_STATUS_LABEL: Record<string, string> = {
+  new_in: 'New in', editing: 'Editing', with_client: 'With client', sent: 'Sent',
+}
+function fileGlyph(mime: string | null): string {
+  const m = mime ?? ''
+  if (m.includes('spreadsheet') || m.includes('excel') || m.includes('csv')) return '▦'
+  if (m.includes('document') || m.includes('word')) return '▤'
+  if (m.includes('presentation') || m.includes('powerpoint')) return '◫'
+  if (m.includes('pdf')) return '▥'
+  return '◻'
+}
 
 interface Props {
   spaces: Space[]
@@ -66,6 +80,9 @@ interface Props {
   tagsByNote: Map<string, string[]>
   setTagsByNote: React.Dispatch<React.SetStateAction<Map<string, string[]>>>
   googleConnected: boolean
+  driveGranted: boolean
+  trackedFiles: TrackedFile[]
+  setTrackedFiles: React.Dispatch<React.SetStateAction<TrackedFile[]>>
   reviews: WeeklyReview[]
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
@@ -78,7 +95,7 @@ interface Props {
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions, tasks, setTasks,
   habitCheckins, setHabitCheckins, notes, setNotes, notebooks, tagsByNote, setTagsByNote,
-  googleConnected, reviews, weekForSpace, onCloseWeek,
+  googleConnected, driveGranted, trackedFiles, setTrackedFiles, reviews, weekForSpace, onCloseWeek,
   onOpenTasks, onOpenCalendar, toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
@@ -280,6 +297,7 @@ export default function Home({
   const [krNoteId, setKrNoteId] = useState<string | null>(null) // selected note in the KR shelf
   const [editorFull, setEditorFull] = useState(false)   // editor focus / KR expand-to-spine
   const [linkPickerOpen, setLinkPickerOpen] = useState(false)
+  const [fileBusy, setFileBusy] = useState(false)
   const [linkQuery, setLinkQuery] = useState('')
   const [krActionInput, setKrActionInput] = useState('')
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -367,6 +385,31 @@ export default function Home({
       const created = await actionsDb.create({ roadmap_item_id: kr.id, title: t, week_start: weekMonday })
       setActions(prev => [...prev, created]); setKrActionInput('')
     } catch { toast('Could not add action') }
+  }
+  // ── Files on the KR (Drive-backed) ──
+  const driveApiKey = process.env.NEXT_PUBLIC_GOOGLE_API_KEY
+  async function trackFileForKR(kr: RoadmapItem) {
+    if (!driveGranted) { toast('Connect Drive first — Settings › Google & Drive'); return }
+    if (!driveApiKey) { toast('File picking needs a Google API key in Vercel'); return }
+    setFileBusy(true)
+    try {
+      const tracked = await trackViaPicker({ apiKey: driveApiKey, spaceId: kr.space_id, roadmapItemId: kr.id })
+      if (tracked.length === 0) return
+      setTrackedFiles(prev => {
+        const ids = new Set(tracked.map(f => f.id))
+        return [...tracked, ...prev.filter(t => !ids.has(t.id))]
+      })
+      toast(`Tracked ${tracked.length} file${tracked.length === 1 ? '' : 's'}`)
+    } catch (e) {
+      toast(e instanceof Error && e.message ? `Could not track: ${e.message}` : 'Could not open the file picker')
+    } finally {
+      setFileBusy(false)
+    }
+  }
+  async function unlinkFileFromKR(f: TrackedFile) {
+    setTrackedFiles(prev => prev.map(t => t.id === f.id ? { ...t, roadmap_item_id: null } : t))
+    try { await filesDb.update(f.id, { roadmap_item_id: null }) }
+    catch { toast('Could not unlink'); setTrackedFiles(prev => prev.map(t => t.id === f.id ? f : t)) }
   }
 
 
@@ -619,6 +662,7 @@ export default function Home({
               const sel = krNotesList.find(n => n.id === krNoteId) ?? krNotesList[0] ?? null
               const wkActions = actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday)
               const linkedTasks = tasks.filter(t => t.roadmap_item_id === kr.id && !t.parent_task_id)
+              const krFiles = trackedFiles.filter(f => f.roadmap_item_id === kr.id && !f.archived)
               return (
                 <section className="cw-pane">
                   <div className="cw-head">
@@ -692,6 +736,27 @@ export default function Home({
                         <input value={krActionInput} onChange={e => setKrActionInput(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') addKRAction(kr) }}
                           placeholder="+ Add an action to this KR…" />
+                      </div>
+
+                      {/* files */}
+                      <div className="cw-tasks-sec brd">
+                        <span className="cw-lbl">Files</span>
+                        {krFiles.length > 0 && <span className="cw-n"> · {krFiles.length}</span>}
+                      </div>
+                      {krFiles.length === 0 && <div className="cw-tasks-empty">No files linked. Track a client document below.</div>}
+                      {krFiles.map(f => (
+                        <div key={f.id} className="cw-frow">
+                          <span className="cw-fglyph">{fileGlyph(f.mime_type)}</span>
+                          <span className="cw-ft" title={f.name || 'Untitled'}>{f.name || 'Untitled'}</span>
+                          <span className={`cw-fstatus ${f.status}`}>{FILE_STATUS_LABEL[f.status] ?? f.status}</span>
+                          <a className="cw-fopen" href={`https://drive.google.com/open?id=${f.drive_file_id}`} target="_blank" rel="noreferrer" title="Open in Drive">↗</a>
+                          <button className="cw-funlink" onClick={() => unlinkFileFromKR(f)} title="Unlink from this KR">×</button>
+                        </div>
+                      ))}
+                      <div className="cw-fileacts">
+                        <button className="cw-sb pri" onClick={() => trackFileForKR(kr)} disabled={fileBusy}>
+                          {fileBusy ? 'Opening…' : '+ Track a file'}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -992,6 +1057,22 @@ export default function Home({
         .cw-add{padding:10px 14px 4px;}
         .cw-add input{width:100%;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 11px;font-size:12.5px;color:var(--navy-50);font-family:inherit;outline:none;}
         .cw-add input:focus{border-color:var(--accent);}
+
+        .cw-frow{display:flex;align-items:center;gap:9px;padding:7px 16px;}
+        .cw-frow:hover{background:var(--hover);}
+        .cw-fglyph{font-size:15px;color:var(--navy-300);flex-shrink:0;line-height:1;}
+        .cw-ft{flex:1;font-size:12.5px;color:var(--navy-100);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .cw-fstatus{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;flex-shrink:0;}
+        .cw-fstatus.new_in{color:var(--accent);background:var(--accent-dim);}
+        .cw-fstatus.editing{color:var(--warn,#f5b840);background:#2a2410;}
+        .cw-fstatus.with_client{color:var(--navy-300);background:var(--surface-2);}
+        .cw-fstatus.sent{color:var(--nw-nominal-text,#7fe27a);background:#0e2417;}
+        .cw-fopen{font-size:13px;color:var(--accent);text-decoration:none;flex-shrink:0;padding:0 3px;}
+        .cw-fopen:hover{color:var(--navy-50);}
+        .cw-funlink{font-size:15px;line-height:1;color:var(--navy-500);background:none;border:none;cursor:pointer;flex-shrink:0;padding:0 3px;}
+        .cw-funlink:hover{color:var(--nw-alarm-text,#ff6452);}
+        .cw-fileacts{padding:9px 14px 4px;}
+        .cw-fileacts .cw-sb{width:100%;}
 
         .cw-taskbody{padding:18px 22px 26px;max-width:760px;}
         .cw-banner{font-family:var(--font-mono);font-size:11.5px;color:var(--navy-300);background:var(--navy-900);border:1px solid var(--line);border-radius:8px;padding:9px 13px;margin-bottom:16px;}
