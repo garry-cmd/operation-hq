@@ -51,7 +51,37 @@ running deployment can't see it.
 
 ## Current state — shipped
 
-### Jun 21 (latest) — OKR→Home merge: objective-spine Home, OKR tab deleted (head `2fce55f`)
+### Jun 22 (latest) — Calendar AI-planner 502 fix + free-form block dedup guard
+
+Two calendar bugs, root-caused live (Chrome MCP + Vercel logs + Supabase).
+
+**AI "Plan my week" was intermittently silent (`planner fix`, commit `2821ea0`).** Symptom: clicking
+"Plan my week with AI" did nothing. Root cause: `app/api/plan-week/route.ts` capped Claude's reply at
+`max_tokens: 2000`. A real week (~21 items + a long busy block) pushed the JSON answer to that ceiling;
+runs that overran truncated mid-string → `JSON.parse` threw → **502 "planner returned unparseable
+output"**. The client threw and flashed an easily-missed error toast, so it read as silent. It was
+**intermittent** (same payload 502 then 200) because the output hovered right at the boundary — that's
+the tell. Fix: `max_tokens` 2000→**8000**, prompt now demands terse reasons (≤8 words) + a 2–4 sentence
+rationale to keep output compact, and parse failures now `console.error` the `stop_reason` + raw tail
+(and return a clearer "cut off (token limit)" error when `stop_reason==='max_tokens'`). Verified live on
+the deployed build: 200, all 21 items placed, rationale + proposed blocks render, "Commit 21 to Google".
+NOTE: the greedy **"Quick fill"** planner shares the item pool but not this route — it was never affected.
+
+**Free-form calendar blocks could duplicate (`block route` dedup guard).** The agent's
+`create_calendar_event` and manual block-add both POST `/api/google/block`, which had **no dedup** — so a
+retry / double-click / repeated "set up my week" minted a fresh row + Google event each time. This created
+**4× "Gym / Lunch"** blocks per day on Jun 21 (four create passes ~2 min apart, 02:47–02:53), stacked
+pixel-perfect on the grid so the × button felt broken (whack-a-mole: remove the top one, three remain).
+Fix: an **idempotency guard** in `POST /api/google/block` — before insert, if a *committed free-form*
+block (task_id NULL AND weekly_action_id NULL) with the same `block_date`/`start_minute`/`end_minute`/
+`title` already exists, return it (`{deduped:true}`) instead of creating a second row + event. The commit
+route (`/api/google/commit`) only flips proposed→committed, never creates free-form rows, so it wasn't the
+source. **Data cleanup done live** via the app's own DELETE endpoint (DB + Google in sync): 13 duplicate
+Gym/Lunch rows removed → exactly one per day Mon–Sat; Tuesday's keeper was lost to a stray × click during
+cleanup and recreated via POST. The `note-watch`/agent path that fired the 4 creates wasn't changed — the
+guard makes the create idempotent regardless of caller.
+
+### Jun 21 — OKR→Home merge: objective-spine Home, OKR tab deleted (head `2fce55f`)
 
 The OKR tab and Home were fighting; Home absorbed it. End state: **Roadmap = shape the plan, Home = work the plan**, OKR tab gone. Shipped in phases.
 

@@ -96,6 +96,28 @@ export async function POST(req: Request) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(blockDate) || startMinute < 0 || endMinute <= startMinute || endMinute > 1440)
       return NextResponse.json({ error: 'invalid date or time range' }, { status: 400 })
 
+    const admin = getSupabaseAdmin()
+
+    // Idempotency guard. A committed free-form block with the same date, time,
+    // and title already existing means this is a duplicate create — an agent
+    // retry, a double-click, or a re-run of "set up my week". Return the existing
+    // block instead of minting a second row + second Google event. (This is what
+    // produced the 4× "Gym / Lunch" blocks on 2026-06-21: four create passes
+    // ~2 min apart, none of which checked for an existing match.)
+    const { data: dupe } = await admin
+      .from('calendar_blocks')
+      .select('*')
+      .eq('status', 'committed')
+      .eq('block_date', blockDate)
+      .eq('start_minute', startMinute)
+      .eq('end_minute', endMinute)
+      .eq('title', title)
+      .is('task_id', null)
+      .is('weekly_action_id', null)
+      .limit(1)
+      .maybeSingle()
+    if (dupe) return NextResponse.json({ block: dupe, deduped: true })
+
     let accessToken: string, calId: string | null
     try {
       const tok = await getValidAccessToken(userId)
@@ -104,8 +126,6 @@ export async function POST(req: Request) {
     } catch {
       return NextResponse.json({ error: 'Google Calendar isn’t connected — connect it on the Calendar screen first.' }, { status: 409 })
     }
-
-    const admin = getSupabaseAdmin()
 
     // Insert the row FIRST so any constraint failure happens before we create a
     // Google event (otherwise a rejected insert orphans the event).
