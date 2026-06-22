@@ -620,6 +620,19 @@ function WeekView(props: {
   const [drag, setDrag] = useState<DragState | null>(null)
   const dragRef = useRef<DragState | null>(null)
 
+  // Per-space collapse of the unscheduled rail, persisted so it sticks across
+  // reloads. Keyed by space id (or 'none' for the no-space group).
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => {
+    if (typeof window === 'undefined') return new Set()
+    try { return new Set<string>(JSON.parse(localStorage.getItem('hq-cal-collapsed-spaces') || '[]')) } catch { return new Set() }
+  })
+  const toggleCollapsed = (key: string) => setCollapsed(prev => {
+    const next = new Set(prev)
+    if (next.has(key)) next.delete(key); else next.add(key)
+    try { localStorage.setItem('hq-cal-collapsed-spaces', JSON.stringify([...next])) } catch { /* ignore */ }
+    return next
+  })
+
   // Group the schedulable pool by space so a wall of same-space items reads as a
   // labelled, color-banded cluster instead of an undifferentiated list. Within a
   // group: sick KR actions first, then by priority, then shortest.
@@ -754,14 +767,25 @@ function WeekView(props: {
         {groups.map(g => {
           const col = colorFor(g.space?.id ?? null)
           const total = g.items.reduce((s, i) => s + i.duration, 0)
+          const gkey = g.space?.id ?? 'none'
+          const isCollapsed = collapsed.has(gkey)
           return (
-            <div key={g.space?.id ?? 'none'} style={{ marginBottom: 14 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 2px 7px', borderBottom: '1px solid var(--navy-700)', marginBottom: 7 }}>
+            <div key={gkey} style={{ marginBottom: 14 }}>
+              <button
+                onClick={() => toggleCollapsed(gkey)}
+                title={isCollapsed ? 'Expand' : 'Collapse'}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',
+                  padding: '0 2px 7px', marginBottom: isCollapsed ? 0 : 7,
+                  background: 'none', border: 'none', borderBottom: '1px solid var(--navy-700)', cursor: 'pointer',
+                }}
+              >
+                <span style={{ fontSize: 9, color: 'var(--navy-400)', width: 10, flexShrink: 0, transition: 'transform .12s', transform: isCollapsed ? 'rotate(-90deg)' : 'none' }}>▾</span>
                 <span style={{ width: 9, height: 9, borderRadius: 3, background: col, flexShrink: 0 }} />
                 <span style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--navy-50)', letterSpacing: '.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.space?.name ?? 'No space'}</span>
                 <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--navy-400)', flexShrink: 0 }}>{g.items.length} · {fmtDur(total)}</span>
-              </div>
-              {g.items.map(it => {
+              </button>
+              {!isCollapsed && g.items.map(it => {
                 const key = `${it.source}:${it.id}`
                 const sick = it.kind === 'kr_action' && (it.health === 'off_track' || it.health === 'blocked')
                 const pri = it.kind === 'task' ? it.priority : null
