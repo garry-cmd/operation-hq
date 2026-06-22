@@ -16,6 +16,10 @@ import { NoteEditor } from './notes/NoteEditor'
 import { fetchCalendarEvents, type GoogleBusyEvent, type GoogleAllDayEvent } from '@/lib/db/googleApi'
 import * as filesDb from '@/lib/db/trackedFiles'
 import { trackViaPicker } from '@/lib/trackViaPicker'
+import * as krsDb from '@/lib/db/krs'
+import * as objectivesDb from '@/lib/db/objectives'
+import EditKRModal from './EditKRModal'
+import EditObjectiveModal from './EditObjectiveModal'
 
 // Which object the Home cockpit's focused "work" view is showing.
 type WorkTarget = { kind: 'kr'; id: string } | { kind: 'note'; id: string } | { kind: 'task'; id: string }
@@ -93,6 +97,9 @@ interface Props {
   onOpenTasks: () => void
   onOpenCalendar: () => void
   onLogMetric: (krId: string) => void
+  setObjectives: React.Dispatch<React.SetStateAction<AnnualObjective[]>>
+  setRoadmapItems: React.Dispatch<React.SetStateAction<RoadmapItem[]>>
+  onOpenObjective: (objectiveId: string) => void
   toast: (m: string) => void
 }
 
@@ -130,6 +137,7 @@ export default function Home({
   googleConnected, driveGranted, trackedFiles, setTrackedFiles, reviews, weekForSpace, onCloseWeek,
   onOpenTasks, onOpenCalendar, toast,
   onLogMetric,
+  setObjectives, setRoadmapItems, onOpenObjective,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   // Sticky view settings — persisted across navigation (localStorage).
@@ -143,6 +151,8 @@ export default function Home({
     loadLS<Record<string, boolean>>('hq-home-obj-open', {}))
   const [busyEvents, setBusyEvents] = useState<GoogleBusyEvent[]>([])
   const [allDayEvents, setAllDayEvents] = useState<GoogleAllDayEvent[]>([])
+  const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
+  const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
 
   const weekEnd = useMemo(() => dateForDow(weekMonday, 6), [weekMonday])
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(weekMonday, i)), [weekMonday])
@@ -485,6 +495,20 @@ export default function Home({
     ? `${fmtRange(weekMonday)} · ${DOW_FULL[(new Date().getDay() + 6) % 7]} ${dayPart(new Date().getHours())}`
     : `${fmtRange(weekMonday)}`
 
+  async function deleteKR(id: string) {
+    try { await krsDb.remove(id); setRoadmapItems(prev => prev.filter(k => k.id !== id)); toast('Key Result deleted') }
+    catch { toast('Failed to delete KR') }
+  }
+  async function deleteObjective(id: string) {
+    try {
+      try { await krsDb.removeByObjective(id) } catch { toast('Failed to delete objective'); return }
+      await objectivesDb.remove(id)
+      setRoadmapItems(prev => prev.filter(k => k.annual_objective_id !== id))
+      setObjectives(prev => prev.filter(o => o.id !== id))
+      toast('Objective deleted')
+    } catch { toast('Failed to delete objective') }
+  }
+
   // ── Objective card (the spine unit): collapsible header + KR rows ──────
   function renderObjCard(g: { obj: AnnualObjective; krs: { kr: RoadmapItem; thisWeek: WeeklyAction[]; backlog: WeeklyAction[] }[]; active: boolean }) {
     const { obj, krs, active } = g
@@ -535,6 +559,10 @@ export default function Home({
               <div className="kb-segbar">{segs.map(([n, c], i) => <span key={i} className="kb-seg" style={{ flex: n, background: c }} />)}</div>
               <div className="kb-osum"><b>{krs.length}</b> KR{krs.length === 1 ? '' : 's'}{sumParts.length ? ` · ${sumParts.join(' · ')}` : ''}</div>
             </div>
+            <div className="kb-oacts" onClick={e => e.stopPropagation()}>
+              <button className="kb-oact" onClick={() => onOpenObjective(obj.id)} title="Notes & links">⋯</button>
+              <button className="kb-oact" onClick={() => setEditingObjective(obj)} title="Edit objective">✎</button>
+            </div>
             <span className="kb-objchev">›</span>
           </div>
         </div>
@@ -556,6 +584,7 @@ export default function Home({
                       {thisWeek.length > 0 && backlog.length > 0 && <span> · </span>}
                       {backlog.length > 0 && <span>{backlog.length} backlog</span>}
                     </span>
+                    <button className="kb-add" onClick={e => { e.stopPropagation(); setEditingKR(kr) }} title="Edit key result">✎</button>
                     <button className="kb-add" onClick={e => { e.stopPropagation(); setDeckAddKR(kr.id); setKrActionInput('') }}>+ action</button>
                     <span className="kb-chev">›</span>
                   </div>
@@ -1200,6 +1229,10 @@ export default function Home({
         .kb-osum b{color:var(--navy-100);font-weight:600;}
         .kb-objchev{color:var(--navy-500);font-size:17px;transition:transform .16s;flex:none;}
         .kb-obj.open .kb-objchev{transform:rotate(90deg);}
+        .kb-oacts{display:flex;gap:2px;flex:none;}
+        .kb-oact{opacity:0;transition:opacity .12s;font-size:12px;color:var(--navy-400);background:none;border:none;cursor:pointer;padding:4px 6px;border-radius:6px;line-height:1;}
+        .kb-ohead:hover .kb-oact{opacity:1;}
+        .kb-oact:hover{background:var(--hover);color:var(--accent);}
         .kb-krs{border-top:1px solid var(--line);padding:6px 8px 9px;}
         .kb-krs .kb-krrow{border:none;border-radius:9px;padding:9px 9px 9px 11px;}
         .kb-krs .kb-krrow:hover{background:var(--hover);}
@@ -1372,6 +1405,40 @@ export default function Home({
         .cw-pick-row .pm{font-size:11px;color:var(--navy-400);font-family:var(--font-mono);margin-top:1px;}
         .cw-plink{font-size:11px;font-weight:700;color:var(--accent);flex-shrink:0;}
       `}</style>
+
+      {editingKR && (
+        <EditKRModal
+          kr={editingKR}
+          onClose={() => setEditingKR(null)}
+          onSave={async (patch) => {
+            try {
+              const updated = await krsDb.update(editingKR.id, patch)
+              setRoadmapItems(prev => prev.map(k => k.id === editingKR.id ? updated : k))
+              setEditingKR(null)
+              toast('Key Result updated')
+            } catch { toast('Failed to update KR') }
+          }}
+          onDelete={() => { deleteKR(editingKR.id); setEditingKR(null) }}
+          toast={toast}
+        />
+      )}
+
+      {editingObjective && (
+        <EditObjectiveModal
+          objective={editingObjective}
+          onClose={() => setEditingObjective(null)}
+          onSave={async (patch) => {
+            try {
+              const updated = await objectivesDb.update(editingObjective.id, patch)
+              setObjectives(prev => prev.map(o => o.id === editingObjective.id ? updated : o))
+              setEditingObjective(null)
+              toast('Objective updated')
+            } catch { toast('Failed to update objective') }
+          }}
+          onDelete={() => { deleteObjective(editingObjective.id); setEditingObjective(null) }}
+          toast={toast}
+        />
+      )}
     </div>
   )
 }

@@ -22,6 +22,7 @@ import * as googleTokensDb from '@/lib/db/googleTokens'
 import * as trackedFilesDb from '@/lib/db/trackedFiles'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
+import ObjectivePanel from '@/components/ObjectivePanel'
 import OKRs from '@/components/OKRs'
 import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
@@ -686,6 +687,9 @@ export default function HQPage() {
             onOpenTasks={() => setScreen('tasks')}
             onOpenCalendar={() => setScreen('calendar')}
             onLogMetric={krId => setLoggingMetricKRId(krId)}
+            setObjectives={setObjectives}
+            setRoadmapItems={setRoadmapItems}
+            onOpenObjective={setOpenObjectiveId}
             toast={setToast}
           />
         </main>
@@ -822,6 +826,33 @@ export default function HQPage() {
       </main>
       )}
       </div>
+
+      {/* Objective panel (links/logs) — opened from Home's objective cards.
+          Page-level right drawer so it overlays any non-OKR screen. The OKR tab
+          still renders its own inline panel. */}
+      {screen !== 'okr' && openObjectiveId && (() => {
+        const openObj = objectives.find(o => o.id === openObjectiveId)
+        if (!openObj) return null
+        const objKRs = roadmapItems.filter(i => i.annual_objective_id === openObjectiveId)
+        return (
+          <>
+            <div onClick={() => setOpenObjectiveId(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 300 }} />
+            <div style={{ position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(520px, 94vw)', background: 'var(--surface)', borderLeft: '1px solid var(--line)', zIndex: 301, overflowY: 'auto', padding: '16px 18px', boxShadow: '-12px 0 40px rgba(0,0,0,.4)' }}>
+              <ObjectivePanel
+                objective={openObj}
+                krs={objKRs}
+                links={links.filter(l => l.objective_id === openObjectiveId)}
+                logs={logs.filter(l => l.objective_id === openObjectiveId)}
+                setLinks={setLinks}
+                setLogs={setLogs}
+                onClose={() => setOpenObjectiveId(null)}
+                toast={setToast}
+              />
+            </div>
+          </>
+        )
+      })()}
 
       {/* FastCapture — visible on every screen including Overview. Targets
           the currently active real space; suppressed only if there's no real
