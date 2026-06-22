@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { Space, AnnualObjective, RoadmapItem, WeeklyAction, Task, HabitCheckin, Note, Notebook, WeeklyReview, ActionTag, TrackedFile, MetricCheckin } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q } from '@/lib/utils'
+import { getMetricKRs } from '@/lib/krFilters'
+import MetricKPICard from './MetricKPICard'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
@@ -90,6 +92,7 @@ interface Props {
   onOpenNote: (noteId: string) => void
   onOpenTasks: () => void
   onOpenCalendar: () => void
+  onLogMetric: (krId: string) => void
   toast: (m: string) => void
 }
 
@@ -121,6 +124,7 @@ export default function Home({
   habitCheckins, setHabitCheckins, notes, setNotes, notebooks, tagsByNote, setTagsByNote,
   googleConnected, driveGranted, trackedFiles, setTrackedFiles, reviews, weekForSpace, onCloseWeek,
   onOpenTasks, onOpenCalendar, toast,
+  onLogMetric,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   const [spaceFilter, setSpaceFilter] = useState<string | null>(null) // null = All spaces
@@ -192,6 +196,14 @@ export default function Home({
     }
     return m
   }, [metricCheckins])
+
+  // ── Metric KRs (current quarter, in scope) for the Key metrics band ──
+  // Always current-quarter — the cards are quarter-anchored — so they ignore
+  // the board's This-quarter/All toggle.
+  const metricKRs = useMemo(
+    () => getMetricKRs(roadmapItems, ACTIVE_Q).filter(k => spaceFilter === null || k.space_id === spaceFilter),
+    [roadmapItems, spaceFilter],
+  )
 
   // ── KR board: active objectives → their KRs, with this-week + backlog
   // actions. This is the working backbone of Home — present whether or not
@@ -542,6 +554,16 @@ export default function Home({
       <div className="hd-body">
         {/* LEFT: KR board — the working backbone */}
         <section>
+          {metricKRs.length > 0 && (
+            <div className="kb-metrics">
+              <div className="kb-band" style={{ marginTop: 4 }}><span className="label">Key metrics</span><span className="kb-hr" /></div>
+              <div className="kb-mgrid">
+                {metricKRs.map(kr => (
+                  <MetricKPICard key={kr.id} kr={kr} checkins={metricCheckins} onTap={() => onLogMetric(kr.id)} />
+                ))}
+              </div>
+            </div>
+          )}
           <div className="kb-head">
             <span className="label">Key results · {spaceFilter ? (spaceById.get(spaceFilter)?.name ?? 'space') : 'all spaces'}</span>
             <div className="kb-headright">
@@ -1067,6 +1089,7 @@ export default function Home({
         @media (max-width:1100px){.hd-body{grid-template-columns:1fr;}}
 
         .kb-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;gap:14px;flex-wrap:wrap;}
+        .kb-mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:12px;margin-bottom:8px;}
         .kb-headright{display:flex;align-items:center;gap:14px;}
         .kb-qseg{display:inline-flex;border:1px solid var(--line-2);border-radius:99px;overflow:hidden;}
         .kb-qseg button{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.04em;padding:5px 12px;background:var(--surface);color:var(--navy-400);border:none;cursor:pointer;}

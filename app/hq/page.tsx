@@ -685,6 +685,7 @@ export default function HQPage() {
             onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
             onOpenTasks={() => setScreen('tasks')}
             onOpenCalendar={() => setScreen('calendar')}
+            onLogMetric={krId => setLoggingMetricKRId(krId)}
             toast={setToast}
           />
         </main>
@@ -891,12 +892,12 @@ export default function HQPage() {
           Today only triggered from OKR cards, but Reflect history / wizard
           nudges will hook in later without re-plumbing. */}
       {loggingMetricKRId && (() => {
-        const kr = spaceRoadmapItems.find(i => i.id === loggingMetricKRId)
+        const kr = roadmapItems.find(i => i.id === loggingMetricKRId)
         if (!kr) return null
         return (
           <MetricLogModal
             kr={kr}
-            checkins={spaceMetricCheckins}
+            checkins={metricCheckins}
             setMetricCheckins={setMetricCheckins}
             setRoadmapItems={setRoadmapItems}
             toast={setToast}
