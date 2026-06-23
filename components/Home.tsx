@@ -40,6 +40,7 @@ const HEALTH_TONE: Record<string, { cls: string; label: string }> = {
   backlog:     { cls: 't-standby', label: 'backlog' },
   not_started: { cls: 't-standby', label: 'not started' },
   done:        { cls: 't-nominal', label: 'done' },
+  failed:      { cls: 't-failed',  label: 'failed' },
 }
 function healthTone(s: string | null | undefined) {
   return HEALTH_TONE[s ?? 'not_started'] ?? HEALTH_TONE.not_started
@@ -69,6 +70,7 @@ const STATUS_OPTS: { v: RoadmapItem['health_status']; l: string }[] = [
   { v: 'waiting', l: 'Waiting' },
   { v: 'backlog', l: 'Backlog' },
   { v: 'done', l: 'Done' },
+  { v: 'failed', l: 'Failed' },
 ]
 
 interface Props {
@@ -909,6 +911,7 @@ export default function Home({
         .st{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:1px 6px;border-radius:4px;margin-left:8px;white-space:nowrap;}
         .st.t-nominal{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
         .st.t-alarm{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
+        .st.t-failed{color:var(--navy-300);background:rgba(255,100,82,.07);text-decoration:line-through;text-decoration-color:rgba(255,100,82,.55);}
         .st.t-caution{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
         .st.t-standby{color:var(--nw-standby-text);background:var(--surface-2);}
         .st.metricv{color:var(--navy-100);background:var(--surface-2);font-weight:600;text-transform:none;letter-spacing:0;}
@@ -934,6 +937,7 @@ export default function Home({
         .krmenu .sdot{width:8px;height:8px;border-radius:3px;flex-shrink:0;}
         .krmenu .sdot.t-nominal{background:var(--nw-nominal-text);}
         .krmenu .sdot.t-alarm{background:var(--nw-alarm-text);}
+        .krmenu .sdot.t-failed{background:var(--navy-400);}
         .krmenu .sdot.t-caution{background:var(--nw-caution-text);}
         .krmenu .sdot.t-standby{background:var(--navy-500);}
         .krmenu .mdiv{height:1px;background:var(--line);margin:5px 4px;}

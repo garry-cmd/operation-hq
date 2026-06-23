@@ -12,6 +12,7 @@ const HEALTH: Record<HealthStatus, { bg: string; color: string; label: string }>
   waiting:     { bg: 'var(--indigo-bg)', color: 'var(--indigo-text)', label: 'Waiting' },
   blocked:     { bg: 'var(--amber-bg)',  color: 'var(--amber-text)', label: 'Blocked' },
   done:        { bg: 'var(--teal-bg)',   color: 'var(--teal-text)', label: 'Done ✓' },
+  failed:      { bg: 'var(--red-bg)',    color: 'var(--red-text)',  label: 'Failed ✕' },
 }
 
 export default function SharePage({ params }: { params: Promise<{ token: string }> }) {

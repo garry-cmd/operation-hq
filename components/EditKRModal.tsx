@@ -216,6 +216,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
           <option value="waiting">Waiting</option>
           <option value="blocked">Blocked</option>
           <option value="done">Done</option>
+          <option value="failed">Failed</option>
         </select>
       </div>
 
