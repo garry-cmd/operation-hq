@@ -51,7 +51,17 @@ running deployment can't see it.
 
 ## Current state — shipped
 
-### Jun 22 (latest) — Calendar AI-planner 502 fix + free-form block dedup guard
+### Jun 23 (latest) — Home board rebuild (grouped 3-col) + discoverable KR controls + Failed status
+
+Iterated the objective-spine Home into a denser board, then made KR mutation discoverable, then added a terminal **Failed** status. Mock-before-build cadence (`hq-home-v2..v7.html`).
+
+**Home board rebuild (`9807124` → `2753a0c` → `2d1f191`).** The spine became a wider (1340px) board. In the All-spaces view objectives are **grouped under `.spacehdr` space headers** (single-space view stays flat). Each objective card expands to **three columns** (`.exp`): a left **rail** (identity, number+bar progress, on/off rollup pills, ⋯ + ✎), the **KR column**, and an objective-level **action column** (`This week` / `Backlog` groups, each action dotted with its KR; `+ action` opens a KR `<select>` then a title input). The action column is hidden when the objective has no actions, so KRs take the full width with a small `+ action` at the bottom of the KR column. **KR logs collapse** behind a `▸ N logs` chip (default hidden). **Metric KR flip cards restored** (front sparkline / back readings list `date · value · Δ` + `+ Log reading`). **Habits moved to a sticky far-right rail** (`.hrail`: name · status · 7 clickable week-dots) — habits/metrics live only in My OKRs, so deliverable-only spaces don't render them. Core: `renderObjCard(g)` + a `board` memo per objective `{obj, fullKRs, miniKRs, actThisWeek, actBacklog, total, done, onN, offN}`. Sticky view state in localStorage (`hq-home-space-filter`, `hq-home-qtr-scope`, `hq-home-obj-collapsed`). **Migration:** `objective_logs.roadmap_item_id` (nullable FK, ON DELETE SET NULL) so logs are KR-scoped on the card (`logsByKR`), not just objective-scoped. The old `.kb-*` band classes are fully gone (rewrite, not patch).
+
+**Discoverable KR controls (`fix(home): collapse logs reliably; add discoverable KR ⋯ menu`).** The hover-only ✎/+log was undiscoverable — status-change and delete *existed* (EditKRModal has both) but were buried. Replaced with: a **clickable status chip** + an **always-visible `⋯` menu** on every KR row → one menu with **Set status** (the six tones, current checked), **Edit details…**, **Add log**, **Delete KR** (window.confirm). The menu is `position: fixed`, anchored to the clicked element's `getBoundingClientRect` (state `krMenu{id,x,y}`, `openKrMenu`), specifically because `.ocard{overflow:hidden}` would clip an absolute dropdown below the last KR row; a `.menu-backdrop` closes it on outside click. Also hardened **log collapse**: `toggleLogs` now tears down an open composer when collapsing (the render gate was `logsOpen || composing`, so a lingering composer kept logs open). Objective delete stays on the always-visible objective ✎ → `EditObjectiveModal` (red Delete) — that path was already reachable; only the KR side was buried.
+
+**Failed terminal status (`5ec1321`).** "Done" shouldn't absorb a miss. New `failed` value across the stack. **Migration `add_failed_health_status`** drops/re-adds `roadmap_items_health_status_check` to include `failed`. `HealthStatus` union gains `'failed'`; Home `HEALTH_TONE`/`STATUS_OPTS`, `EditKRModal` `<option>`, and the share-page `HEALTH` badge (`Failed ✕`) all carry it. Styled as a **terminal miss** — muted red with strikethrough (`.st.t-failed`), deliberately distinct from the brighter, still-recoverable off-track alarm red. Counts as **not-done**, so a missed KR honestly drags objective progress down instead of hiding in the done count.
+
+### Jun 22 — Calendar AI-planner 502 fix + free-form block dedup guard
 
 Two calendar bugs, root-caused live (Chrome MCP + Vercel logs + Supabase).
 
@@ -571,9 +581,6 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
-- **Orphaned CSS in `Home.tsx`** — the objective-spine rewrite (Phase 2) left the old KR-band classes
-  (`.kb-card/.kb-top/.kb-grow/.kb-name/.kb-actions/.kb-asec/.kb-addbtn/.kb-objgrp/.kb-oname/.kb-ocrumb/
-  .kb-obar/.kb-mgrid/.kb-metrics` etc.) defined but unused. Cosmetic dead CSS; sweep when convenient.
 - **Space deep-links land on Home unfiltered.** ⌘K "go to a space" now routes to Home but doesn't set
   Home's sticky `hq-home-space-filter`, so Home opens on whatever filter was last persisted. Push the
   space into Home's filter from the route if the mismatch bugs Garry. ~15min.
@@ -602,8 +609,9 @@ redirect URIs for prod + `localhost:3000`.
   Delete when convenient.
 - **Rotate voice keys** — `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` transited a chat session during
   setup. Rotate in the provider dashboards + update Vercel when convenient. (Low priority.)
-- **Migrations applied via Supabase MCP aren't repo files.** This session's `create_tracked_files`,
-  `create_file_versions`, `weekly_actions_week_start_nullable` (and earlier `create_push_subscriptions`,
+- **Migrations applied via Supabase MCP aren't repo files.** This session's `add_failed_health_status`,
+  `objective_logs.roadmap_item_id` (and earlier `create_tracked_files`,
+  `create_file_versions`, `weekly_actions_week_start_nullable`, `create_push_subscriptions`,
   `create_briefings`, `relax_calendar_block_source_for_freeform_events`) live in
   Supabase's migration history, not as tracked files. Fine operationally; capture as files only if
   repo-side migration tracking is wanted.
@@ -797,7 +805,7 @@ out of scope (`6Xh2cH9Hf3JPf9jH` maintenance, etc.). OKRs project stays native.
 spaces
   ├── annual_objectives (space_id)  .notes DORMANT (→ objective_logs)
   │     ├── roadmap_items (space_id, annual_objective_id)
-  │     │     .health_status: not_started|backlog|on_track|off_track|blocked|done
+  │     │     .health_status: not_started|backlog|on_track|off_track|blocked|done|failed
   │     │     ├── weekly_actions (roadmap_item_id)  .estimated_minutes  .week_start NULLABLE (NULL = unscheduled backlog)
   │     │     ├── habit_checkins / metric_checkins (UNIQUE roadmap_item_id, week_start) / daily_checkins
   │     ├── objective_links (objective_id)
