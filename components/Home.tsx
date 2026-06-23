@@ -1,13 +1,12 @@
 'use client'
 import { useState, useMemo, useEffect, Fragment } from 'react'
-import type { Dispatch, SetStateAction } from 'react'
+import type { Dispatch, SetStateAction, ReactNode, CSSProperties } from 'react'
 import type {
   Space, AnnualObjective, RoadmapItem, WeeklyAction, MetricCheckin, Task,
   HabitCheckin, Note, Notebook, TrackedFile, WeeklyReview, ObjectiveLog,
 } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q, formatMinutes } from '@/lib/utils'
 import { getMetricKRs } from '@/lib/krFilters'
-import VitalsStrip from './VitalsStrip'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
@@ -61,7 +60,6 @@ function loadLS<T>(key: string, fallback: T): T {
 
 // Estimated-duration buckets for action items (multi-hour project pieces).
 const ACTION_DURATIONS = [30, 60, 90, 120, 180, 240]
-const RING_C = 2 * Math.PI * 18 // circumference for r=18
 
 interface Props {
   spaces: Space[]
@@ -116,6 +114,8 @@ export default function Home({
     loadLS<'current' | 'all'>('hq-home-qtr-scope', 'current') === 'all' ? 'all' : 'current')
   const [editingKR, setEditingKR] = useState<RoadmapItem | null>(null)
   const [editingObjective, setEditingObjective] = useState<AnnualObjective | null>(null)
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadLS<Record<string, boolean>>('hq-home-obj-collapsed', {}))
+  const toggleCollapse = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
   const [durPickerAction, setDurPickerAction] = useState<string | null>(null)
   const [addActionKR, setAddActionKR] = useState<string | null>(null)
   const [actionDraft, setActionDraft] = useState('')
@@ -129,6 +129,7 @@ export default function Home({
 
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
+  useEffect(() => { try { window.localStorage.setItem('hq-home-obj-collapsed', JSON.stringify(collapsed)) } catch {} }, [collapsed])
 
   const spaceById = useMemo(() => new Map(spaces.map(s => [s.id, s])), [spaces])
   const orderedSpaces = useMemo(() => [...spaces].sort((a, b) => a.sort_order - b.sort_order), [spaces])
@@ -213,20 +214,29 @@ export default function Home({
           .filter(k => k.annual_objective_id === o.id && !k.is_parked
             && (quarterScope === 'all' || k.quarter === ACTIVE_Q))
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        const deliverables = allKRs
-          .filter(k => !k.is_habit && !k.is_metric)
-          .map(kr => ({
-            kr,
-            thisWeek: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday),
-            backlog: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start == null && !a.completed),
-          }))
-        const special = allKRs.filter(k => k.is_habit || k.is_metric)
+        const actsFor = (kr: RoadmapItem) => ({
+          thisWeek: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday),
+          backlog: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start == null && !a.completed),
+        })
+        const hasWork = (kr: RoadmapItem) => {
+          const w = actsFor(kr); return w.thisWeek.length > 0 || w.backlog.length > 0
+        }
+        // Deliverable KRs always show as full rows; habit/metric KRs only get a
+        // full row (with actions) when they carry scheduled work — otherwise a slim mini.
+        const fullKRs = allKRs
+          .filter(k => (!k.is_habit && !k.is_metric) || hasWork(k))
+          .map(kr => ({ kr, ...actsFor(kr) }))
+        const miniKRs = allKRs.filter(k => (k.is_habit || k.is_metric) && !hasWork(k))
         const total = allKRs.length
         const done = allKRs.filter(k => k.health_status === 'done').length
-        return { obj: o, deliverables, special, total, done }
+        const onN = allKRs.filter(k => k.health_status === 'on_track').length
+        const offN = allKRs.filter(k => k.health_status === 'off_track' || k.health_status === 'blocked').length
+        const thisWkActs = fullKRs.reduce((n, d) => n + d.thisWeek.filter(a => !a.completed).length, 0)
+        const carriedN = fullKRs.reduce((n, d) => n + d.thisWeek.filter(a => !a.completed && (carriedByKey.get(`${a.roadmap_item_id}::${a.title}`) ?? 0) > 0).length, 0)
+        return { obj: o, fullKRs, miniKRs, total, done, onN, offN, thisWkActs, carriedN }
       })
-      .filter(g => g.deliverables.length > 0 || g.special.length > 0)
-  }, [objectives, roadmapItems, actions, weekMonday, spaceFilter, quarterScope])
+      .filter(g => g.fullKRs.length > 0 || g.miniKRs.length > 0)
+  }, [objectives, roadmapItems, actions, weekMonday, spaceFilter, quarterScope, carriedByKey])
 
   // ── mutations ──
   async function toggleAction(a: WeeklyAction) {
@@ -338,6 +348,66 @@ export default function Home({
     )
   }
 
+  // metric sparkline (scaled to own min/max over a 100×30 box)
+  function sparkPoints(vals: number[]): string {
+    if (vals.length < 2) return ''
+    const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1
+    return vals.map((v, i) => {
+      const x = 2 + i * (96 / (vals.length - 1))
+      const y = 26 - ((v - min) / range) * 24
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    }).join(' ')
+  }
+  function metricCard(kr: RoadmapItem) {
+    const ck = metricCheckins
+      .filter(c => c.roadmap_item_id === kr.id && c.value != null)
+      .sort((a, b) => (a.week_start ?? '').localeCompare(b.week_start ?? ''))
+    const vals = ck.map(c => Number(c.value)).filter(v => isFinite(v))
+    const latest = vals.length ? vals[vals.length - 1] : null
+    const prev = vals.length > 1 ? vals[vals.length - 2] : null
+    const unit = kr.metric_unit ?? ''
+    const target = kr.target_value == null ? null : Number(kr.target_value)
+    const dir = kr.metric_direction === 'down' ? 'down' : 'up'
+    const hit = latest != null && target != null && (dir === 'up' ? latest >= target : latest <= target)
+    const improving = latest != null && prev != null && (dir === 'up' ? latest > prev : latest < prev)
+    const tone = latest == null ? 'flat' : (hit || improving) ? 'up' : prev == null ? 'flat' : 'down'
+    const stroke = tone === 'up' ? '#7fe27a' : tone === 'down' ? '#f5b840' : 'var(--navy-500)'
+    const pts = sparkPoints(vals)
+    const gid = `sp-${kr.id.slice(0, 8)}`
+    const delta = latest != null && prev != null ? latest - prev : null
+    return (
+      <div key={kr.id} className="mcard" onClick={() => onLogMetric(kr.id)} title="Log a reading">
+        <h4>{kr.title}</h4>
+        <div className="mval">
+          <b>{latest == null ? '—' : fmtMetric(latest, unit)}</b>
+          {target != null && <span className="ghost">/ {fmtMetric(target, unit)}</span>}
+        </div>
+        <svg className="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
+          {pts ? (
+            <>
+              <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stopColor={stroke} stopOpacity="0.26" /><stop offset="1" stopColor={stroke} stopOpacity="0" />
+              </linearGradient></defs>
+              <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              <polygon points={`${pts} 98,30 2,30`} fill={`url(#${gid})`} />
+            </>
+          ) : (
+            <line x1="2" y1="25" x2="98" y2="25" stroke="var(--navy-600)" strokeWidth="1.4" strokeDasharray="2 3" />
+          )}
+        </svg>
+        <div className="mfoot">
+          <span className={`delta ${tone}`}>{
+            latest == null ? 'no readings' :
+            tone === 'up' ? (hit ? '▲ on/above target' : '▲ improving') :
+            tone === 'down' ? `▼ ${delta != null ? Math.abs(delta).toLocaleString() + ' last reading' : 'off target'}` :
+            'no movement yet'
+          }</span>
+          <span className="flipnote">tap → log</span>
+        </div>
+      </div>
+    )
+  }
+
   const objCount = board.length
 
   return (
@@ -396,25 +466,12 @@ export default function Home({
         </>
       )}
 
-      {/* metrics */}
+      {/* metrics — sparkline cards */}
       {metricKRs.length > 0 && (
-        <VitalsStrip krs={metricKRs} checkins={metricCheckins} onLog={onLogMetric} />
-      )}
-
-      {/* week close */}
-      {openCloses.length > 0 && (
-        <div className="closes">
-          {openCloses.map(({ sp, wk, overdue }) => (
-            <div key={sp.id} className="closebar">
-              <div className="ci">◷</div>
-              <div className="ct">
-                <b>{sp.name} — week of {fmtRange(wk).split(' – ')[0]}{overdue ? ' (overdue)' : ''}</b>
-                <div>Review KRs, log metrics, plan next week</div>
-              </div>
-              <button className="cb-close" onClick={() => onCloseWeek(sp.id, wk)}>Close week →</button>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="seclbl"><span className="lbl">Key metrics</span><span className="rule" /></div>
+          <div className="metrics">{metricKRs.map(metricCard)}</div>
+        </>
       )}
 
       {/* objective board */}
@@ -423,43 +480,75 @@ export default function Home({
         <div className="empty">No objectives in scope. Try a different space or quarter.</div>
       ) : (
         <div className="board">
-          {board.map(({ obj, deliverables, special, total, done }) => {
+          {board.map(({ obj, fullKRs, miniKRs, total, done, onN, offN, thisWkActs, carriedN }) => {
             const pct = total ? Math.round((done / total) * 100) : 0
             const oc = obj.space_id ? spaceDisplayColor(spaceById.get(obj.space_id)!) : 'var(--navy-500)'
-            return (
-              <div key={obj.id} className="ocard">
-                <div className="ohead" style={{ borderLeftColor: oc }}>
-                  <svg width="44" height="44" viewBox="0 0 44 44" className="ring">
-                    <circle cx="22" cy="22" r="18" fill="none" stroke="var(--navy-700)" strokeWidth="4" />
-                    <circle cx="22" cy="22" r="18" fill="none" stroke={oc} strokeWidth="4" strokeLinecap="round"
-                      strokeDasharray={RING_C} strokeDashoffset={RING_C * (1 - pct / 100)} transform="rotate(-90 22 22)" />
-                    <text x="22" y="26" textAnchor="middle" className="ringtxt">{pct}%</text>
-                  </svg>
-                  <div className="oh-main">
-                    <h3>{obj.name}</h3>
-                    <div className="oh-sub"><span className="k">{done} / {total} KRs done</span></div>
-                  </div>
-                  <div className="oh-acts">
-                    <button className="oh-btn" title="Links & objective log" onClick={() => onOpenObjective(obj.id)}>⋯</button>
-                    <button className="oh-btn" title="Edit objective" onClick={() => setEditingObjective(obj)}>✎</button>
+            const isCol = !!collapsed[obj.id]
+            const pillEls = (
+              <div className="pills">
+                {done > 0 && <span className="opill done">{done} done</span>}
+                {onN > 0 && <span className="opill on">{onN} on track</span>}
+                {offN > 0 && <span className="opill off">{offN} off track</span>}
+                {thisWkActs > 0 && <span className="opill wk">{thisWkActs} this wk</span>}
+                {carriedN > 0 && <span className="opill carried">{carriedN} carried</span>}
+              </div>
+            )
+
+            if (isCol) {
+              return (
+                <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
+                  <div className="col-row" onClick={() => toggleCollapse(obj.id)}>
+                    <span className="chev">▸</span>
+                    <span className="col-name">{obj.name}</span>
+                    <div className="prog-inline"><span className="prog-num">{pct}%</span><span className="prog-bar"><i style={{ width: `${pct}%` }} /></span></div>
+                    {pillEls}
+                    <button className="ohb" title="Links & log" onClick={e => { e.stopPropagation(); onOpenObjective(obj.id) }}>⋯</button>
+                    <button className="ohb" title="Edit objective" onClick={e => { e.stopPropagation(); setEditingObjective(obj) }}>✎</button>
                   </div>
                 </div>
+              )
+            }
 
-                <div className="krs">
-                  {deliverables.map(({ kr, thisWeek, backlog }) => {
-                    const tone = healthTone(kr.health_status)
-                    const isDone = kr.health_status === 'done'
-                    const krLogs = logsByKR.get(kr.id) ?? []
-                    const composing = logComposer?.krId === kr.id
-                    return (
-                      <div key={kr.id} className={`kr${isDone ? ' done' : ''}`}>
-                        <div className="kr-l">
-                          <div className="kr-head">
-                            <button className={`cb${isDone ? ' on' : ''}`} onClick={() => toggleKRDone(kr)} title={isDone ? 'Mark not done' : 'Mark done'}>{isDone ? '✓' : ''}</button>
-                            <span className="kt">{kr.title}{!isDone && <span className={`st ${tone.cls}`}>{tone.label}</span>}</span>
-                            <button className="kr-edit" title="Edit KR" onClick={() => setEditingKR(kr)}>✎</button>
-                          </div>
-                          {(thisWeek.length > 0 || backlog.length > 0 || addActionKR === kr.id) && (
+            return (
+              <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
+                <div className="exp">
+                  <div className="rail">
+                    <div className="rail-top">
+                      <span className="chev" onClick={() => toggleCollapse(obj.id)} title="Collapse">▾</span>
+                      <h3>{obj.name}</h3>
+                    </div>
+                    <div className="prog">
+                      <div className="num">{pct}<small>%</small></div>
+                      <div className="track"><i style={{ width: `${pct}%` }} /></div>
+                      <div className="sub">{done} of {total} KRs done</div>
+                    </div>
+                    {pillEls}
+                    <div className="rail-acts">
+                      <button className="ohb" title="Links & objective log" onClick={() => onOpenObjective(obj.id)}>⋯</button>
+                      <button className="ohb" title="Edit objective" onClick={() => setEditingObjective(obj)}>✎</button>
+                    </div>
+                  </div>
+
+                  <div className="kr-area">
+                    {fullKRs.map(({ kr, thisWeek, backlog }) => {
+                      const tone = healthTone(kr.health_status)
+                      const isDone = kr.health_status === 'done'
+                      const krLogs = logsByKR.get(kr.id) ?? []
+                      const composing = logComposer?.krId === kr.id
+                      let metricChip: ReactNode = null
+                      if (kr.is_metric) {
+                        const c = latestMetricByKR.get(kr.id)
+                        const dir = kr.metric_direction === 'down' ? '↓' : '↑'
+                        metricChip = <span className="st metricv">{fmtMetric(c?.value, kr.metric_unit)} {dir}</span>
+                      }
+                      return (
+                        <div key={kr.id} className={`kr${isDone ? ' done' : ''}`}>
+                          <div className="kr-main">
+                            <div className="kr-head">
+                              <button className={`cb${isDone ? ' on' : ''}`} onClick={() => toggleKRDone(kr)} title={isDone ? 'Mark not done' : 'Mark done'}>{isDone ? '✓' : ''}</button>
+                              <span className="kt">{kr.title}{metricChip}{!isDone && !kr.is_metric && <span className={`st ${tone.cls}`}>{tone.label}</span>}</span>
+                              <button className="kr-edit" title="Edit KR" onClick={() => setEditingKR(kr)}>✎</button>
+                            </div>
                             <div className="acts">
                               {thisWeek.map(a => actionRow(a, true))}
                               {backlog.map(a => actionRow(a, false))}
@@ -473,65 +562,79 @@ export default function Home({
                                 <button className="addact" onClick={() => { setAddActionKR(kr.id); setActionDraft('') }}>+ action</button>
                               )}
                             </div>
-                          )}
-                          {thisWeek.length === 0 && backlog.length === 0 && addActionKR !== kr.id && (
-                            <div className="acts"><button className="addact" onClick={() => { setAddActionKR(kr.id); setActionDraft('') }}>+ action</button></div>
-                          )}
-                        </div>
+                          </div>
 
-                        <div className={`kr-r${krLogs.length === 0 && !composing ? ' empty' : ''}`}>
-                          {krLogs.map(l => (
-                            <div key={l.id} className="log-e">
-                              <span className="wk">{(l.log_date ?? '').slice(5)}</span>
-                              <span className="log-t">{l.title ? <b>{l.title}. </b> : null}{l.content}</span>
-                            </div>
-                          ))}
-                          {composing ? (
-                            <textarea className="log-input" autoFocus value={logDraft}
-                              placeholder="Log an update for this KR…"
-                              onChange={e => setLogDraft(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitLog(); if (e.key === 'Escape') { setLogComposer(null); setLogDraft('') } }}
-                              onBlur={submitLog} />
-                          ) : (
-                            <button className="addlog" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft('') }}>+ log</button>
-                          )}
+                          <div className={`kr-log${krLogs.length === 0 && !composing ? ' empty' : ''}`}>
+                            {krLogs.map(l => (
+                              <div key={l.id} className="log-e">
+                                <span className="wk">{(l.log_date ?? '').slice(5)}</span>
+                                <span className="log-t">{l.title ? <b>{l.title}. </b> : null}{l.content}</span>
+                              </div>
+                            ))}
+                            {composing ? (
+                              <textarea className="log-input" autoFocus value={logDraft}
+                                placeholder="Log an update for this KR…"
+                                onChange={e => setLogDraft(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitLog(); if (e.key === 'Escape') { setLogComposer(null); setLogDraft('') } }}
+                                onBlur={submitLog} />
+                            ) : (
+                              <button className="addlog" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft('') }}>+ log</button>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    )
-                  })}
+                      )
+                    })}
 
-                  {special.length > 0 && (
-                    <>
-                      <div className="grp-div" />
-                      {special.map(kr => {
-                        if (kr.is_metric) {
-                          const c = latestMetricByKR.get(kr.id)
-                          const dir = kr.metric_direction === 'down' ? '↓' : '↑'
-                          const isDone = kr.health_status === 'done'
+                    {miniKRs.length > 0 && (
+                      <>
+                        {fullKRs.length > 0 && <div className="grp-div" />}
+                        {miniKRs.map(kr => {
+                          if (kr.is_metric) {
+                            const c = latestMetricByKR.get(kr.id)
+                            const dir = kr.metric_direction === 'down' ? '↓' : '↑'
+                            const isDone = kr.health_status === 'done'
+                            return (
+                              <div key={kr.id} className="krmini" onClick={() => onLogMetric(kr.id)} title="Log a reading">
+                                <span className="tag">metric</span><span className="mt">{kr.title}</span>
+                                <span className="read" style={isDone ? { color: 'var(--nw-nominal-text)' } : undefined}>
+                                  {isDone ? 'done' : <>{fmtMetric(c?.value, kr.metric_unit)}<span className="u"> {dir}</span></>}
+                                </span>
+                              </div>
+                            )
+                          }
+                          const tone = healthTone(kr.health_status)
+                          const wkDone = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
                           return (
-                            <div key={kr.id} className="krmini" onClick={() => onLogMetric(kr.id)} title="Log a reading">
-                              <span className="tag">metric</span><span className="mt">{kr.title}</span>
-                              <span className="read" style={isDone ? { color: 'var(--nw-nominal-text)' } : undefined}>
-                                {isDone ? 'done' : <>{fmtMetric(c?.value, kr.metric_unit)}<span className="u"> {dir}</span></>}
-                              </span>
+                            <div key={kr.id} className="krmini">
+                              <span className="tag">habit</span><span className="mt">{kr.title}</span>
+                              <span className="read" style={{ color: `var(--${tone.cls === 't-nominal' ? 'nw-nominal-text' : tone.cls === 't-alarm' ? 'nw-alarm-text' : 'navy-300'})` }}>{wkDone}<span className="u"> / 7 wk</span></span>
                             </div>
                           )
-                        }
-                        const tone = healthTone(kr.health_status)
-                        const wkDone = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
-                        return (
-                          <div key={kr.id} className="krmini">
-                            <span className="tag">habit</span><span className="mt">{kr.title}</span>
-                            <span className="read" style={{ color: `var(--${tone.cls === 't-nominal' ? 'nw-nominal-text' : tone.cls === 't-alarm' ? 'nw-alarm-text' : 'navy-300'})` }}>{wkDone}<span className="u"> / 7 wk</span></span>
-                          </div>
-                        )
-                      })}
-                    </>
-                  )}
+                        })}
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* close the week — at the bottom */}
+      {openCloses.length > 0 && (
+        <div className="closes">
+          <div className="seclbl"><span className="lbl">Close the week</span><span className="rule" /></div>
+          {openCloses.map(({ sp, wk, overdue }) => (
+            <div key={sp.id} className="closebar">
+              <div className="ci">◷</div>
+              <div className="ct">
+                <b>{sp.name} — week of {fmtRange(wk).split(' – ')[0]}{overdue ? ' (overdue)' : ''}</b>
+                <div>Review KRs, log metrics, plan next week</div>
+              </div>
+              <button className="cb-close" onClick={() => onCloseWeek(sp.id, wk)}>Close week →</button>
+            </div>
+          ))}
         </div>
       )}
 
@@ -601,7 +704,23 @@ export default function Home({
         .chip.t-caution{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
         .chip.t-standby{color:var(--nw-standby-text);background:var(--surface-2);}
 
-        .closes{display:flex;flex-direction:column;gap:10px;margin:4px 0 30px;}
+        /* key metric sparkline cards */
+        .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:26px;}
+        .mcard{background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--line);border-radius:13px;padding:15px 16px 12px;cursor:pointer;}
+        .mcard:hover{border-color:var(--line-strong);}
+        .mcard h4{margin:0;font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);}
+        .mval{display:flex;align-items:baseline;gap:7px;margin-top:7px;}
+        .mval b{font-family:var(--font-display);font-weight:700;font-size:27px;letter-spacing:-.02em;line-height:1;color:var(--nw-cream);}
+        .mval .ghost{font-family:var(--font-mono);font-size:12px;color:var(--navy-500);}
+        .spark{margin-top:12px;width:100%;height:34px;display:block;}
+        .mfoot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;}
+        .delta{font-family:var(--font-mono);font-size:11px;font-weight:600;}
+        .delta.up{color:var(--nw-nominal-text);}
+        .delta.down{color:var(--nw-caution-text);}
+        .delta.flat{color:var(--navy-400);}
+        .flipnote{font-family:var(--font-mono);font-size:8.5px;color:var(--navy-600);letter-spacing:.06em;}
+
+        .closes{display:flex;flex-direction:column;gap:10px;margin-top:34px;}
         .closebar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,rgba(200,150,66,.07),transparent 55%),var(--surface);border:1px solid var(--line-2);border-radius:13px;padding:13px 16px;}
         .closebar .ci{width:32px;height:32px;border-radius:9px;background:rgba(200,150,66,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
         .closebar .ct b{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);}
@@ -610,25 +729,50 @@ export default function Home({
         .cb-close:hover{background:var(--accent-2,#6ea3ff);}
 
         .empty{color:var(--navy-500);font-size:13px;padding:30px 0;text-align:center;}
-        .board{display:flex;flex-direction:column;gap:16px;}
+        .board{display:flex;flex-direction:column;gap:14px;}
         .ocard{background:var(--surface);border:1px solid var(--line);border-radius:15px;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.02) inset,0 8px 24px -16px rgba(0,0,0,.7);}
-        .ohead{display:flex;align-items:center;gap:14px;padding:15px 16px 14px;border-left:3px solid var(--navy-500);}
-        .ring{flex-shrink:0;}
-        .ringtxt{font-family:var(--font-mono);font-size:11px;font-weight:600;fill:var(--nw-cream);}
-        .oh-main{flex:1;min-width:0;}
-        .oh-main h3{margin:0;font-family:var(--font-display);font-weight:600;font-size:15.5px;color:var(--nw-cream);letter-spacing:-.01em;line-height:1.25;}
-        .oh-sub{display:flex;align-items:center;gap:9px;margin-top:3px;}
-        .oh-sub .k{font-family:var(--font-mono);font-size:10.5px;color:var(--navy-400);}
-        .oh-acts{display:flex;gap:4px;flex-shrink:0;align-self:flex-start;}
-        .oh-btn{background:none;border:none;color:var(--navy-500);font-size:14px;cursor:pointer;padding:3px 7px;border-radius:6px;line-height:1;}
-        .oh-btn:hover{background:var(--hover);color:var(--navy-100);}
 
-        .krs{padding:4px 0 8px;}
-        .kr{display:flex;align-items:flex-start;padding:9px 16px;}
+        /* collapsed: single informative row */
+        .col-row{display:flex;align-items:center;gap:14px;padding:14px 16px;cursor:pointer;border-left:3px solid var(--oc,var(--navy-500));}
+        .col-row:hover{background:rgba(255,255,255,.013);}
+        .chev{color:var(--navy-500);font-size:11px;flex-shrink:0;width:12px;cursor:pointer;user-select:none;}
+        .col-name{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--nw-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px;}
+        .prog-inline{display:flex;align-items:center;gap:9px;flex-shrink:0;}
+        .prog-num{font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--oc,var(--navy-200));letter-spacing:-.01em;}
+        .prog-bar{width:64px;height:5px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .prog-bar i{display:block;height:100%;background:var(--oc,var(--navy-400));border-radius:3px;}
+        .pills{display:flex;flex-wrap:wrap;gap:5px;flex:1;}
+        .opill{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:5px;white-space:nowrap;}
+        .opill.done{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
+        .opill.on{color:var(--nw-standby-text);background:var(--surface-2);}
+        .opill.off{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
+        .opill.wk{color:var(--accent);background:var(--accent-dim);}
+        .opill.carried{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
+        .ohb{background:none;border:none;color:var(--navy-600);font-size:13px;cursor:pointer;padding:3px 6px;border-radius:6px;flex-shrink:0;line-height:1;}
+        .ohb:hover{background:var(--hover);color:var(--navy-100);}
+
+        /* expanded: objective rail (left) + KR area (right) */
+        .exp{display:flex;}
+        .rail{flex:0 0 250px;padding:16px 18px;border-left:3px solid var(--oc,var(--navy-500));border-right:1px solid var(--line);}
+        .rail-top{display:flex;align-items:flex-start;gap:8px;}
+        .rail-top .chev{margin-top:6px;}
+        .rail h3{margin:0;font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--nw-cream);letter-spacing:-.01em;line-height:1.25;}
+        .prog{margin:13px 0 0;}
+        .prog .num{font-family:var(--font-display);font-size:32px;font-weight:700;color:var(--oc,var(--nw-cream));line-height:1;letter-spacing:-.02em;}
+        .prog .num small{font-size:15px;color:var(--navy-500);font-weight:600;margin-left:2px;}
+        .prog .track{margin-top:8px;height:5px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .prog .track i{display:block;height:100%;background:var(--oc,var(--navy-400));border-radius:3px;}
+        .prog .sub{font-family:var(--font-mono);font-size:9.5px;color:var(--navy-500);margin-top:6px;}
+        .rail .pills{margin-top:13px;}
+        .rail-acts{margin-top:14px;display:flex;gap:4px;}
+
+        .kr-area{flex:1;min-width:0;padding:6px 0;}
+        .kr{display:flex;align-items:flex-start;padding:9px 16px;border-top:1px solid var(--line);}
+        .kr:first-child{border-top:none;}
         .kr:hover{background:rgba(255,255,255,.012);}
-        .kr-l{flex:0 0 56%;padding-right:16px;}
-        .kr-r{flex:1;min-width:0;padding-left:16px;border-left:1px solid var(--line);align-self:stretch;}
-        .kr-r.empty{border-left-color:transparent;}
+        .kr-main{flex:0 0 58%;padding-right:16px;}
+        .kr-log{flex:1;min-width:0;padding-left:16px;border-left:1px solid var(--line);align-self:stretch;}
+        .kr-log.empty{border-left-color:transparent;}
         .kr-head{display:flex;gap:9px;align-items:flex-start;}
         .cb{width:16px;height:16px;border-radius:5px;flex-shrink:0;margin-top:1px;border:1.5px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;}
         .cb.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
@@ -639,6 +783,7 @@ export default function Home({
         .st.t-alarm{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
         .st.t-caution{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
         .st.t-standby{color:var(--nw-standby-text);background:var(--surface-2);}
+        .st.metricv{color:var(--navy-100);background:var(--surface-2);font-weight:600;text-transform:none;letter-spacing:0;}
         .kr-edit{background:none;border:none;color:var(--navy-600);font-size:11px;cursor:pointer;padding:2px 5px;border-radius:5px;flex-shrink:0;opacity:0;transition:opacity .12s;}
         .kr:hover .kr-edit{opacity:1;}
         .kr-edit:hover{color:var(--navy-100);background:var(--hover);}
@@ -689,10 +834,14 @@ export default function Home({
         .krmini .read .u{color:var(--navy-500);font-weight:500;}
 
         @media (max-width:760px){
+          .metrics{grid-template-columns:1fr;}
+          .exp{flex-direction:column;}
+          .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);}
+          .col-name{max-width:150px;}
           .kr{flex-direction:column;}
-          .kr-l{flex:1 1 auto;width:100%;padding-right:0;}
-          .kr-r{width:100%;border-left:none;border-top:1px solid var(--line);padding-left:25px;margin-top:6px;padding-top:6px;}
-          .kr-r.empty{border-top-color:transparent;}
+          .kr-main{flex:1 1 auto;width:100%;padding-right:0;}
+          .kr-log{width:100%;border-left:none;border-top:1px solid var(--line);padding-left:25px;margin-top:6px;padding-top:6px;}
+          .kr-log.empty{border-top-color:transparent;}
         }
       `}</style>
     </div>
