@@ -32,6 +32,9 @@ export interface AnnualObjective {
 export interface ObjectiveLog {
   id: string
   objective_id: string
+  // Optional KR attachment. Null = objective-level log (legacy / general).
+  // Set = the entry belongs to a specific Key Result within the objective.
+  roadmap_item_id?: string | null
   // Optional human-set title; null means the entry is shown labeled by date alone.
   // Body content (`content`) is markdown; rendered with `marked` at display time
   // via <MarkdownBody>. New notes default to edit mode in the panel; existing
