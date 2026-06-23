@@ -117,10 +117,15 @@ export default function Home({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadLS<Record<string, boolean>>('hq-home-obj-collapsed', {}))
   const toggleCollapse = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
   const [durPickerAction, setDurPickerAction] = useState<string | null>(null)
-  const [addActionKR, setAddActionKR] = useState<string | null>(null)
+  const [addActionObj, setAddActionObj] = useState<string | null>(null)
+  const [actionKRSel, setActionKRSel] = useState<string>('')
   const [actionDraft, setActionDraft] = useState('')
   const [logComposer, setLogComposer] = useState<{ krId: string; objId: string } | null>(null)
   const [logDraft, setLogDraft] = useState('')
+  const [flippedM, setFlippedM] = useState<Record<string, boolean>>({})
+  const toggleFlip = (id: string) => setFlippedM(p => ({ ...p, [id]: !p[id] }))
+  const [openLogs, setOpenLogs] = useState<Record<string, boolean>>({})
+  const toggleLogs = (id: string) => setOpenLogs(p => ({ ...p, [id]: !p[id] }))
 
   const todayStr = ymd(new Date())
   const isCurrentWeek = weekMonday === getMonday()
@@ -222,18 +227,21 @@ export default function Home({
           const w = actsFor(kr); return w.thisWeek.length > 0 || w.backlog.length > 0
         }
         // Deliverable KRs always show as full rows; habit/metric KRs only get a
-        // full row (with actions) when they carry scheduled work — otherwise a slim mini.
-        const fullKRs = allKRs
-          .filter(k => (!k.is_habit && !k.is_metric) || hasWork(k))
-          .map(kr => ({ kr, ...actsFor(kr) }))
+        // full row when they carry scheduled work — otherwise a slim mini.
+        const fullKRs = allKRs.filter(k => (!k.is_habit && !k.is_metric) || hasWork(k))
         const miniKRs = allKRs.filter(k => (k.is_habit || k.is_metric) && !hasWork(k))
+        // Objective-level action list (across all its KRs), tagged with the KR.
+        const krIds = new Set(allKRs.map(k => k.id))
+        const tag = (a: WeeklyAction) => ({ a, kr: allKRs.find(k => k.id === a.roadmap_item_id) ?? null })
+        const actThisWeek = actions.filter(a => krIds.has(a.roadmap_item_id) && a.week_start === weekMonday).map(tag)
+        const actBacklog = actions.filter(a => krIds.has(a.roadmap_item_id) && a.week_start == null && !a.completed).map(tag)
         const total = allKRs.length
         const done = allKRs.filter(k => k.health_status === 'done').length
         const onN = allKRs.filter(k => k.health_status === 'on_track').length
         const offN = allKRs.filter(k => k.health_status === 'off_track' || k.health_status === 'blocked').length
-        const thisWkActs = fullKRs.reduce((n, d) => n + d.thisWeek.filter(a => !a.completed).length, 0)
-        const carriedN = fullKRs.reduce((n, d) => n + d.thisWeek.filter(a => !a.completed && (carriedByKey.get(`${a.roadmap_item_id}::${a.title}`) ?? 0) > 0).length, 0)
-        return { obj: o, fullKRs, miniKRs, total, done, onN, offN, thisWkActs, carriedN }
+        const thisWkActs = actThisWeek.filter(x => !x.a.completed).length
+        const carriedN = actThisWeek.filter(x => !x.a.completed && (carriedByKey.get(`${x.a.roadmap_item_id}::${x.a.title}`) ?? 0) > 0).length
+        return { obj: o, fullKRs, miniKRs, allKRs, actThisWeek, actBacklog, total, done, onN, offN, thisWkActs, carriedN }
       })
       .filter(g => g.fullKRs.length > 0 || g.miniKRs.length > 0)
   }, [objectives, roadmapItems, actions, weekMonday, spaceFilter, quarterScope, carriedByKey])
@@ -256,11 +264,12 @@ export default function Home({
     try { await actionsDb.update(a.id, { estimated_minutes: mins }) }
     catch { toast('Could not set duration'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
   }
-  async function submitAction(kr: RoadmapItem) {
-    const t = actionDraft.trim(); if (!t) return
+  async function submitObjAction() {
+    const t = actionDraft.trim(); const krId = actionKRSel
+    if (!t || !krId) return
     try {
-      const created = await actionsDb.create({ roadmap_item_id: kr.id, title: t, week_start: weekMonday })
-      setActions(prev => [...prev, created]); setActionDraft(''); setAddActionKR(null)
+      const created = await actionsDb.create({ roadmap_item_id: krId, title: t, week_start: weekMonday })
+      setActions(prev => [...prev, created]); setActionDraft(''); setAddActionObj(null)
     } catch { toast('Could not add action') }
   }
   async function toggleHabit(krId: string, date: string) {
@@ -330,18 +339,22 @@ export default function Home({
       </div>
     )
   }
-  function actionRow(a: WeeklyAction, scheduled: boolean) {
+  function colActionRow(item: { a: WeeklyAction; kr: RoadmapItem | null }, scheduled: boolean) {
+    const { a, kr } = item
     const carried = scheduled && !a.completed ? carriedFor(a) : 0
     return (
       <Fragment key={a.id}>
         <div className={`act${a.completed ? ' done' : ''}`}>
           <button className={`cb-sm${a.completed ? ' on' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
           <span className="at">{a.title}</span>
-          {carried > 0 && <span className="carried" title={`Scheduled ${carried} prior week${carried > 1 ? 's' : ''}, still open`}>carried {carried} wk{carried > 1 ? 's' : ''}</span>}
-          {scheduled
-            ? <button className="sched week" title="Move to backlog" onClick={() => scheduleAction(a, null)}>this week</button>
-            : <button className="sched promote" title="Schedule this week" onClick={() => scheduleAction(a, weekMonday)}>▸ this week</button>}
-          {durBadge(a)}
+          {kr && <span className="krtag" title={kr.title}><span className="kd" />{kr.title}</span>}
+          <div className="ameta">
+            {carried > 0 && <span className="carried" title={`Scheduled ${carried} prior week${carried > 1 ? 's' : ''}, still open`}>{carried} wk{carried > 1 ? 's' : ''}</span>}
+            {scheduled
+              ? <button className="sched week" title="Move to backlog" onClick={() => scheduleAction(a, null)}>this wk</button>
+              : <button className="sched back" title="Schedule this week" onClick={() => scheduleAction(a, weekMonday)}>backlog</button>}
+            {durBadge(a)}
+          </div>
         </div>
         {durPicker(a)}
       </Fragment>
@@ -375,34 +388,224 @@ export default function Home({
     const pts = sparkPoints(vals)
     const gid = `sp-${kr.id.slice(0, 8)}`
     const delta = latest != null && prev != null ? latest - prev : null
+    const flipped = !!flippedM[kr.id]
+    // readings, newest first, with Δ vs the prior reading
+    const readings = ck.map((c, i) => {
+      const v = Number(c.value)
+      const p = i > 0 ? Number(ck[i - 1].value) : null
+      return { date: (c.week_start ?? '').slice(5), val: v, delta: p == null ? null : v - p }
+    }).reverse()
     return (
-      <div key={kr.id} className="mcard" onClick={() => onLogMetric(kr.id)} title="Log a reading">
-        <h4>{kr.title}</h4>
-        <div className="mval">
-          <b>{latest == null ? '—' : fmtMetric(latest, unit)}</b>
-          {target != null && <span className="ghost">/ {fmtMetric(target, unit)}</span>}
+      <div key={kr.id} className={`mcard${flipped ? ' flipped' : ''}`}>
+        <div className="m-inner">
+          <div className="m-face" onClick={() => toggleFlip(kr.id)} title="Show readings">
+            <h4>{kr.title}</h4>
+            <div className="mval">
+              <b>{latest == null ? '—' : fmtMetric(latest, unit)}</b>
+              {target != null && <span className="ghost">/ {fmtMetric(target, unit)}</span>}
+            </div>
+            <svg className="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
+              {pts ? (
+                <>
+                  <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stopColor={stroke} stopOpacity="0.26" /><stop offset="1" stopColor={stroke} stopOpacity="0" />
+                  </linearGradient></defs>
+                  <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                  <polygon points={`${pts} 98,30 2,30`} fill={`url(#${gid})`} />
+                </>
+              ) : (
+                <line x1="2" y1="25" x2="98" y2="25" stroke="var(--navy-600)" strokeWidth="1.4" strokeDasharray="2 3" />
+              )}
+            </svg>
+            <div className="mfoot">
+              <span className={`delta ${tone}`}>{
+                latest == null ? 'no readings' :
+                tone === 'up' ? (hit ? '▲ on/above target' : '▲ improving') :
+                tone === 'down' ? `▼ ${delta != null ? Math.abs(delta).toLocaleString() + ' last reading' : 'off target'}` :
+                'no movement yet'
+              }</span>
+              <span className="flipnote">tap → readings</span>
+            </div>
+          </div>
+          <div className="m-face m-back">
+            <div className="bh"><h4>{kr.title}</h4><button className="back" onClick={() => toggleFlip(kr.id)}>↩ back</button></div>
+            <div className="readings">
+              {readings.length === 0 ? <div className="rd-empty">No readings yet.</div> : readings.map((r, i) => (
+                <div key={i} className="rd">
+                  <span className="rdate">{r.date}</span>
+                  <span className="rval">{fmtMetric(r.val, unit)}</span>
+                  {r.delta != null && r.delta !== 0 && (
+                    <span className={`rdelta${(dir === 'up' ? r.delta > 0 : r.delta < 0) ? '' : ' dn'}`}>
+                      {r.delta > 0 ? '+' : '−'}{Math.abs(r.delta).toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button className="logbtn" onClick={() => onLogMetric(kr.id)}>+ Log reading</button>
+          </div>
         </div>
-        <svg className="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
-          {pts ? (
-            <>
-              <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor={stroke} stopOpacity="0.26" /><stop offset="1" stopColor={stroke} stopOpacity="0" />
-              </linearGradient></defs>
-              <polyline points={pts} fill="none" stroke={stroke} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              <polygon points={`${pts} 98,30 2,30`} fill={`url(#${gid})`} />
-            </>
-          ) : (
-            <line x1="2" y1="25" x2="98" y2="25" stroke="var(--navy-600)" strokeWidth="1.4" strokeDasharray="2 3" />
+      </div>
+    )
+  }
+
+  // One objective card (collapsed pill-row, or expanded rail | KRs | actions).
+  function renderObjCard(g: typeof board[number]) {
+    const { obj, fullKRs, miniKRs, allKRs, actThisWeek, actBacklog, total, done, onN, offN, thisWkActs, carriedN } = g
+    const pct = total ? Math.round((done / total) * 100) : 0
+    const oc = obj.space_id ? spaceDisplayColor(spaceById.get(obj.space_id)!) : 'var(--navy-500)'
+    const isCol = !!collapsed[obj.id]
+    const pillEls = (
+      <div className="pills">
+        {done > 0 && <span className="opill done">{done} done</span>}
+        {onN > 0 && <span className="opill on">{onN} on track</span>}
+        {offN > 0 && <span className="opill off">{offN} off track</span>}
+        {thisWkActs > 0 && <span className="opill wk">{thisWkActs} this wk</span>}
+        {carriedN > 0 && <span className="opill carried">{carriedN} carried</span>}
+      </div>
+    )
+    if (isCol) {
+      return (
+        <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
+          <div className="col-row" onClick={() => toggleCollapse(obj.id)}>
+            <span className="chev">▸</span>
+            <span className="col-name">{obj.name}</span>
+            <div className="prog-inline"><span className="prog-num">{pct}%</span><span className="prog-bar"><i style={{ width: `${pct}%` }} /></span></div>
+            {pillEls}
+            <button className="ohb" title="Links & log" onClick={e => { e.stopPropagation(); onOpenObjective(obj.id) }}>⋯</button>
+            <button className="ohb" title="Edit objective" onClick={e => { e.stopPropagation(); setEditingObjective(obj) }}>✎</button>
+          </div>
+        </div>
+      )
+    }
+    const showActCol = actThisWeek.length > 0 || actBacklog.length > 0 || addActionObj === obj.id
+    const addBtn = (
+      <button className="addact" onClick={() => { setAddActionObj(obj.id); setActionKRSel(allKRs[0]?.id ?? ''); setActionDraft('') }}>+ action</button>
+    )
+    const addRow = addActionObj === obj.id ? (
+      <div className="addrow">
+        <select className="kr-sel" value={actionKRSel} onChange={e => setActionKRSel(e.target.value)}>
+          {allKRs.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
+        </select>
+        <input className="act-input" autoFocus value={actionDraft} placeholder="New action…"
+          onChange={e => setActionDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') submitObjAction(); if (e.key === 'Escape') { setAddActionObj(null); setActionDraft('') } }}
+          onBlur={() => { if (!actionDraft.trim()) setAddActionObj(null) }} />
+      </div>
+    ) : null
+    return (
+      <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
+        <div className="exp">
+          <div className="rail">
+            <div className="rail-top">
+              <span className="chev" onClick={() => toggleCollapse(obj.id)} title="Collapse">▾</span>
+              <h3>{obj.name}</h3>
+            </div>
+            <div className="prog">
+              <div className="num">{pct}<small>%</small></div>
+              <div className="track"><i style={{ width: `${pct}%` }} /></div>
+              <div className="sub">{done} of {total} KRs done</div>
+            </div>
+            {pillEls}
+            <div className="rail-acts">
+              <button className="ohb" title="Links & objective log" onClick={() => onOpenObjective(obj.id)}>⋯</button>
+              <button className="ohb" title="Edit objective" onClick={() => setEditingObjective(obj)}>✎</button>
+            </div>
+          </div>
+
+          <div className="kr-col">
+            {fullKRs.map(kr => {
+              const tone = healthTone(kr.health_status)
+              const isDone = kr.health_status === 'done'
+              const krLogs = logsByKR.get(kr.id) ?? []
+              const composing = logComposer?.krId === kr.id
+              const logsOpen = !!openLogs[kr.id]
+              let metricChip: ReactNode = null
+              if (kr.is_metric) {
+                const c = latestMetricByKR.get(kr.id)
+                const d = kr.metric_direction === 'down' ? '↓' : '↑'
+                metricChip = <span className="st metricv">{fmtMetric(c?.value, kr.metric_unit)} {d}</span>
+              }
+              return (
+                <div key={kr.id} className={`kr${isDone ? ' done' : ''}`}>
+                  <div className="kr-head">
+                    <button className={`cb${isDone ? ' on' : ''}`} onClick={() => toggleKRDone(kr)} title={isDone ? 'Mark not done' : 'Mark done'}>{isDone ? '✓' : ''}</button>
+                    <span className="kt">{kr.title}{metricChip}{!isDone && !kr.is_metric && <span className={`st ${tone.cls}`}>{tone.label}</span>}</span>
+                    {krLogs.length > 0 && (
+                      <button className={`logchip${logsOpen ? ' open' : ''}`} onClick={() => toggleLogs(kr.id)} title={logsOpen ? 'Hide logs' : 'Show logs'}>
+                        <span className="lcar">▸</span>{krLogs.length} log{krLogs.length > 1 ? 's' : ''}
+                      </button>
+                    )}
+                    <span className="kr-tools">
+                      <button className="ed" title="Edit KR" onClick={() => setEditingKR(kr)}>✎</button>
+                      <button title="Add log" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft(''); setOpenLogs(p => ({ ...p, [kr.id]: true })) }}>+ log</button>
+                    </span>
+                  </div>
+                  {(logsOpen || composing) && (
+                    <div className="logs">
+                      {krLogs.map(l => (
+                        <div key={l.id} className="logline">
+                          <span className="d">{(l.log_date ?? '').slice(5)}</span>
+                          <span className="t">{l.title ? <b>{l.title}. </b> : null}{l.content}</span>
+                        </div>
+                      ))}
+                      {composing && (
+                        <textarea className="log-input" autoFocus value={logDraft}
+                          placeholder="Log an update for this KR…"
+                          onChange={e => setLogDraft(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitLog(); if (e.key === 'Escape') { setLogComposer(null); setLogDraft('') } }}
+                          onBlur={submitLog} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+
+            {miniKRs.length > 0 && (
+              <>
+                {fullKRs.length > 0 && <div className="grp-div" />}
+                {miniKRs.map(kr => {
+                  if (kr.is_metric) {
+                    const c = latestMetricByKR.get(kr.id)
+                    const d = kr.metric_direction === 'down' ? '↓' : '↑'
+                    const isDone = kr.health_status === 'done'
+                    return (
+                      <div key={kr.id} className="krmini" onClick={() => onLogMetric(kr.id)} title="Log a reading">
+                        <span className="tag">metric</span><span className="mt">{kr.title}</span>
+                        <span className="read" style={isDone ? { color: 'var(--nw-nominal-text)' } : undefined}>
+                          {isDone ? 'done' : <>{fmtMetric(c?.value, kr.metric_unit)}<span className="u"> {d}</span></>}
+                        </span>
+                      </div>
+                    )
+                  }
+                  const tone = healthTone(kr.health_status)
+                  const wkDone = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
+                  return (
+                    <div key={kr.id} className="krmini">
+                      <span className="tag">habit</span><span className="mt">{kr.title}</span>
+                      <span className="read" style={{ color: `var(--${tone.cls === 't-nominal' ? 'nw-nominal-text' : tone.cls === 't-alarm' ? 'nw-alarm-text' : 'navy-300'})` }}>{wkDone}<span className="u"> / 7 wk</span></span>
+                    </div>
+                  )
+                })}
+              </>
+            )}
+
+            {!showActCol && addBtn}
+          </div>
+
+          {showActCol && (
+            <div className="act-col">
+              {actThisWeek.length > 0 && (
+                <div className="ac-grp"><div className="ac-lbl">This week</div>{actThisWeek.map(it => colActionRow(it, true))}</div>
+              )}
+              {actBacklog.length > 0 && (
+                <div className="ac-grp"><div className="ac-lbl">Backlog</div>{actBacklog.map(it => colActionRow(it, false))}</div>
+              )}
+              {addRow}
+              {!addRow && addBtn}
+            </div>
           )}
-        </svg>
-        <div className="mfoot">
-          <span className={`delta ${tone}`}>{
-            latest == null ? 'no readings' :
-            tone === 'up' ? (hit ? '▲ on/above target' : '▲ improving') :
-            tone === 'down' ? `▼ ${delta != null ? Math.abs(delta).toLocaleString() + ' last reading' : 'off target'}` :
-            'no movement yet'
-          }</span>
-          <span className="flipnote">tap → log</span>
         </div>
       </div>
     )
@@ -441,32 +644,7 @@ export default function Home({
         {quote.author && <span>— {quote.author}</span>}
       </div>
 
-      {/* habits */}
-      {habitKRs.length > 0 && (
-        <>
-          <div className="seclbl"><span className="lbl">Habits · this week</span><span className="rule" /></div>
-          <div className="habits">
-            {habitKRs.map(kr => {
-              const done = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
-              const tone = healthTone(kr.health_status)
-              return (
-                <div key={kr.id} className="hcard">
-                  <h4>{kr.title}</h4>
-                  <div className="dots">
-                    {weekDates.map((d, i) => {
-                      const on = checkinSet.has(`${kr.id}:${d}`)
-                      return <button key={d} className={`hdot${on ? ' on' : ''}`} title={`${DOW[i]} · ${d}`} onClick={() => toggleHabit(kr.id, d)} />
-                    })}
-                  </div>
-                  <div className="hrow"><span className="cnt">{done} this wk</span><span className={`chip ${tone.cls}`}>{tone.label}</span></div>
-                </div>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      {/* metrics — sparkline cards */}
+      {/* metrics — flip cards */}
       {metricKRs.length > 0 && (
         <>
           <div className="seclbl"><span className="lbl">Key metrics</span><span className="rule" /></div>
@@ -474,169 +652,70 @@ export default function Home({
         </>
       )}
 
-      {/* objective board */}
-      <div className="seclbl"><span className="lbl">Objectives{objCount ? ` · ${objCount}` : ''}</span><span className="rule" /></div>
-      {board.length === 0 ? (
-        <div className="empty">No objectives in scope. Try a different space or quarter.</div>
-      ) : (
-        <div className="board">
-          {board.map(({ obj, fullKRs, miniKRs, total, done, onN, offN, thisWkActs, carriedN }) => {
-            const pct = total ? Math.round((done / total) * 100) : 0
-            const oc = obj.space_id ? spaceDisplayColor(spaceById.get(obj.space_id)!) : 'var(--navy-500)'
-            const isCol = !!collapsed[obj.id]
-            const pillEls = (
-              <div className="pills">
-                {done > 0 && <span className="opill done">{done} done</span>}
-                {onN > 0 && <span className="opill on">{onN} on track</span>}
-                {offN > 0 && <span className="opill off">{offN} off track</span>}
-                {thisWkActs > 0 && <span className="opill wk">{thisWkActs} this wk</span>}
-                {carriedN > 0 && <span className="opill carried">{carriedN} carried</span>}
-              </div>
-            )
-
-            if (isCol) {
-              return (
-                <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
-                  <div className="col-row" onClick={() => toggleCollapse(obj.id)}>
-                    <span className="chev">▸</span>
-                    <span className="col-name">{obj.name}</span>
-                    <div className="prog-inline"><span className="prog-num">{pct}%</span><span className="prog-bar"><i style={{ width: `${pct}%` }} /></span></div>
-                    {pillEls}
-                    <button className="ohb" title="Links & log" onClick={e => { e.stopPropagation(); onOpenObjective(obj.id) }}>⋯</button>
-                    <button className="ohb" title="Edit objective" onClick={e => { e.stopPropagation(); setEditingObjective(obj) }}>✎</button>
+      {/* body: objectives (grouped by space in All view) + habits rail */}
+      <div className="body">
+        <div className="main">
+          <div className="seclbl"><span className="lbl">Objectives{objCount ? ` · ${objCount}` : ''}</span><span className="rule" /></div>
+          {board.length === 0 ? (
+            <div className="empty">No objectives in scope. Try a different space or quarter.</div>
+          ) : spaceFilter === null ? (
+            orderedSpaces
+              .map(s => ({ s, items: board.filter(b => b.obj.space_id === s.id) }))
+              .filter(grp => grp.items.length > 0)
+              .map(({ s, items }) => (
+                <Fragment key={s.id}>
+                  <div className="spacehdr" style={{ ['--sc']: spaceDisplayColor(s) } as CSSProperties}>
+                    <span className="dot" /><span className="nm">{s.name}</span><span className="ct">{items.length}</span><span className="rule" />
                   </div>
+                  <div className="board">{items.map(renderObjCard)}</div>
+                </Fragment>
+              ))
+          ) : (
+            <div className="board">{board.map(renderObjCard)}</div>
+          )}
+
+          {/* close the week — bottom of main */}
+          {openCloses.length > 0 && (
+            <div className="closes">
+              <div className="seclbl"><span className="lbl">Close the week</span><span className="rule" /></div>
+              {openCloses.map(({ sp, wk, overdue }) => (
+                <div key={sp.id} className="closebar">
+                  <div className="ci">◷</div>
+                  <div className="ct">
+                    <b>{sp.name} — week of {fmtRange(wk).split(' – ')[0]}{overdue ? ' (overdue)' : ''}</b>
+                    <div>Review KRs, log metrics, plan next week</div>
+                  </div>
+                  <button className="cb-close" onClick={() => onCloseWeek(sp.id, wk)}>Close week →</button>
                 </div>
-              )
-            }
-
-            return (
-              <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
-                <div className="exp">
-                  <div className="rail">
-                    <div className="rail-top">
-                      <span className="chev" onClick={() => toggleCollapse(obj.id)} title="Collapse">▾</span>
-                      <h3>{obj.name}</h3>
-                    </div>
-                    <div className="prog">
-                      <div className="num">{pct}<small>%</small></div>
-                      <div className="track"><i style={{ width: `${pct}%` }} /></div>
-                      <div className="sub">{done} of {total} KRs done</div>
-                    </div>
-                    {pillEls}
-                    <div className="rail-acts">
-                      <button className="ohb" title="Links & objective log" onClick={() => onOpenObjective(obj.id)}>⋯</button>
-                      <button className="ohb" title="Edit objective" onClick={() => setEditingObjective(obj)}>✎</button>
-                    </div>
-                  </div>
-
-                  <div className="kr-area">
-                    {fullKRs.map(({ kr, thisWeek, backlog }) => {
-                      const tone = healthTone(kr.health_status)
-                      const isDone = kr.health_status === 'done'
-                      const krLogs = logsByKR.get(kr.id) ?? []
-                      const composing = logComposer?.krId === kr.id
-                      let metricChip: ReactNode = null
-                      if (kr.is_metric) {
-                        const c = latestMetricByKR.get(kr.id)
-                        const dir = kr.metric_direction === 'down' ? '↓' : '↑'
-                        metricChip = <span className="st metricv">{fmtMetric(c?.value, kr.metric_unit)} {dir}</span>
-                      }
-                      return (
-                        <div key={kr.id} className={`kr${isDone ? ' done' : ''}`}>
-                          <div className="kr-main">
-                            <div className="kr-head">
-                              <button className={`cb${isDone ? ' on' : ''}`} onClick={() => toggleKRDone(kr)} title={isDone ? 'Mark not done' : 'Mark done'}>{isDone ? '✓' : ''}</button>
-                              <span className="kt">{kr.title}{metricChip}{!isDone && !kr.is_metric && <span className={`st ${tone.cls}`}>{tone.label}</span>}</span>
-                              <button className="kr-edit" title="Edit KR" onClick={() => setEditingKR(kr)}>✎</button>
-                            </div>
-                            <div className="acts">
-                              {thisWeek.map(a => actionRow(a, true))}
-                              {backlog.map(a => actionRow(a, false))}
-                              {addActionKR === kr.id ? (
-                                <input className="act-input" autoFocus value={actionDraft}
-                                  placeholder="New action…"
-                                  onChange={e => setActionDraft(e.target.value)}
-                                  onKeyDown={e => { if (e.key === 'Enter') submitAction(kr); if (e.key === 'Escape') { setAddActionKR(null); setActionDraft('') } }}
-                                  onBlur={() => { if (!actionDraft.trim()) setAddActionKR(null) }} />
-                              ) : (
-                                <button className="addact" onClick={() => { setAddActionKR(kr.id); setActionDraft('') }}>+ action</button>
-                              )}
-                            </div>
-                          </div>
-
-                          <div className={`kr-log${krLogs.length === 0 && !composing ? ' empty' : ''}`}>
-                            {krLogs.map(l => (
-                              <div key={l.id} className="log-e">
-                                <span className="wk">{(l.log_date ?? '').slice(5)}</span>
-                                <span className="log-t">{l.title ? <b>{l.title}. </b> : null}{l.content}</span>
-                              </div>
-                            ))}
-                            {composing ? (
-                              <textarea className="log-input" autoFocus value={logDraft}
-                                placeholder="Log an update for this KR…"
-                                onChange={e => setLogDraft(e.target.value)}
-                                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitLog(); if (e.key === 'Escape') { setLogComposer(null); setLogDraft('') } }}
-                                onBlur={submitLog} />
-                            ) : (
-                              <button className="addlog" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft('') }}>+ log</button>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-
-                    {miniKRs.length > 0 && (
-                      <>
-                        {fullKRs.length > 0 && <div className="grp-div" />}
-                        {miniKRs.map(kr => {
-                          if (kr.is_metric) {
-                            const c = latestMetricByKR.get(kr.id)
-                            const dir = kr.metric_direction === 'down' ? '↓' : '↑'
-                            const isDone = kr.health_status === 'done'
-                            return (
-                              <div key={kr.id} className="krmini" onClick={() => onLogMetric(kr.id)} title="Log a reading">
-                                <span className="tag">metric</span><span className="mt">{kr.title}</span>
-                                <span className="read" style={isDone ? { color: 'var(--nw-nominal-text)' } : undefined}>
-                                  {isDone ? 'done' : <>{fmtMetric(c?.value, kr.metric_unit)}<span className="u"> {dir}</span></>}
-                                </span>
-                              </div>
-                            )
-                          }
-                          const tone = healthTone(kr.health_status)
-                          const wkDone = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
-                          return (
-                            <div key={kr.id} className="krmini">
-                              <span className="tag">habit</span><span className="mt">{kr.title}</span>
-                              <span className="read" style={{ color: `var(--${tone.cls === 't-nominal' ? 'nw-nominal-text' : tone.cls === 't-alarm' ? 'nw-alarm-text' : 'navy-300'})` }}>{wkDone}<span className="u"> / 7 wk</span></span>
-                            </div>
-                          )
-                        })}
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* close the week — at the bottom */}
-      {openCloses.length > 0 && (
-        <div className="closes">
-          <div className="seclbl"><span className="lbl">Close the week</span><span className="rule" /></div>
-          {openCloses.map(({ sp, wk, overdue }) => (
-            <div key={sp.id} className="closebar">
-              <div className="ci">◷</div>
-              <div className="ct">
-                <b>{sp.name} — week of {fmtRange(wk).split(' – ')[0]}{overdue ? ' (overdue)' : ''}</b>
-                <div>Review KRs, log metrics, plan next week</div>
-              </div>
-              <button className="cb-close" onClick={() => onCloseWeek(sp.id, wk)}>Close week →</button>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-      )}
+
+        {/* habits — far-right simple rail */}
+        {habitKRs.length > 0 && (
+          <div className="hrail">
+            <div className="seclbl hd"><span className="lbl">Habits</span></div>
+            <div className="hbox">
+              {habitKRs.map(kr => {
+                const dn = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
+                const on = healthTone(kr.health_status).cls === 't-nominal'
+                return (
+                  <div key={kr.id} className={`hrow${on ? '' : ' off'}`}>
+                    <div className="hn"><h5>{kr.title}</h5><span className={`hstat ${on ? 'on' : 'off'}`}>{on ? `${dn} / wk` : 'off'}</span></div>
+                    <div className="hdots">
+                      {weekDates.map((d, i) => {
+                        const isOn = checkinSet.has(`${kr.id}:${d}`)
+                        return <button key={d} className={`hdot${isOn ? ' on' : ''}`} title={`${DOW[i]} · ${d}`} onClick={() => toggleHabit(kr.id, d)} />
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
 
       {editingKR && (
         <EditKRModal
@@ -670,7 +749,8 @@ export default function Home({
       )}
 
       <style>{`
-        .home{max-width:1140px;margin:0 auto;padding:8px 4px 80px;}
+
+        .home{max-width:1340px;margin:0 auto;padding:8px 4px 80px;}
         .lbl{font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label);}
 
         .hd{display:flex;align-items:center;gap:13px;padding:8px 0 2px;flex-wrap:wrap;}
@@ -690,56 +770,61 @@ export default function Home({
         .seclbl{display:flex;align-items:center;gap:10px;margin:0 0 11px;}
         .seclbl .rule{flex:1;height:1px;background:var(--line);}
 
-        .habits{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:11px;margin-bottom:22px;}
-        .hcard{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:13px;}
-        .hcard h4{margin:0;font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-        .dots{display:flex;gap:5px;margin:11px 0 9px;}
-        .hdot{width:14px;height:14px;border-radius:50%;border:1.5px solid var(--navy-600);background:transparent;cursor:pointer;padding:0;}
-        .hdot.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
-        .hrow{display:flex;align-items:center;justify-content:space-between;}
-        .cnt{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--navy-200);}
-        .chip{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;padding:2px 7px;border-radius:5px;}
-        .chip.t-alarm{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
-        .chip.t-nominal{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
-        .chip.t-caution{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
-        .chip.t-standby{color:var(--nw-standby-text);background:var(--surface-2);}
-
-        /* key metric sparkline cards */
-        .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:26px;}
-        .mcard{background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--line);border-radius:13px;padding:15px 16px 12px;cursor:pointer;}
-        .mcard:hover{border-color:var(--line-strong);}
-        .mcard h4{margin:0;font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);}
-        .mval{display:flex;align-items:baseline;gap:7px;margin-top:7px;}
-        .mval b{font-family:var(--font-display);font-weight:700;font-size:27px;letter-spacing:-.02em;line-height:1;color:var(--nw-cream);}
-        .mval .ghost{font-family:var(--font-mono);font-size:12px;color:var(--navy-500);}
-        .spark{margin-top:12px;width:100%;height:34px;display:block;}
-        .mfoot{display:flex;align-items:center;justify-content:space-between;margin-top:9px;}
-        .delta{font-family:var(--font-mono);font-size:11px;font-weight:600;}
+        /* key metric flip cards */
+        .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:24px;}
+        .mcard{height:150px;perspective:1200px;cursor:pointer;}
+        .m-inner{position:relative;width:100%;height:100%;transition:transform .5s cubic-bezier(.4,.1,.2,1);transform-style:preserve-3d;}
+        .mcard.flipped .m-inner{transform:rotateY(180deg);}
+        .m-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--line);border-radius:13px;padding:14px 15px 11px;display:flex;flex-direction:column;}
+        .m-face:hover{border-color:var(--line-strong);}
+        .m-back{transform:rotateY(180deg);}
+        .mcard h4{margin:0;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--nw-cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .mval{display:flex;align-items:baseline;gap:6px;margin-top:6px;}
+        .mval b{font-family:var(--font-display);font-weight:700;font-size:25px;letter-spacing:-.02em;line-height:1;color:var(--nw-cream);}
+        .mval .ghost{font-family:var(--font-mono);font-size:11px;color:var(--navy-500);}
+        .spark{margin-top:auto;width:100%;height:32px;display:block;}
+        .mfoot{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:6px;}
+        .delta{font-family:var(--font-mono);font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .delta.up{color:var(--nw-nominal-text);}
         .delta.down{color:var(--nw-caution-text);}
         .delta.flat{color:var(--navy-400);}
-        .flipnote{font-family:var(--font-mono);font-size:8.5px;color:var(--navy-600);letter-spacing:.06em;}
+        .flipnote{font-family:var(--font-mono);font-size:8px;color:var(--navy-600);letter-spacing:.05em;flex-shrink:0;}
+        .m-back .bh{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .m-back .back{font-family:var(--font-mono);font-size:9px;color:var(--navy-500);background:none;border:none;cursor:pointer;flex-shrink:0;}
+        .m-back .back:hover{color:var(--navy-100);}
+        .readings{margin-top:8px;flex:1;overflow:auto;display:flex;flex-direction:column;gap:4px;}
+        .rd{display:flex;align-items:baseline;gap:8px;font-family:var(--font-mono);font-size:10.5px;}
+        .rd .rdate{color:var(--nw-label);min-width:38px;flex-shrink:0;}
+        .rd .rval{color:var(--navy-100);font-weight:600;}
+        .rd .rdelta{margin-left:auto;color:var(--nw-nominal-text);}
+        .rd .rdelta.dn{color:var(--nw-caution-text);}
+        .rd-empty{font-family:var(--font-mono);font-size:10px;color:var(--navy-600);}
+        .logbtn{margin-top:7px;font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:none;border-radius:6px;padding:5px 0;cursor:pointer;}
 
-        .closes{display:flex;flex-direction:column;gap:10px;margin-top:34px;}
-        .closebar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,rgba(200,150,66,.07),transparent 55%),var(--surface);border:1px solid var(--line-2);border-radius:13px;padding:13px 16px;}
-        .closebar .ci{width:32px;height:32px;border-radius:9px;background:rgba(200,150,66,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
-        .closebar .ct b{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);}
-        .closebar .ct div{font-size:11.5px;color:var(--navy-400);margin-top:1px;}
-        .cb-close{margin-left:auto;font-family:var(--font-body);font-weight:600;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 15px;cursor:pointer;}
-        .cb-close:hover{background:var(--accent-2,#6ea3ff);}
+        /* body split: objectives (left) + habits rail (far right) */
+        .body{display:flex;gap:22px;align-items:flex-start;}
+        .main{flex:1;min-width:0;}
+
+        /* space group headers (All view) */
+        .spacehdr{display:flex;align-items:center;gap:9px;margin:22px 0 11px;}
+        .spacehdr:first-child{margin-top:0;}
+        .spacehdr .dot{width:9px;height:9px;border-radius:3px;background:var(--sc,var(--navy-500));flex-shrink:0;}
+        .spacehdr .nm{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--nw-label);}
+        .spacehdr .ct{font-family:var(--font-mono);font-size:9.5px;color:var(--navy-600);}
+        .spacehdr .rule{flex:1;height:1px;background:var(--line);}
 
         .empty{color:var(--navy-500);font-size:13px;padding:30px 0;text-align:center;}
-        .board{display:flex;flex-direction:column;gap:14px;}
-        .ocard{background:var(--surface);border:1px solid var(--line);border-radius:15px;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.02) inset,0 8px 24px -16px rgba(0,0,0,.7);}
+        .board{display:flex;flex-direction:column;gap:12px;margin-bottom:4px;}
+        .ocard{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.02) inset,0 8px 24px -16px rgba(0,0,0,.7);}
 
-        /* collapsed: single informative row */
-        .col-row{display:flex;align-items:center;gap:14px;padding:14px 16px;cursor:pointer;border-left:3px solid var(--oc,var(--navy-500));}
+        /* collapsed pill row */
+        .col-row{display:flex;align-items:center;gap:13px;padding:13px 15px;cursor:pointer;border-left:3px solid var(--oc,var(--navy-500));}
         .col-row:hover{background:rgba(255,255,255,.013);}
         .chev{color:var(--navy-500);font-size:11px;flex-shrink:0;width:12px;cursor:pointer;user-select:none;}
-        .col-name{font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--nw-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:230px;}
-        .prog-inline{display:flex;align-items:center;gap:9px;flex-shrink:0;}
-        .prog-num{font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--oc,var(--navy-200));letter-spacing:-.01em;}
-        .prog-bar{width:64px;height:5px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .col-name{font-family:var(--font-display);font-weight:600;font-size:14.5px;color:var(--nw-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px;}
+        .prog-inline{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+        .prog-num{font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--oc,var(--navy-200));letter-spacing:-.01em;}
+        .prog-bar{width:56px;height:4px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
         .prog-bar i{display:block;height:100%;background:var(--oc,var(--navy-400));border-radius:3px;}
         .pills{display:flex;flex-wrap:wrap;gap:5px;flex:1;}
         .opill{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:5px;white-space:nowrap;}
@@ -751,32 +836,30 @@ export default function Home({
         .ohb{background:none;border:none;color:var(--navy-600);font-size:13px;cursor:pointer;padding:3px 6px;border-radius:6px;flex-shrink:0;line-height:1;}
         .ohb:hover{background:var(--hover);color:var(--navy-100);}
 
-        /* expanded: objective rail (left) + KR area (right) */
+        /* expanded: rail | KRs | actions */
         .exp{display:flex;}
-        .rail{flex:0 0 250px;padding:16px 18px;border-left:3px solid var(--oc,var(--navy-500));border-right:1px solid var(--line);}
+        .rail{flex:0 0 220px;padding:15px 16px;border-left:3px solid var(--oc,var(--navy-500));border-right:1px solid var(--line);}
         .rail-top{display:flex;align-items:flex-start;gap:8px;}
-        .rail-top .chev{margin-top:6px;}
-        .rail h3{margin:0;font-family:var(--font-display);font-weight:600;font-size:16px;color:var(--nw-cream);letter-spacing:-.01em;line-height:1.25;}
-        .prog{margin:13px 0 0;}
-        .prog .num{font-family:var(--font-display);font-size:32px;font-weight:700;color:var(--oc,var(--nw-cream));line-height:1;letter-spacing:-.02em;}
-        .prog .num small{font-size:15px;color:var(--navy-500);font-weight:600;margin-left:2px;}
-        .prog .track{margin-top:8px;height:5px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .rail-top .chev{margin-top:5px;}
+        .rail h3{margin:0;font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--nw-cream);letter-spacing:-.01em;line-height:1.25;}
+        .prog{margin:12px 0 0;}
+        .prog .num{font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--oc,var(--nw-cream));line-height:1;letter-spacing:-.02em;}
+        .prog .num small{font-size:14px;color:var(--navy-500);font-weight:600;margin-left:2px;}
+        .prog .track{margin-top:7px;height:4px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
         .prog .track i{display:block;height:100%;background:var(--oc,var(--navy-400));border-radius:3px;}
-        .prog .sub{font-family:var(--font-mono);font-size:9.5px;color:var(--navy-500);margin-top:6px;}
-        .rail .pills{margin-top:13px;}
-        .rail-acts{margin-top:14px;display:flex;gap:4px;}
+        .prog .sub{font-family:var(--font-mono);font-size:9px;color:var(--navy-500);margin-top:6px;}
+        .rail .pills{margin-top:12px;}
+        .rail-acts{margin-top:13px;display:flex;gap:4px;}
 
-        .kr-area{flex:1;min-width:0;padding:6px 0;}
-        .kr{display:flex;align-items:flex-start;padding:9px 16px;border-top:1px solid var(--line);}
+        /* middle: KR column */
+        .kr-col{flex:1;min-width:0;padding:3px 0;}
+        .kr{padding:9px 15px;border-top:1px solid var(--line);}
         .kr:first-child{border-top:none;}
         .kr:hover{background:rgba(255,255,255,.012);}
-        .kr-main{flex:0 0 58%;padding-right:16px;}
-        .kr-log{flex:1;min-width:0;padding-left:16px;border-left:1px solid var(--line);align-self:stretch;}
-        .kr-log.empty{border-left-color:transparent;}
-        .kr-head{display:flex;gap:9px;align-items:flex-start;}
-        .cb{width:16px;height:16px;border-radius:5px;flex-shrink:0;margin-top:1px;border:1.5px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;}
+        .kr-head{display:flex;align-items:center;gap:9px;}
+        .cb{width:16px;height:16px;border-radius:5px;flex-shrink:0;border:1.5px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;}
         .cb.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
-        .kt{flex:1;font-size:13.5px;color:var(--navy-100);line-height:1.4;}
+        .kt{flex:1;min-width:0;font-size:13.5px;color:var(--navy-100);line-height:1.4;}
         .kr.done .kt{color:var(--navy-500);text-decoration:line-through;}
         .st{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;padding:1px 6px;border-radius:4px;margin-left:8px;white-space:nowrap;}
         .st.t-nominal{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
@@ -784,24 +867,51 @@ export default function Home({
         .st.t-caution{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
         .st.t-standby{color:var(--nw-standby-text);background:var(--surface-2);}
         .st.metricv{color:var(--navy-100);background:var(--surface-2);font-weight:600;text-transform:none;letter-spacing:0;}
-        .kr-edit{background:none;border:none;color:var(--navy-600);font-size:11px;cursor:pointer;padding:2px 5px;border-radius:5px;flex-shrink:0;opacity:0;transition:opacity .12s;}
-        .kr:hover .kr-edit{opacity:1;}
-        .kr-edit:hover{color:var(--navy-100);background:var(--hover);}
+        .logchip{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--navy-500);background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;cursor:pointer;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;flex-shrink:0;}
+        .logchip:hover{color:var(--navy-200);border-color:var(--navy-400);}
+        .logchip.open{color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}
+        .lcar{display:inline-block;font-size:7px;transition:transform .15s;}
+        .logchip.open .lcar{transform:rotate(90deg);}
+        .kr-tools{margin-left:auto;display:flex;gap:4px;align-items:center;flex-shrink:0;opacity:0;transition:opacity .12s;}
+        .kr:hover .kr-tools{opacity:1;}
+        .kr-tools button{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);background:none;border:1px dashed var(--line-2);border-radius:5px;padding:2px 7px;cursor:pointer;}
+        .kr-tools button:hover{color:var(--accent);border-color:var(--accent);}
+        .kr-tools .ed{border:none;font-size:11px;padding:2px 4px;}
+        .logs{margin:7px 0 1px 25px;display:flex;flex-direction:column;gap:3px;border-left:2px solid var(--line);padding-left:9px;}
+        .logline{display:flex;gap:8px;align-items:baseline;}
+        .logline .d{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--nw-label);min-width:34px;flex-shrink:0;}
+        .logline .t{font-size:11.5px;color:var(--navy-300);line-height:1.4;}
+        .logline .t b{color:var(--navy-100);font-weight:600;}
+        .log-input{width:100%;min-height:46px;background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:7px 9px;font-size:12px;color:var(--navy-50);font-family:inherit;outline:none;resize:vertical;margin-top:3px;}
+        .log-input:focus{border-color:var(--accent);}
 
-        .acts{margin:7px 0 0 25px;display:flex;flex-direction:column;gap:1px;}
-        .act{display:flex;align-items:center;gap:9px;padding:4px 0;}
-        .cb-sm{width:13px;height:13px;border-radius:4px;flex-shrink:0;border:1.4px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:8px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;}
+        .grp-div{height:1px;background:var(--line);margin:2px 15px;}
+        .krmini{display:flex;align-items:center;gap:10px;padding:6px 15px;border-top:1px solid var(--line);cursor:default;}
+        .krmini:hover{background:rgba(255,255,255,.012);}
+        .krmini .tag{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--navy-500);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px;flex-shrink:0;}
+        .krmini .mt{font-size:12.5px;color:var(--navy-300);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .krmini .read{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--navy-200);flex-shrink:0;}
+        .krmini .read .u{color:var(--navy-500);font-weight:500;}
+
+        /* right: actions column */
+        .act-col{flex:0 0 320px;border-left:1px solid var(--line);background:rgba(255,255,255,.012);padding:12px 14px;}
+        .ac-grp + .ac-grp{margin-top:12px;}
+        .ac-lbl{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--nw-label-dim);margin:0 0 6px;}
+        .act{display:flex;align-items:center;gap:8px;padding:4px 0;flex-wrap:wrap;}
+        .cb-sm{width:14px;height:14px;border-radius:4px;flex-shrink:0;border:1.4px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:8px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;}
         .cb-sm.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
-        .at{flex:1;font-size:12.5px;color:var(--navy-200);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .at{flex:1;font-size:12.5px;color:var(--navy-100);min-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .act.done .at{color:var(--navy-600);text-decoration:line-through;}
+        .krtag{font-family:var(--font-mono);font-size:8px;font-weight:600;color:var(--navy-400);background:var(--surface-2);border-radius:4px;padding:1px 6px;display:inline-flex;align-items:center;gap:4px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;}
+        .krtag .kd{width:6px;height:6px;border-radius:2px;background:var(--oc,var(--navy-500));flex-shrink:0;}
+        .ameta{display:flex;gap:5px;align-items:center;margin-left:auto;flex-shrink:0;}
         .carried{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.04em;color:var(--nw-caution-text);background:rgba(245,184,64,.08);border-radius:4px;padding:1px 5px;flex-shrink:0;}
-        .sched{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:5px;flex-shrink:0;cursor:pointer;border:none;}
+        .sched{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.03em;padding:2px 6px;border-radius:5px;flex-shrink:0;cursor:pointer;border:none;}
         .sched.week{color:var(--accent);background:var(--accent-dim);}
-        .sched.promote{color:var(--navy-400);background:transparent;border:1px solid var(--line-2);}
-        .sched.promote:hover{color:var(--accent);border-color:var(--accent);}
-        .act-dur{font-family:var(--font-mono);font-size:9px;font-weight:600;padding:2px 7px;border-radius:5px;flex-shrink:0;cursor:pointer;border:1px solid var(--line-2);color:var(--navy-200);background:transparent;}
+        .sched.back{color:var(--navy-400);background:var(--surface-2);border:1px solid var(--line-2);}
+        .sched.back:hover{color:var(--accent);border-color:var(--accent);}
+        .act-dur{font-family:var(--font-mono);font-size:8.5px;font-weight:600;padding:2px 6px;border-radius:5px;flex-shrink:0;cursor:pointer;border:1px solid var(--line-2);color:var(--navy-200);background:transparent;}
         .act-dur:hover{border-color:var(--navy-400);}
-        .act-dur.set{color:var(--navy-200);}
         .act-dur:not(.set){color:var(--navy-500);border-style:dashed;}
         .act-dur.open{color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}
         .act-durpick{display:flex;flex-wrap:wrap;gap:6px;margin:3px 0 5px 22px;}
@@ -809,39 +919,48 @@ export default function Home({
         .act-durchip:hover{border-color:var(--accent);color:var(--accent);}
         .act-durchip.on{border-color:var(--accent);background:var(--accent-dim);color:var(--accent);}
         .act-durchip.clear{color:var(--navy-500);}
-        .addact{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-600);border:1px dashed var(--line-2);border-radius:5px;padding:2px 8px;cursor:pointer;align-self:flex-start;margin-top:2px;background:none;}
-        .addact:hover{color:var(--accent);border-color:var(--accent);}
-        .act-input{margin-top:4px;width:90%;background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--navy-50);font-family:inherit;outline:none;}
+        .addrow{display:flex;flex-direction:column;gap:5px;margin-top:10px;}
+        .kr-sel{background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:5px 8px;font-size:11px;color:var(--navy-100);font-family:inherit;outline:none;}
+        .kr-sel:focus{border-color:var(--accent);}
+        .act-input{background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:6px 9px;font-size:12px;color:var(--navy-50);font-family:inherit;outline:none;}
         .act-input:focus{border-color:var(--accent);}
+        .addact{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);border:1px dashed var(--line-2);border-radius:6px;padding:5px 9px;background:none;cursor:pointer;margin-top:10px;width:100%;}
+        .addact:hover{color:var(--accent);border-color:var(--accent);}
 
-        .log-e{display:flex;gap:9px;margin-bottom:6px;}
-        .log-e:last-child{margin-bottom:0;}
-        .wk{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--nw-label);flex-shrink:0;margin-top:2px;min-width:34px;letter-spacing:.03em;}
-        .log-t{font-size:12px;color:var(--navy-300);line-height:1.45;}
-        .log-t b{color:var(--navy-100);font-weight:600;}
-        .addlog{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--navy-600);border:1px dashed var(--line-2);border-radius:5px;padding:2px 7px;cursor:pointer;background:none;}
-        .kr:hover .addlog{color:var(--accent);border-color:var(--accent);}
-        .log-input{width:100%;min-height:48px;background:var(--surface-2);border:1px solid var(--line-2);border-radius:7px;padding:7px 9px;font-size:12px;color:var(--navy-50);font-family:inherit;outline:none;resize:vertical;}
-        .log-input:focus{border-color:var(--accent);}
+        /* habits — far right rail */
+        .hrail{flex:0 0 210px;position:sticky;top:18px;}
+        .hrail .hd{margin-bottom:10px;}
+        .hbox{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:6px 0;}
+        .hrow{padding:9px 14px;}
+        .hrow + .hrow{border-top:1px solid var(--line);}
+        .hrow .hn{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .hrow h5{margin:0;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--nw-cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .hrow.off h5{color:var(--navy-200);}
+        .hstat{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;flex-shrink:0;}
+        .hstat.off{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
+        .hstat.on{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
+        .hdots{display:flex;gap:5px;margin-top:8px;}
+        .hdot{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--navy-600);background:transparent;cursor:pointer;padding:0;}
+        .hdot.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
 
-        .grp-div{height:1px;background:var(--line);margin:2px 16px;}
-        .krmini{display:flex;align-items:center;gap:10px;padding:7px 16px;border-top:1px solid var(--line);cursor:default;}
-        .krmini:first-child{border-top:none;}
-        .krmini:hover{background:rgba(255,255,255,.012);}
-        .krmini .tag{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--navy-500);border:1px solid var(--line-2);border-radius:4px;padding:1px 5px;flex-shrink:0;}
-        .krmini .mt{font-size:12.5px;color:var(--navy-300);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-        .krmini .read{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--navy-200);flex-shrink:0;}
-        .krmini .read .u{color:var(--navy-500);font-weight:500;}
+        .closes{display:flex;flex-direction:column;gap:10px;margin-top:30px;}
+        .closebar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,rgba(200,150,66,.07),transparent 55%),var(--surface);border:1px solid var(--line-2);border-radius:13px;padding:13px 16px;}
+        .closebar .ci{width:32px;height:32px;border-radius:9px;background:rgba(200,150,66,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
+        .closebar .ct b{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);}
+        .closebar .ct div{font-size:11.5px;color:var(--navy-400);margin-top:1px;}
+        .cb-close{margin-left:auto;font-family:var(--font-body);font-weight:600;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 15px;cursor:pointer;}
+        .cb-close:hover{background:var(--accent-2,#6ea3ff);}
 
+        @media (max-width:1080px){
+          .metrics{grid-template-columns:repeat(2,1fr);}
+          .body{flex-direction:column;}
+          .hrail{position:static;flex:1 1 auto;width:100%;}
+        }
         @media (max-width:760px){
-          .metrics{grid-template-columns:1fr;}
           .exp{flex-direction:column;}
           .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);}
+          .act-col{flex:1 1 auto;border-left:none;border-top:1px solid var(--line);}
           .col-name{max-width:150px;}
-          .kr{flex-direction:column;}
-          .kr-main{flex:1 1 auto;width:100%;padding-right:0;}
-          .kr-log{width:100%;border-left:none;border-top:1px solid var(--line);padding-left:25px;margin-top:6px;padding-top:6px;}
-          .kr-log.empty{border-top-color:transparent;}
         }
       `}</style>
     </div>
