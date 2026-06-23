@@ -1,6 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, Fragment } from 'react'
-import type { Dispatch, SetStateAction, ReactNode, CSSProperties } from 'react'
+import type { Dispatch, SetStateAction, ReactNode, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import type {
   Space, AnnualObjective, RoadmapItem, WeeklyAction, MetricCheckin, Task,
   HabitCheckin, Note, Notebook, TrackedFile, WeeklyReview, ObjectiveLog,
@@ -60,6 +60,16 @@ function loadLS<T>(key: string, fallback: T): T {
 
 // Estimated-duration buckets for action items (multi-hour project pieces).
 const ACTION_DURATIONS = [30, 60, 90, 120, 180, 240]
+
+// Selectable KR statuses for the inline status menu.
+const STATUS_OPTS: { v: RoadmapItem['health_status']; l: string }[] = [
+  { v: 'on_track', l: 'On track' },
+  { v: 'off_track', l: 'Off track' },
+  { v: 'blocked', l: 'Blocked' },
+  { v: 'waiting', l: 'Waiting' },
+  { v: 'backlog', l: 'Backlog' },
+  { v: 'done', l: 'Done' },
+]
 
 interface Props {
   spaces: Space[]
@@ -125,7 +135,18 @@ export default function Home({
   const [flippedM, setFlippedM] = useState<Record<string, boolean>>({})
   const toggleFlip = (id: string) => setFlippedM(p => ({ ...p, [id]: !p[id] }))
   const [openLogs, setOpenLogs] = useState<Record<string, boolean>>({})
-  const toggleLogs = (id: string) => setOpenLogs(p => ({ ...p, [id]: !p[id] }))
+  const toggleLogs = (id: string) => {
+    const willOpen = !openLogs[id]
+    setOpenLogs(p => ({ ...p, [id]: willOpen }))
+    // collapsing must also tear down an open composer, or (logsOpen||composing) keeps it visible
+    if (!willOpen && logComposer?.krId === id) { setLogComposer(null); setLogDraft('') }
+  }
+  const [krMenu, setKrMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const openKrMenu = (e: ReactMouseEvent, id: string) => {
+    if (krMenu?.id === id) { setKrMenu(null); return }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setKrMenu({ id, x: r.right, y: r.bottom })
+  }
 
   const todayStr = ymd(new Date())
   const isCurrentWeek = weekMonday === getMonday()
@@ -289,6 +310,13 @@ export default function Home({
     setRoadmapItems(prev => prev.map(k => k.id === kr.id ? { ...k, health_status: next } : k))
     try { await krsDb.update(kr.id, { health_status: next }) }
     catch { toast('Could not update KR'); setRoadmapItems(prev => prev.map(k => k.id === kr.id ? kr : k)) }
+  }
+  async function setKRStatus(kr: RoadmapItem, status: RoadmapItem['health_status']) {
+    setKrMenu(null)
+    if (kr.health_status === status) return
+    setRoadmapItems(prev => prev.map(k => k.id === kr.id ? { ...k, health_status: status } : k))
+    try { await krsDb.update(kr.id, { health_status: status }) }
+    catch { toast('Could not update status'); setRoadmapItems(prev => prev.map(k => k.id === kr.id ? kr : k)) }
   }
   async function submitLog() {
     const c = logComposer; const body = logDraft.trim()
@@ -530,15 +558,32 @@ export default function Home({
                 <div key={kr.id} className={`kr${isDone ? ' done' : ''}`}>
                   <div className="kr-head">
                     <button className={`cb${isDone ? ' on' : ''}`} onClick={() => toggleKRDone(kr)} title={isDone ? 'Mark not done' : 'Mark done'}>{isDone ? '✓' : ''}</button>
-                    <span className="kt">{kr.title}{metricChip}{!isDone && !kr.is_metric && <span className={`st ${tone.cls}`}>{tone.label}</span>}</span>
+                    <span className="kt">{kr.title}{metricChip}</span>
+                    <button className={`st ${tone.cls} clk`} title="Change status" onClick={e => openKrMenu(e, kr.id)}>{tone.label}</button>
                     {krLogs.length > 0 && (
                       <button className={`logchip${logsOpen ? ' open' : ''}`} onClick={() => toggleLogs(kr.id)} title={logsOpen ? 'Hide logs' : 'Show logs'}>
                         <span className="lcar">▸</span>{krLogs.length} log{krLogs.length > 1 ? 's' : ''}
                       </button>
                     )}
-                    <span className="kr-tools">
-                      <button className="ed" title="Edit KR" onClick={() => setEditingKR(kr)}>✎</button>
-                      <button title="Add log" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft(''); setOpenLogs(p => ({ ...p, [kr.id]: true })) }}>+ log</button>
+                    <span className="kr-menu-wrap">
+                      <button className="krmenu-btn" title="KR actions" onClick={e => openKrMenu(e, kr.id)}>⋯</button>
+                      {krMenu?.id === kr.id && (
+                        <>
+                          <div className="menu-backdrop" onClick={() => setKrMenu(null)} />
+                          <div className="krmenu" role="menu" style={{ top: krMenu.y + 4, left: Math.max(8, krMenu.x - 176) }}>
+                            <div className="mlbl">Set status</div>
+                            {STATUS_OPTS.map(o => (
+                              <button key={o.v} className={`mitem${kr.health_status === o.v ? ' on' : ''}`} onClick={() => setKRStatus(kr, o.v)}>
+                                <span className={`sdot ${healthTone(o.v).cls}`} />{o.l}{kr.health_status === o.v && <span className="ck">✓</span>}
+                              </button>
+                            ))}
+                            <div className="mdiv" />
+                            <button className="mitem" onClick={() => { setEditingKR(kr); setKrMenu(null) }}>Edit details…</button>
+                            <button className="mitem" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft(''); setOpenLogs(p => ({ ...p, [kr.id]: true })); setKrMenu(null) }}>Add log</button>
+                            <button className="mitem danger" onClick={() => { setKrMenu(null); if (window.confirm(`Delete “${kr.title}”? This can’t be undone.`)) deleteKR(kr.id) }}>Delete KR</button>
+                          </div>
+                        </>
+                      )}
                     </span>
                   </div>
                   {(logsOpen || composing) && (
@@ -872,11 +917,26 @@ export default function Home({
         .logchip.open{color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}
         .lcar{display:inline-block;font-size:7px;transition:transform .15s;}
         .logchip.open .lcar{transform:rotate(90deg);}
-        .kr-tools{margin-left:auto;display:flex;gap:4px;align-items:center;flex-shrink:0;opacity:0;transition:opacity .12s;}
-        .kr:hover .kr-tools{opacity:1;}
-        .kr-tools button{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);background:none;border:1px dashed var(--line-2);border-radius:5px;padding:2px 7px;cursor:pointer;}
-        .kr-tools button:hover{color:var(--accent);border-color:var(--accent);}
-        .kr-tools .ed{border:none;font-size:11px;padding:2px 4px;}
+        .st.clk{border:1px solid transparent;cursor:pointer;font-family:var(--font-mono);line-height:1.4;}
+        .st.clk:hover{border-color:currentColor;}
+        .kr-menu-wrap{position:relative;flex-shrink:0;display:flex;}
+        .krmenu-btn{background:none;border:none;color:var(--navy-500);font-size:15px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px;}
+        .krmenu-btn:hover{background:var(--hover);color:var(--navy-100);}
+        .menu-backdrop{position:fixed;inset:0;z-index:40;}
+        .krmenu{position:fixed;z-index:50;min-width:176px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;padding:5px;box-shadow:0 12px 32px -10px rgba(0,0,0,.8);}
+        .krmenu .mlbl{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--nw-label-dim);padding:4px 8px 5px;}
+        .krmenu .mitem{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:none;border:none;color:var(--navy-100);font-family:var(--font-body);font-size:12.5px;padding:6px 8px;border-radius:6px;cursor:pointer;}
+        .krmenu .mitem:hover{background:var(--hover);}
+        .krmenu .mitem.on{color:var(--nw-cream);}
+        .krmenu .mitem .ck{margin-left:auto;color:var(--accent);font-size:11px;}
+        .krmenu .mitem.danger{color:var(--nw-alarm-text);}
+        .krmenu .mitem.danger:hover{background:rgba(255,100,82,.12);}
+        .krmenu .sdot{width:8px;height:8px;border-radius:3px;flex-shrink:0;}
+        .krmenu .sdot.t-nominal{background:var(--nw-nominal-text);}
+        .krmenu .sdot.t-alarm{background:var(--nw-alarm-text);}
+        .krmenu .sdot.t-caution{background:var(--nw-caution-text);}
+        .krmenu .sdot.t-standby{background:var(--navy-500);}
+        .krmenu .mdiv{height:1px;background:var(--line);margin:5px 4px;}
         .logs{margin:7px 0 1px 25px;display:flex;flex-direction:column;gap:3px;border-left:2px solid var(--line);padding-left:9px;}
         .logline{display:flex;gap:8px;align-items:baseline;}
         .logline .d{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--nw-label);min-width:34px;flex-shrink:0;}
