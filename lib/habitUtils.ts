@@ -247,14 +247,16 @@ export function calculateMetricAggregate(
 export function calculateRollingAggregate(
   kr: RoadmapItem,
   checkins: HabitCheckin[],
-  weeks: number = 4
+  weeks: number = 4,
+  endDate?: Date
 ): HabitAggregate {
   const pattern = parseHabitPattern(kr.title)
 
-  // Window: last N weeks ending today (inclusive of today)
-  const end = new Date()
+  // Window: N weeks ending on endDate (default today), inclusive. Pass an
+  // earlier endDate (e.g. now − 28d) to get the prior window for trend deltas.
+  const end = endDate ? new Date(endDate) : new Date()
   end.setHours(23, 59, 59, 999)
-  const start = new Date()
+  const start = new Date(end)
   start.setDate(start.getDate() - (weeks * 7) + 1)
   start.setHours(0, 0, 0, 0)
 

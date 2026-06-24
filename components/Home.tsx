@@ -7,6 +7,7 @@ import type {
 } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q, formatMinutes } from '@/lib/utils'
 import { getMetricKRs } from '@/lib/krFilters'
+import { calculateRollingAggregate, parseHabitPattern } from '@/lib/habitUtils'
 import { randomQuote } from '@/lib/quotes'
 import { spaceDisplayColor } from '@/lib/spaceColor'
 import * as actionsDb from '@/lib/db/actions'
@@ -479,6 +480,71 @@ export default function Home({
     )
   }
 
+  // One habit KR as a flip card: front = 4-week % + trend; back = this week's
+  // 7-day check-off (replaces the old far-right dot-rail). Reuses flippedM.
+  function habitCard(kr: RoadmapItem) {
+    const agg = calculateRollingAggregate(kr, habitCheckins, 4)
+    const priorEnd = new Date(); priorEnd.setDate(priorEnd.getDate() - 28)
+    const prior = calculateRollingAggregate(kr, habitCheckins, 4, priorEnd)
+    const tone = agg.sessions === 0 ? 'standby'
+      : agg.percent >= 80 ? 'nominal'
+      : agg.percent >= 50 ? 'caution'
+      : 'alarm'
+    // pts delta vs the prior 4-week window; null when nothing logged either side
+    const trend = (agg.sessions === 0 && prior.sessions === 0) ? null : agg.percent - prior.percent
+    const pat = parseHabitPattern(kr.title)
+    const cadence = pat.mode === 'daily' ? 'daily'
+      : pat.mode === 'weekly_count' ? `${pat.target || 1}×/wk`
+      : pat.mode === 'weekly_percentage' ? `${pat.target || 0}%/wk`
+      : pat.mode === 'monthly_count' ? `${pat.target || 0}/mo` : ''
+    const wkTarget = pat.mode === 'daily' ? 7
+      : pat.mode === 'weekly_count' ? (pat.target || null)
+      : pat.mode === 'weekly_percentage' ? Math.round(((pat.target || 0) / 100) * 7)
+      : null
+    const wkDone = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
+    const wkLabel = wkTarget != null ? `${wkDone} / ${wkTarget}` : `${wkDone}`
+    const flipped = !!flippedM[kr.id]
+    return (
+      <div key={kr.id} className={`hcard t-${tone}${flipped ? ' flipped' : ''}`}>
+        <div className="h-inner">
+          <div className="h-face" onClick={() => toggleFlip(kr.id)} title="Tap to check off this week">
+            <h4>{kr.title}</h4>
+            <div className="hero-row">
+              <span className="hero">{agg.percent}<small>%</small></span>
+              {trend != null && (
+                trend > 0
+                  ? <span className="trend up" title="vs previous 4 weeks">▲ {trend} pts</span>
+                  : trend < 0
+                    ? <span className="trend down" title="vs previous 4 weeks">▼ {Math.abs(trend)} pts</span>
+                    : <span className="trend flat" title="vs previous 4 weeks">steady</span>
+              )}
+            </div>
+            <div className="hsub">{agg.sessions} / {agg.expected} · {cadence}</div>
+            <div className="hf-foot">
+              <span className="wkcount">{wkLabel} this wk</span>
+              <span className="flipnote">tap → check off</span>
+            </div>
+          </div>
+          <div className="h-face h-back">
+            <div className="bh"><h4>{kr.title}</h4><button className="back" onClick={() => toggleFlip(kr.id)}>↩ back</button></div>
+            <div className="bcount">{wkLabel} this week</div>
+            <div className="daygrid">
+              {weekDates.map((d, i) => {
+                const isOn = checkinSet.has(`${kr.id}:${d}`)
+                return (
+                  <div key={d} className={`day${d === todayStr ? ' today' : ''}`}>
+                    <span className="dl">{DOW[i]}</span>
+                    <button className={`dd${isOn ? ' on' : ''}`} title={`${DOW[i]} · ${d}`} onClick={() => toggleHabit(kr.id, d)} />
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   // One objective card (collapsed pill-row, or expanded rail | KRs | actions).
   function renderObjCard(g: typeof board[number]) {
     const { obj, fullKRs, miniKRs, allKRs, actThisWeek, actBacklog, total, done, onN, offN, thisWkActs, carriedN } = g
@@ -691,12 +757,23 @@ export default function Home({
         {quote.author && <span>— {quote.author}</span>}
       </div>
 
-      {/* metrics — flip cards */}
-      {metricKRs.length > 0 && (
-        <>
-          <div className="seclbl"><span className="lbl">Key metrics</span><span className="rule" /></div>
-          <div className="metrics">{metricKRs.map(metricCard)}</div>
-        </>
+      {/* vitals — metric + habit flip cards */}
+      {(metricKRs.length > 0 || habitKRs.length > 0) && (
+        <div className="vitals">
+          <div className="seclbl"><span className="lbl">Vitals</span><span className="rule" /></div>
+          {metricKRs.length > 0 && (
+            <div className="vrow">
+              <div className="sublbl">Metrics · {ACTIVE_Q}</div>
+              <div className="metrics">{metricKRs.map(metricCard)}</div>
+            </div>
+          )}
+          {habitKRs.length > 0 && (
+            <div className="vrow">
+              <div className="sublbl">Habits · 4-week rolling</div>
+              <div className="habits-cards">{habitKRs.map(habitCard)}</div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* body: objectives (grouped by space in All view) + habits rail */}
@@ -738,30 +815,6 @@ export default function Home({
             </div>
           )}
         </div>
-
-        {/* habits — far-right simple rail */}
-        {habitKRs.length > 0 && (
-          <div className="hrail">
-            <div className="seclbl hd"><span className="lbl">Habits</span></div>
-            <div className="hbox">
-              {habitKRs.map(kr => {
-                const dn = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
-                const on = healthTone(kr.health_status).cls === 't-nominal'
-                return (
-                  <div key={kr.id} className={`hrow${on ? '' : ' off'}`}>
-                    <div className="hn"><h5>{kr.title}</h5><span className={`hstat ${on ? 'on' : 'off'}`}>{on ? `${dn} / wk` : 'off'}</span></div>
-                    <div className="hdots">
-                      {weekDates.map((d, i) => {
-                        const isOn = checkinSet.has(`${kr.id}:${d}`)
-                        return <button key={d} className={`hdot${isOn ? ' on' : ''}`} title={`${DOW[i]} · ${d}`} onClick={() => toggleHabit(kr.id, d)} />
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
       </div>
 
       {editingKR && (
@@ -818,7 +871,7 @@ export default function Home({
         .seclbl .rule{flex:1;height:1px;background:var(--line);}
 
         /* key metric flip cards */
-        .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:24px;}
+        .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;}
         .mcard{height:150px;perspective:1200px;cursor:pointer;}
         .m-inner{position:relative;width:100%;height:100%;transition:transform .5s cubic-bezier(.4,.1,.2,1);transform-style:preserve-3d;}
         .mcard.flipped .m-inner{transform:rotateY(180deg);}
@@ -847,6 +900,47 @@ export default function Home({
         .rd .rdelta.dn{color:var(--nw-caution-text);}
         .rd-empty{font-family:var(--font-mono);font-size:10px;color:var(--navy-600);}
         .logbtn{margin-top:7px;font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--accent);background:var(--accent-dim);border:none;border-radius:6px;padding:5px 0;cursor:pointer;}
+
+        /* vitals band — metrics + habit flip cards */
+        .vitals{margin-bottom:24px;}
+        .vrow + .vrow{margin-top:16px;}
+        .sublbl{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label-dim);margin:0 0 9px;}
+
+        /* habit flip cards (front % + trend / back week check-off) */
+        .habits-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:13px;}
+        .hcard{height:132px;perspective:1200px;cursor:pointer;}
+        .h-inner{position:relative;width:100%;height:100%;transition:transform .5s cubic-bezier(.4,.1,.2,1);transform-style:preserve-3d;}
+        .hcard.flipped .h-inner{transform:rotateY(180deg);}
+        .h-face{position:absolute;inset:0;backface-visibility:hidden;-webkit-backface-visibility:hidden;background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px solid var(--line);border-left:3px solid var(--ba,var(--navy-500));border-radius:13px;padding:13px 15px 11px;display:flex;flex-direction:column;}
+        .h-face:hover{border-color:var(--line-strong);border-left-color:var(--ba,var(--navy-500));}
+        .h-back{transform:rotateY(180deg);}
+        .hcard h4{margin:0;font-family:var(--font-display);font-weight:600;font-size:12.5px;color:var(--nw-cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .hero-row{display:flex;align-items:baseline;gap:9px;margin:9px 0 0;}
+        .hero{font-family:var(--font-mono);font-size:32px;font-weight:600;line-height:1;letter-spacing:-.01em;color:var(--hc,var(--navy-200));font-variant-numeric:tabular-nums;}
+        .hero small{font-size:15px;}
+        .trend{font-family:var(--font-mono);font-size:10px;font-weight:600;white-space:nowrap;}
+        .trend.up{color:var(--nw-nominal-text);}
+        .trend.down{color:var(--nw-caution-text);}
+        .trend.flat{color:var(--navy-400);}
+        .hsub{font-family:var(--font-mono);font-size:9px;color:var(--navy-500);margin-top:6px;letter-spacing:.02em;}
+        .hf-foot{display:flex;align-items:center;justify-content:space-between;margin-top:auto;gap:6px;}
+        .wkcount{font-family:var(--font-mono);font-size:9.5px;font-weight:600;color:var(--hc,var(--navy-300));white-space:nowrap;}
+        .h-back .bh{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+        .h-back .back{font-family:var(--font-mono);font-size:9px;color:var(--navy-500);background:none;border:none;cursor:pointer;flex-shrink:0;}
+        .h-back .back:hover{color:var(--navy-100);}
+        .bcount{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--hc,var(--nw-label));margin:9px 0 0;letter-spacing:.04em;}
+        .daygrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-top:9px;}
+        .day{display:flex;flex-direction:column;align-items:center;gap:5px;}
+        .day .dl{font-family:var(--font-mono);font-size:8px;font-weight:600;color:var(--navy-500);letter-spacing:.02em;}
+        .day .dd{width:100%;height:26px;border-radius:8px;border:1.5px solid var(--navy-600);background:transparent;cursor:pointer;padding:0;transition:.12s;}
+        .day .dd:hover{border-color:var(--nw-nominal-text);}
+        .day .dd.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
+        .day.today .dl{color:var(--accent);}
+        .day.today .dd{box-shadow:0 0 0 1px var(--bg),0 0 0 2px var(--accent);}
+        .hcard.t-nominal{--hc:var(--nw-nominal-text);--ba:var(--nw-nominal-text);}
+        .hcard.t-caution{--hc:var(--nw-hero-amber);--ba:var(--nw-caution-text);}
+        .hcard.t-alarm{--hc:var(--nw-alarm-text);--ba:var(--nw-alarm-text);}
+        .hcard.t-standby{--hc:var(--nw-standby-text);--ba:var(--nw-standby-text);}
 
         /* body split: objectives (left) + habits rail (far right) */
         .body{display:flex;gap:22px;align-items:flex-start;}
@@ -991,22 +1085,6 @@ export default function Home({
         .addact{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);border:1px dashed var(--line-2);border-radius:6px;padding:5px 9px;background:none;cursor:pointer;margin-top:10px;width:100%;}
         .addact:hover{color:var(--accent);border-color:var(--accent);}
 
-        /* habits — far right rail */
-        .hrail{flex:0 0 210px;position:sticky;top:18px;}
-        .hrail .hd{margin-bottom:10px;}
-        .hbox{background:var(--surface);border:1px solid var(--line);border-radius:13px;padding:6px 0;}
-        .hrow{padding:9px 14px;}
-        .hrow + .hrow{border-top:1px solid var(--line);}
-        .hrow .hn{display:flex;align-items:center;justify-content:space-between;gap:8px;}
-        .hrow h5{margin:0;font-family:var(--font-display);font-weight:600;font-size:13px;color:var(--nw-cream);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-        .hrow.off h5{color:var(--navy-200);}
-        .hstat{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;flex-shrink:0;}
-        .hstat.off{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
-        .hstat.on{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
-        .hdots{display:flex;gap:5px;margin-top:8px;}
-        .hdot{width:13px;height:13px;border-radius:50%;border:1.5px solid var(--navy-600);background:transparent;cursor:pointer;padding:0;}
-        .hdot.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
-
         .closes{display:flex;flex-direction:column;gap:10px;margin-top:30px;}
         .closebar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,rgba(200,150,66,.07),transparent 55%),var(--surface);border:1px solid var(--line-2);border-radius:13px;padding:13px 16px;}
         .closebar .ci{width:32px;height:32px;border-radius:9px;background:rgba(200,150,66,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
@@ -1018,7 +1096,6 @@ export default function Home({
         @media (max-width:1080px){
           .metrics{grid-template-columns:repeat(2,1fr);}
           .body{flex-direction:column;}
-          .hrail{position:static;flex:1 1 auto;width:100%;}
         }
         @media (max-width:760px){
           .exp{flex-direction:column;}
