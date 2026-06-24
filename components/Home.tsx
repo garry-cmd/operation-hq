@@ -55,6 +55,21 @@ function fmtMetric(v: number | string | null | undefined, unit: string | null | 
   if (!unit || unit === '#') return s
   return `${s} ${unit}`
 }
+// Parse "<n>Q<year>" → quarter start/end dates (local midnight).
+function quarterBounds(q: string): { start: Date; end: Date } | null {
+  const m = /^([1-4])Q(\d{4})$/.exec(q)
+  if (!m) return null
+  const n = +m[1], y = +m[2]
+  return { start: new Date(y, (n - 1) * 3, 1), end: new Date(y, n * 3, 0) }
+}
+// Pace chip from progress% vs time-elapsed% (±8 pts = on pace; >20 behind = late).
+function paceChip(progress: number, elapsed: number): { cls: string; txt: string } {
+  if (progress >= 100) return { cls: 'done', txt: 'complete' }
+  const d = progress - elapsed
+  if (d >= 8) return { cls: 'ahead', txt: `ahead +${Math.round(d)}` }
+  if (d <= -8) { const amt = Math.round(-d); return { cls: amt > 20 ? 'late' : 'behind', txt: `behind ${amt}` } }
+  return { cls: 'onpace', txt: 'on pace' }
+}
 function loadLS<T>(key: string, fallback: T): T {
   if (typeof window === 'undefined') return fallback
   try { const v = window.localStorage.getItem(key); return v == null ? fallback : (JSON.parse(v) as T) } catch { return fallback }
@@ -420,6 +435,20 @@ export default function Home({
     const gid = `sp-${kr.id.slice(0, 8)}`
     const delta = latest != null && prev != null ? latest - prev : null
     const flipped = !!flippedM[kr.id]
+    // required run-rate to hit target by the KR's end (own end_date, else quarter end)
+    const rqb = quarterBounds(ACTIVE_Q)
+    const rEnd = kr.end_date ? parseDateLocal(kr.end_date) : rqb?.end ?? null
+    let rate: { cls: string; txt: string } | null = null
+    if (target != null && latest != null && rEnd) {
+      const weeksLeft = Math.max(0, (rEnd.getTime() - parseDateLocal(todayStr).getTime()) / (7 * 864e5))
+      const remaining = dir === 'up' ? target - latest : latest - target
+      if (remaining <= 0) rate = { cls: 'met', txt: 'target met · hold' }
+      else if (weeksLeft < 0.15) rate = { cls: 'urgent', txt: `${fmtMetric(remaining, unit)} short — window closed` }
+      else {
+        const r = Math.round((remaining / weeksLeft) * 10) / 10
+        rate = { cls: weeksLeft < 2 ? 'urgent' : 'ok', txt: `need ${dir === 'up' ? '+' : '−'}${fmtMetric(r, unit)}/wk` }
+      }
+    }
     // readings, newest first, with Δ vs the prior reading
     const readings = ck.map((c, i) => {
       const v = Number(c.value)
@@ -435,6 +464,7 @@ export default function Home({
               <b>{latest == null ? '—' : fmtMetric(latest, unit)}</b>
               {target != null && <span className="ghost">/ {fmtMetric(target, unit)}</span>}
             </div>
+            {rate && <div className={`rate ${rate.cls}`}>{rate.txt}</div>}
             <svg className="spark" viewBox="0 0 100 30" preserveAspectRatio="none">
               {pts ? (
                 <>
@@ -551,6 +581,17 @@ export default function Home({
     const pct = total ? Math.round((done / total) * 100) : 0
     const oc = obj.space_id ? spaceDisplayColor(spaceById.get(obj.space_id)!) : 'var(--navy-500)'
     const isCol = !!collapsed[obj.id]
+    // pacing: progress% vs time-elapsed in the objective's window (own dates, else active quarter)
+    const qb = quarterBounds(ACTIVE_Q)
+    const winStart = obj.start_date ? parseDateLocal(obj.start_date) : qb?.start ?? null
+    const winEnd = obj.end_date ? parseDateLocal(obj.end_date) : qb?.end ?? null
+    let pace: { cls: string; txt: string; elapsed: number } | null = null
+    if (total > 0 && winStart && winEnd && winEnd.getTime() > winStart.getTime()) {
+      const now = parseDateLocal(todayStr).getTime()
+      const e = Math.max(0, Math.min(1, (now - winStart.getTime()) / (winEnd.getTime() - winStart.getTime())))
+      const elapsed = Math.round(e * 100)
+      pace = { ...paceChip(pct, elapsed), elapsed }
+    }
     const pillEls = (
       <div className="pills">
         {done > 0 && <span className="opill done">{done} done</span>}
@@ -566,7 +607,7 @@ export default function Home({
           <div className="col-row" onClick={() => toggleCollapse(obj.id)}>
             <span className="chev">▸</span>
             <span className="col-name">{obj.name}</span>
-            <div className="prog-inline"><span className="prog-num">{pct}%</span><span className="prog-bar"><i style={{ width: `${pct}%` }} /></span></div>
+            <div className="prog-inline"><span className="prog-num">{pct}%</span><span className="prog-bar"><i style={{ width: `${pct}%` }} />{pace && <span className="pm" style={{ left: `${pace.elapsed}%` }} />}</span>{pace && <span className={`pacechip ${pace.cls}`} title={`ideal pace ${pace.elapsed}% of the window`}>{pace.txt}</span>}</div>
             {pillEls}
             <button className="ohb" title="Links & log" onClick={e => { e.stopPropagation(); onOpenObjective(obj.id) }}>⋯</button>
             <button className="ohb" title="Edit objective" onClick={e => { e.stopPropagation(); setEditingObjective(obj) }}>✎</button>
@@ -599,8 +640,9 @@ export default function Home({
             </div>
             <div className="prog">
               <div className="num">{pct}<small>%</small></div>
-              <div className="track"><i style={{ width: `${pct}%` }} /></div>
-              <div className="sub">{done} of {total} KRs done</div>
+              <div className="track"><i style={{ width: `${pct}%` }} />{pace && <span className="pm" style={{ left: `${pace.elapsed}%` }} />}</div>
+              <div className="sub">{done} of {total} KRs done{pace ? ` · ideal ${pace.elapsed}%` : ''}</div>
+              {pace && <span className={`pacechip ${pace.cls}`} style={{ marginTop: 7, display: 'inline-block' }}>{pace.txt}</span>}
             </div>
             {pillEls}
             <div className="rail-acts">
@@ -882,6 +924,10 @@ export default function Home({
         .mval{display:flex;align-items:baseline;gap:6px;margin-top:6px;}
         .mval b{font-family:var(--font-display);font-weight:700;font-size:25px;letter-spacing:-.02em;line-height:1;color:var(--nw-cream);}
         .mval .ghost{font-family:var(--font-mono);font-size:11px;color:var(--navy-500);}
+        .rate{font-family:var(--font-mono);font-size:10px;font-weight:600;margin-top:7px;letter-spacing:.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .rate.met{color:var(--nw-nominal-text);}
+        .rate.ok{color:var(--nw-caution-text);}
+        .rate.urgent{color:var(--nw-alarm-text);}
         .spark{margin-top:auto;width:100%;height:32px;display:block;}
         .mfoot{display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:6px;}
         .delta{font-family:var(--font-mono);font-size:10.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -965,8 +1011,15 @@ export default function Home({
         .col-name{font-family:var(--font-display);font-weight:600;font-size:14.5px;color:var(--nw-cream);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px;}
         .prog-inline{display:flex;align-items:center;gap:8px;flex-shrink:0;}
         .prog-num{font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--oc,var(--navy-200));letter-spacing:-.01em;}
-        .prog-bar{width:56px;height:4px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .prog-bar{position:relative;width:56px;height:6px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
         .prog-bar i{display:block;height:100%;background:var(--oc,var(--navy-400));border-radius:3px;}
+        .pm{position:absolute;top:0;height:100%;width:2px;border-radius:1px;background:var(--navy-100);box-shadow:0 0 0 1px var(--surface);}
+        .pacechip{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.02em;padding:2px 7px;border-radius:5px;white-space:nowrap;flex-shrink:0;}
+        .pacechip.ahead{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
+        .pacechip.onpace{color:var(--nw-standby-text);background:var(--surface-2);}
+        .pacechip.behind{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
+        .pacechip.late{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
+        .pacechip.done{color:var(--nw-nominal-text);background:rgba(127,226,122,.14);}
         .pills{display:flex;flex-wrap:wrap;gap:5px;flex:1;}
         .opill{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:5px;white-space:nowrap;}
         .opill.done{color:var(--nw-nominal-text);background:rgba(127,226,122,.1);}
@@ -986,7 +1039,7 @@ export default function Home({
         .prog{margin:12px 0 0;}
         .prog .num{font-family:var(--font-display);font-size:30px;font-weight:700;color:var(--oc,var(--nw-cream));line-height:1;letter-spacing:-.02em;}
         .prog .num small{font-size:14px;color:var(--navy-500);font-weight:600;margin-left:2px;}
-        .prog .track{margin-top:7px;height:4px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .prog .track{position:relative;margin-top:7px;height:6px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
         .prog .track i{display:block;height:100%;background:var(--oc,var(--navy-400));border-radius:3px;}
         .prog .sub{font-family:var(--font-mono);font-size:9px;color:var(--navy-500);margin-top:6px;}
         .rail .pills{margin-top:12px;}
