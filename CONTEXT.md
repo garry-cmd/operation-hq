@@ -3,14 +3,14 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 21, 2026**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 24, 2026**.
 
 ---
 
 ## What this is
 
 A single-user life-management + OKR system. Desktop-first, used many times a day.
-Modules: **Home** (all-spaces weekly deck + space filter + weekly-close strip; default landing) ·
+Modules: **Home** (objective spine + **Vitals** band [metric/habit flip cards] + **Focus-this-week** action band + space filter + weekly-close strip; default landing) ·
 **Chief of Staff** (AI agent, voice) · **Home + Roadmap** (strategic — work the plan / shape the plan) · **Tasks + Notes + Calendar**
 (daily) · **Reflect** (per-space weekly ritual hub — Plan + Close + archive) · **Settings** ·
 **Parking** (archive). Proactive web-push briefings layer on top. Garry is the sole user
@@ -51,7 +51,18 @@ running deployment can't see it.
 
 ## Current state — shipped
 
-### Jun 23 (latest) — Home board rebuild (grouped 3-col) + discoverable KR controls + Failed status
+### Jun 24 (latest) — Home Vitals (habit flip cards) + OKR pacing/run-rate + Focus this week & per-action update threads
+
+Three builds on the Home component (clone HEAD at session start `1148564`), all mock-before-build (`hq-habit-flip-mock`, `hq-pacing-mock`, `hq-focus-week-mock`, `hq-home-vitals-mock`).
+
+**1 · Vitals band — habit flip cards, dot-rail removed.** Habits now render as flip cards matching the metric cards (shared `flippedM`/`toggleFlip`): front = 4-week rolling % (tone-colored) + sessions/expected·cadence + this-week count + a **directional trend badge** (▲/▼ pts vs the prior 4 weeks); back = the 7-day check-off squares (reuses `checkinSet`/`weekDates`/`toggleHabit`). The old sticky far-right **`.hrail` dot-rail is gone**. The metrics-only band became a **`.vitals`** block with two `.vrow`s (Metrics · ACTIVE_Q / Habits · 4-week rolling); `habitCard(kr)` mirrors `metricCard`. **`lib/habitUtils.ts`:** `calculateRollingAggregate(kr, checkins, weeks=4, endDate?)` gained an optional `endDate` (defaults to now) so the prior-window % can be computed for the trend — backward-compatible, existing callers unaffected.
+
+**2 · OKR pacing + metric run-rate.** Competitive scan (Quantive / Profit.co / Mooncamp / Tability / Weekdone) located the real gap vs other OKR tools = **computed pacing** (time-elapsed vs progress), not hand-set health. On each objective progress bar: an **ideal-pace marker `▾` (`.pm`)** at elapsed-% + a **`.pacechip`** (ahead / on-pace / behind / well-behind / complete) from `progress − elapsed` — ±8 pts = on pace, >20 behind = red (late) else amber. Window = the objective's own `start_date`/`end_date`, else `quarterBounds(ACTIVE_Q)` (16 of 17 objectives are dateless). Module helpers `quarterBounds(q)` + `paceChip(progress, elapsed)`; rendered on **both** the collapsed `.prog-inline` and expanded `.prog`/`.track`. Metric cards gained a **run-rate line** (`.rate`): `need +X/wk → target` from weeks-left to the KR `end_date` (or quarter end), "target met · hold" once past, red/urgent under 2 weeks. Bars bumped 4→6px. **Data fix (not a migration):** the *Net Worth 500k* KR had `target_value=500` with values stored in dollars (~503000) — corrected to `500000` so it reads $503,000 / $500,000.
+
+**3 · Focus this week + per-action update threads (Issue 1 + Issue 2 Phase A).** The Jun 23 rebuild moved actions into per-objective columns and dropped the consolidated view — completed this-week actions still render struck but are tiny, siloed, and fall out once the week rolls. Fix = a **`.focusw` "Focus this week" band** under the quote, above Vitals: every this-week action across objectives, grouped by space (`focusBySpace` memo), full-width rows (checkbox · title · carried · KR tag); **completed kept** (checked, struck, sorted to group bottom) with a `N / M done` counter + bar and a **`hide done`** toggle (`hq-home-hide-focus-done`); fully-done groups skip when hidden. Per-objective action columns untouched.
+**Issue 2 Phase A** — `objective_logs` is the unified log substrate (objective-scoped, optional KR scope via `roadmap_item_id`). **Migration `objective_logs_add_weekly_action_id`** adds a nullable `weekly_action_id` FK (**ON DELETE CASCADE** — an action's notes die with it; weekly progress belongs on the KR/objective). Each focus row gets an inline **`▸ note` thread** (`logsByAction` memo; `submitActLog` writes `{objective_id: kr.annual_objective_id, weekly_action_id, content, log_date}` — deliberately **no** `roadmap_item_id`, so it stays action-only and off the KR lane). Objectives (⋯ drawer) + KRs (inline chip) already had threads; this closes the action level. `ObjectiveLog.weekly_action_id` + `NewLogInput.weekly_action_id` added (`create` passes input through, `listAll` is `select('*')`). Files: `components/Home.tsx`, `lib/types.ts`, `lib/db/objectiveExtras.ts`, `lib/habitUtils.ts`.
+
+### Jun 23 — Home board rebuild (grouped 3-col) + discoverable KR controls + Failed status
 
 Iterated the objective-spine Home into a denser board, then made KR mutation discoverable, then added a terminal **Failed** status. Mock-before-build cadence (`hq-home-v2..v7.html`).
 
@@ -581,6 +592,9 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **Issue 2 Phase B — weekly-update ritual (deferred).** Phase A gave actions an inline update thread; Phase B makes "weekly update" first-class: a `＋ this week's update` prompt stamped to the current week (per objective/KR), logs **grouped/badged by week**, and a tie-in to **Close Week** so the weekly reflection is part of the ritual. Build when Garry's tested Phase A.
+- **Action update thread only on the Focus band.** The `▸ note` thread lives on `.focusw` rows but not yet on the per-objective `.act-col` rows (`colActionRow`). Mirror it there if the dual surface is wanted — same `logsByAction`/`submitActLog`.
+- **Objective logs are ⋯-drawer only.** Objectives write/read logs through `ObjectivePanel`; KRs + actions have inline threads on Home. Promote objective logs inline on the card if more prominence is wanted (the card is dense — likely a full-width "Updates" strip under the expanded columns).
 - **Space deep-links land on Home unfiltered.** ⌘K "go to a space" now routes to Home but doesn't set
   Home's sticky `hq-home-space-filter`, so Home opens on whatever filter was last persisted. Push the
   space into Home's filter from the route if the mismatch bugs Garry. ~15min.
@@ -609,8 +623,9 @@ redirect URIs for prod + `localhost:3000`.
   Delete when convenient.
 - **Rotate voice keys** — `DEEPGRAM_API_KEY` + `ELEVENLABS_API_KEY` transited a chat session during
   setup. Rotate in the provider dashboards + update Vercel when convenient. (Low priority.)
-- **Migrations applied via Supabase MCP aren't repo files.** This session's `add_failed_health_status`,
-  `objective_logs.roadmap_item_id` (and earlier `create_tracked_files`,
+- **Migrations applied via Supabase MCP aren't repo files.** This session's `objective_logs_add_weekly_action_id`;
+  prior `add_failed_health_status`, `objective_logs.roadmap_item_id`, `add_objective_start_end_dates`
+  (and earlier `create_tracked_files`,
   `create_file_versions`, `weekly_actions_week_start_nullable`, `create_push_subscriptions`,
   `create_briefings`, `relax_calendar_block_source_for_freeform_events`) live in
   Supabase's migration history, not as tracked files. Fine operationally; capture as files only if
@@ -809,7 +824,8 @@ spaces
   │     │     ├── weekly_actions (roadmap_item_id)  .estimated_minutes  .week_start NULLABLE (NULL = unscheduled backlog)
   │     │     ├── habit_checkins / metric_checkins (UNIQUE roadmap_item_id, week_start) / daily_checkins
   │     ├── objective_links (objective_id)
-  │     └── objective_logs (objective_id)
+  │     └── objective_logs (objective_id) — unified log/update substrate.
+  │             .roadmap_item_id (NULL ok → KR-scoped) · .weekly_action_id (NULL ok → action-scoped, ON DELETE CASCADE) · .title · .content · .log_date
   ├── weekly_reviews (space_id) UNIQUE(space_id, week_start)  .closed_at (NULL=draft)
   ├── tasks (space_id XOR list_id; BOTH NULL = unified Inbox)
   │     .roadmap_item_id (KR link) · .parent_task_id (subtasks) · .section_id
