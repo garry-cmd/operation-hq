@@ -6,9 +6,9 @@ import * as checkinsDb from '@/lib/db/checkins'
 import * as reviewsDb from '@/lib/db/reviews'
 import {
   AnnualObjective, RoadmapItem, WeeklyAction, HabitCheckin, MetricCheckin,
-  WeeklyReview, ReviewRating, HealthStatus,
+  WeeklyReview, ReviewRating, HealthStatus, ObjectiveLog,
 } from '@/lib/types'
-import { ACTIVE_Q, addWeeks, formatWeek, getMonday } from '@/lib/utils'
+import { ACTIVE_Q, addWeeks, formatWeek, getMonday, parseDateLocal } from '@/lib/utils'
 import { calculateHabitProgress, parseHabitPattern } from '@/lib/habitUtils'
 import { computeMetricProgress } from '@/lib/metricUtils'
 import { getCurrentQuarterKRs, getHabitKRs, getMetricKRs, getOutcomeKRs } from '@/lib/krFilters'
@@ -45,6 +45,7 @@ type Props = {
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   setWeekStart: (fn: (s: string) => string) => void
   activeSpaceId: string
+  logs: ObjectiveLog[]
   toast: (m: string) => void
   onClose: () => void
 }
@@ -72,7 +73,7 @@ const initialPersisted = (existing?: WeeklyReview): PersistedState => ({
 export default function CloseWeekWizard({
   closingWeek, objectives, roadmapItems, setRoadmapItems, actions, setActions,
   habitCheckins, metricCheckins, setMetricCheckins,
-  reviews, setReviews, setWeekStart, activeSpaceId, toast, onClose,
+  reviews, setReviews, setWeekStart, activeSpaceId, logs, toast, onClose,
 }: Props) {
   // The week the new actions land in. If the user is closing a stale past week
   // (e.g. Wednesday, last Monday never closed), the new actions go in the
@@ -141,6 +142,20 @@ export default function CloseWeekWizard({
     }
     return { kr, dots, label, labelColor }
   })
+
+  // Logs written during the closing week (Mon–Sun), grouped by KR.
+  // Used in Step 1 as a "what happened" recall surface.
+  const weekLogs: { kr: RoadmapItem; logs: ObjectiveLog[] }[] = (() => {
+    const weekEnd = (() => { const d = parseDateLocal(closingWeek); d.setDate(d.getDate() + 6); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` })()
+    const inWindow = logs.filter(l => l.log_date >= closingWeek && l.log_date <= weekEnd && l.roadmap_item_id)
+    const byKR = new Map<string, ObjectiveLog[]>()
+    for (const l of inWindow) {
+      const a = byKR.get(l.roadmap_item_id!) ?? []; a.push(l); byKR.set(l.roadmap_item_id!, a)
+    }
+    return activeKRs
+      .filter(kr => byKR.has(kr.id))
+      .map(kr => ({ kr, logs: (byKR.get(kr.id) ?? []).sort((a, b) => (b.log_date ?? '').localeCompare(a.log_date ?? '')) }))
+  })()
 
   // ---------- Step 1: KR mutations save immediately (matches Reflect today) ----------
   async function setKRHealth(kr: RoadmapItem, health: HealthStatus) {
@@ -476,6 +491,7 @@ export default function CloseWeekWizard({
             outcomeKRs={outcomeKRs}
             objectives={objectives}
             closingWeek={closingWeek}
+            weekLogs={weekLogs}
             rating={s.rating}
             win={s.win}
             slipped={s.slipped}
@@ -588,7 +604,7 @@ function Header({ step, closingWeek, onSkip, skipping }: {
 // ============================================================================
 function Step1({
   habitRecap, metricKRs, metricCheckins, outcomeKRs, objectives, closingWeek,
-  rating, win, slipped, adjustNotes,
+  weekLogs, rating, win, slipped, adjustNotes,
   onRating, onWin, onSlipped, onAdjust, onSetHealth, onSetProgress, onLogMetric,
   onContinue, advancing,
 }: {
@@ -598,6 +614,7 @@ function Step1({
   outcomeKRs: RoadmapItem[]
   objectives: AnnualObjective[]
   closingWeek: string
+  weekLogs: { kr: RoadmapItem; logs: ObjectiveLog[] }[]
   rating: ReviewRating | null
   win: string; slipped: string; adjustNotes: string
   onRating: (r: ReviewRating) => void
@@ -610,6 +627,29 @@ function Step1({
 }) {
   return (
     <>
+      {weekLogs.length > 0 && (
+        <Card title={`Updates logged this week · ${closingWeek.slice(5)}`}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+            {weekLogs.map(({ kr, logs: kLogs }, idx) => (
+              <div key={kr.id} style={{ paddingBottom: idx < weekLogs.length - 1 ? 12 : 0, marginBottom: idx < weekLogs.length - 1 ? 12 : 0, borderBottom: idx < weekLogs.length - 1 ? '1px solid var(--navy-700)' : 'none' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--navy-200)' }}>{kr.title}</span>
+                  <span style={{ fontSize: 9, fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '1px 6px', borderRadius: 4,
+                    color: kr.health_status === 'on_track' ? 'var(--nw-nominal-text)' : kr.health_status === 'off_track' || kr.health_status === 'blocked' ? 'var(--nw-alarm-text)' : 'var(--nw-standby-text)',
+                    background: kr.health_status === 'on_track' ? 'rgba(127,226,122,.1)' : kr.health_status === 'off_track' || kr.health_status === 'blocked' ? 'rgba(255,100,82,.1)' : 'var(--navy-700)',
+                  }}>{kr.health_status?.replace('_', ' ') ?? 'not started'}</span>
+                </div>
+                {kLogs.map(l => (
+                  <div key={l.id} style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 12.5, color: 'var(--navy-200)', lineHeight: 1.45, alignItems: 'flex-start' }}>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--navy-500)', whiteSpace: 'nowrap', paddingTop: 2, minWidth: 36 }}>{(l.log_date ?? '').slice(5)}</span>
+                    <span style={{ flex: 1 }}>{l.title ? <b style={{ color: 'var(--navy-50)', fontWeight: 600 }}>{l.title}. </b> : null}{l.content}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
       {habitRecap.length > 0 && (
         <Card title="Habits this week">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '8px 14px', alignItems: 'center', fontSize: 13 }}>

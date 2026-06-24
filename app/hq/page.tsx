@@ -892,6 +892,7 @@ export default function HQPage() {
             reviews={reviews.filter(r => r.space_id === cs)}
             setReviews={setReviews}
             setWeekStart={updater => setWeekStartForSpace(cs, updater)}
+            logs={logs.filter(l => csKRIds.has(l.roadmap_item_id ?? ""))}
             activeSpaceId={cs}
             toast={setToast}
             onClose={() => setClosingWizard(null)}

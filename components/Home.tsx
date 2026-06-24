@@ -159,6 +159,11 @@ export default function Home({
     // collapsing must also tear down an open composer, or (logsOpen||composing) keeps it visible
     if (!willOpen && logComposer?.krId === id) { setLogComposer(null); setLogDraft('') }
   }
+  // Tracks which prior-week groups are expanded inside a KR log panel.
+  // Key = `${krId}::${weekMonday}`. Current week is always open; prior weeks default collapsed.
+  const [openKrWeekGroups, setOpenKrWeekGroups] = useState<Record<string, boolean>>({})
+  const toggleKrWeekGroup = (krId: string, wk: string) =>
+    setOpenKrWeekGroups(p => ({ ...p, [`${krId}::${wk}`]: !p[`${krId}::${wk}`] }))
   const [krMenu, setKrMenu] = useState<{ id: string; x: number; y: number } | null>(null)
   const openKrMenu = (e: ReactMouseEvent, id: string) => {
     if (krMenu?.id === id) { setKrMenu(null); return }
@@ -243,6 +248,30 @@ export default function Home({
     }
     for (const a of m.values()) a.sort((x, y) => (y.log_date ?? '').localeCompare(x.log_date ?? ''))
     return m
+  }, [logs])
+
+  // ── logs grouped by KR, then by week (for the grouped panel in renderObjCard) ──
+  const logsByKRGrouped = useMemo(() => {
+    // Returns Map<krId, Array<{ weekMonday: string; logs: ObjectiveLog[] }>> newest-first
+    const m = new Map<string, Map<string, ObjectiveLog[]>>()
+    for (const l of logs) {
+      if (!l.roadmap_item_id || l.weekly_action_id) continue  // skip action-scoped logs
+      const wk = getMonday(parseDateLocal(l.log_date ?? l.created_at))
+      const byKR = m.get(l.roadmap_item_id) ?? new Map<string, ObjectiveLog[]>()
+      const byWk = byKR.get(wk) ?? []
+      byWk.push(l)
+      byKR.set(wk, byWk)
+      m.set(l.roadmap_item_id, byKR)
+    }
+    // Sort each week's entries newest-first; return weeks newest-first
+    const result = new Map<string, { weekMonday: string; logs: ObjectiveLog[] }[]>()
+    for (const [krId, byWk] of m) {
+      const weeks = [...byWk.entries()]
+        .map(([wk, ls]) => ({ weekMonday: wk, logs: ls.sort((a, b) => (b.log_date ?? '').localeCompare(a.log_date ?? '')) }))
+        .sort((a, b) => b.weekMonday.localeCompare(a.weekMonday))
+      result.set(krId, weeks)
+    }
+    return result
   }, [logs])
 
   // ── logs grouped by action (per-action update thread) ──
@@ -762,11 +791,42 @@ export default function Home({
                     <button className={`cb${isDone ? ' on' : ''}`} onClick={() => toggleKRDone(kr)} title={isDone ? 'Mark not done' : 'Mark done'}>{isDone ? '✓' : ''}</button>
                     <span className="kt">{kr.title}{metricChip}</span>
                     <button className={`st ${tone.cls} clk`} title="Change status" onClick={e => openKrMenu(e, kr.id)}>{tone.label}</button>
-                    {krLogs.length > 0 && (
-                      <button className={`logchip${logsOpen ? ' open' : ''}`} onClick={() => toggleLogs(kr.id)} title={logsOpen ? 'Hide logs' : 'Show logs'}>
-                        <span className="lcar">▸</span>{krLogs.length} log{krLogs.length > 1 ? 's' : ''}
-                      </button>
-                    )}
+                    {(() => {
+                      const thisWk = getMonday()
+                      const grouped = logsByKRGrouped.get(kr.id) ?? []
+                      const thisWkCount = grouped.find(g => g.weekMonday === thisWk)?.logs.length ?? 0
+                      const totalCount = grouped.reduce((n, g) => n + g.logs.length, 0)
+                      if (totalCount === 0) {
+                        // No logs at all — always-visible quiet prompt
+                        return (
+                          <button className="upd-prompt" title="Add this week's update"
+                            onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft(''); setOpenLogs(p => ({ ...p, [kr.id]: true })); setKrMenu(null) }}>
+                            ＋ this week
+                          </button>
+                        )
+                      }
+                      if (thisWkCount > 0) {
+                        // Has update this week → accent badge
+                        return (
+                          <button className={`upd-badge${logsOpen ? ' open' : ''}`} title={logsOpen ? 'Hide updates' : 'Show updates'}
+                            onClick={() => toggleLogs(kr.id)}>
+                            <span className="lcar">▸</span>{thisWkCount} this week
+                          </button>
+                        )
+                      }
+                      // Has prior logs but not this week → quiet prompt + old log count
+                      return (
+                        <>
+                          <button className={`logchip${logsOpen ? ' open' : ''}`} onClick={() => toggleLogs(kr.id)} title={logsOpen ? 'Hide logs' : 'Show logs'}>
+                            <span className="lcar">▸</span>{totalCount} log{totalCount > 1 ? 's' : ''}
+                          </button>
+                          <button className="upd-prompt" title="Add this week's update"
+                            onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft(''); setOpenLogs(p => ({ ...p, [kr.id]: true })); setKrMenu(null) }}>
+                            ＋ this week
+                          </button>
+                        </>
+                      )
+                    })()}
                     <span className="kr-menu-wrap">
                       <button className="krmenu-btn" title="KR actions" onClick={e => openKrMenu(e, kr.id)}>⋯</button>
                       {krMenu?.id === kr.id && (
@@ -788,23 +848,54 @@ export default function Home({
                       )}
                     </span>
                   </div>
-                  {(logsOpen || composing) && (
-                    <div className="logs">
-                      {krLogs.map(l => (
-                        <div key={l.id} className="logline">
-                          <span className="d">{(l.log_date ?? '').slice(5)}</span>
-                          <span className="t">{l.title ? <b>{l.title}. </b> : null}{l.content}</span>
-                        </div>
-                      ))}
-                      {composing && (
-                        <textarea className="log-input" autoFocus value={logDraft}
-                          placeholder="Log an update for this KR…"
-                          onChange={e => setLogDraft(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitLog(); if (e.key === 'Escape') { setLogComposer(null); setLogDraft('') } }}
-                          onBlur={submitLog} />
-                      )}
-                    </div>
-                  )}
+                  {(logsOpen || composing) && (() => {
+                    const thisWk = getMonday()
+                    const grouped = logsByKRGrouped.get(kr.id) ?? []
+                    // Ensure current week group always appears (even if empty — for compose)
+                    const hasThisWk = grouped.some(g => g.weekMonday === thisWk)
+                    const allGroups: { weekMonday: string; logs: ObjectiveLog[] }[] = hasThisWk ? grouped : [{ weekMonday: thisWk, logs: [] as ObjectiveLog[] }, ...grouped]
+                    return (
+                      <div className="upd-panel">
+                        {allGroups.map(({ weekMonday: wk, logs: wkLogs }) => {
+                          const isCurrent = wk === thisWk
+                          const groupKey = `${kr.id}::${wk}`
+                          const isOpen = isCurrent || !!openKrWeekGroups[groupKey]
+                          const composingHere = composing && isCurrent
+                          const wkLabel = isCurrent ? `This week · ${wk.slice(5)}` : `${wk.slice(5)}`
+                          return (
+                            <div key={wk} className={`upd-wk${isCurrent ? ' cur' : ''}`}>
+                              <button className="upd-wk-hdr" onClick={() => { if (!isCurrent) toggleKrWeekGroup(kr.id, wk) }}>
+                                <span className="upd-wk-label">{wkLabel}</span>
+                                {!isCurrent && <span className="upd-wk-ct">{wkLogs.length}</span>}
+                                {!isCurrent && <span className={`upd-wk-chev${isOpen ? ' open' : ''}`}>▸</span>}
+                              </button>
+                              {isOpen && (
+                                <div className="upd-wk-body">
+                                  {wkLogs.map(l => (
+                                    <div key={l.id} className="logline">
+                                      <span className="d">{(l.log_date ?? '').slice(5)}</span>
+                                      <span className="t">{l.title ? <b>{l.title}. </b> : null}{l.content}</span>
+                                    </div>
+                                  ))}
+                                  {isCurrent && (
+                                    composingHere ? (
+                                      <textarea className="log-input" autoFocus value={logDraft}
+                                        placeholder="Update on this KR… (⌘↵ to save)"
+                                        onChange={e => setLogDraft(e.target.value)}
+                                        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitLog(); if (e.key === 'Escape') { setLogComposer(null); setLogDraft('') } }}
+                                        onBlur={submitLog} />
+                                    ) : (
+                                      <button className="addlog" onClick={() => { setLogComposer({ krId: kr.id, objId: obj.id }); setLogDraft('') }}>＋ add update</button>
+                                    )
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  })()}
                 </div>
               )
             })}
@@ -1218,6 +1309,25 @@ export default function Home({
         .st.t-caution{color:var(--nw-caution-text);background:rgba(245,184,64,.1);}
         .st.t-standby{color:var(--nw-standby-text);background:var(--surface-2);}
         .st.metricv{color:var(--navy-100);background:var(--surface-2);font-weight:600;text-transform:none;letter-spacing:0;}
+        .upd-prompt{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--t-3,var(--navy-600));border:1px dashed var(--line-2);border-radius:5px;padding:2px 8px;background:none;cursor:pointer;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:4px;transition:color .15s,border-color .15s;}
+        .upd-prompt:hover{color:var(--accent);border-color:var(--accent);}
+        .upd-badge{font-family:var(--font-mono);font-size:8.5px;font-weight:700;color:var(--accent);background:var(--accent-bg,var(--accent-dim));border:1px solid rgba(59,130,246,.3);border-radius:5px;padding:2px 7px;cursor:pointer;white-space:nowrap;flex-shrink:0;display:inline-flex;align-items:center;gap:4px;}
+        .upd-badge:hover{background:rgba(59,130,246,.18);}
+        .upd-badge.open{background:rgba(59,130,246,.2);}
+        .upd-badge .lcar{display:inline-block;font-size:7px;transition:transform .15s;}
+        .upd-badge.open .lcar{transform:rotate(90deg);}
+        .upd-panel{margin:2px 0 4px 25px;border-left:2px solid var(--line);padding-left:9px;display:flex;flex-direction:column;gap:0;}
+        .upd-wk{margin-bottom:3px;}
+        .upd-wk-hdr{display:flex;align-items:center;gap:6px;background:none;border:none;padding:3px 0;cursor:pointer;width:100%;}
+        .upd-wk.cur .upd-wk-hdr{cursor:default;}
+        .upd-wk-label{font-family:var(--font-mono);font-size:8.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;}
+        .upd-wk.cur .upd-wk-label{color:var(--accent);}
+        .upd-wk:not(.cur) .upd-wk-label{color:var(--nw-label-dim);}
+        .upd-wk:not(.cur) .upd-wk-hdr:hover .upd-wk-label{color:var(--nw-label);}
+        .upd-wk-ct{font-family:var(--font-mono);font-size:8px;color:var(--navy-600);}
+        .upd-wk-chev{font-size:7px;color:var(--navy-600);display:inline-block;transition:transform .12s;}
+        .upd-wk-chev.open{transform:rotate(90deg);}
+        .upd-wk-body{padding:2px 0 6px;display:flex;flex-direction:column;gap:3px;}
         .logchip{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--navy-500);background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:1px 6px;cursor:pointer;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;flex-shrink:0;}
         .logchip:hover{color:var(--navy-200);border-color:var(--navy-400);}
         .logchip.open{color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}
