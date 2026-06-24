@@ -165,6 +165,16 @@ export default function Home({
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
     setKrMenu({ id, x: r.right, y: r.bottom })
   }
+  // Focus-this-week band + per-action update thread
+  const [hideFocusDone, setHideFocusDone] = useState<boolean>(() => loadLS<boolean>('hq-home-hide-focus-done', false))
+  const [openActLogs, setOpenActLogs] = useState<Record<string, boolean>>({})
+  const [actComposer, setActComposer] = useState<{ actionId: string; objId: string } | null>(null)
+  const [actDraft, setActDraft] = useState('')
+  const toggleActLogs = (id: string) => {
+    const willOpen = !openActLogs[id]
+    setOpenActLogs(p => ({ ...p, [id]: willOpen }))
+    if (!willOpen && actComposer?.actionId === id) { setActComposer(null); setActDraft('') }
+  }
 
   const todayStr = ymd(new Date())
   const isCurrentWeek = weekMonday === getMonday()
@@ -172,6 +182,7 @@ export default function Home({
   const [quote] = useState(() => randomQuote())
 
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
+  useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])
   useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
   useEffect(() => { try { window.localStorage.setItem('hq-home-obj-collapsed', JSON.stringify(collapsed)) } catch {} }, [collapsed])
 
@@ -234,6 +245,17 @@ export default function Home({
     return m
   }, [logs])
 
+  // ── logs grouped by action (per-action update thread) ──
+  const logsByAction = useMemo(() => {
+    const m = new Map<string, ObjectiveLog[]>()
+    for (const l of logs) {
+      if (!l.weekly_action_id) continue
+      const a = m.get(l.weekly_action_id) ?? []; a.push(l); m.set(l.weekly_action_id, a)
+    }
+    for (const a of m.values()) a.sort((x, y) => (y.log_date ?? '').localeCompare(x.log_date ?? ''))
+    return m
+  }, [logs])
+
   // ── carried-forward weeks per (kr,title): prior scheduled instances ──
   const carriedByKey = useMemo(() => {
     const m = new Map<string, number>()
@@ -284,6 +306,29 @@ export default function Home({
       })
       .filter(g => g.fullKRs.length > 0 || g.miniKRs.length > 0)
   }, [objectives, roadmapItems, actions, weekMonday, spaceFilter, quarterScope, carriedByKey])
+
+  // ── Focus this week: every this-week action across objectives, grouped by space ──
+  const focusBySpace = useMemo(() => {
+    const rows = actions
+      .filter(a => a.week_start === weekMonday && a.roadmap_item_id)
+      .map(a => {
+        const kr = roadmapItems.find(k => k.id === a.roadmap_item_id) ?? null
+        const sp = kr?.space_id ? spaceById.get(kr.space_id) ?? null : null
+        return { a, kr, sp }
+      })
+      .filter((r): r is { a: WeeklyAction; kr: RoadmapItem; sp: Space } =>
+        r.kr != null && r.sp != null && (spaceFilter === null || r.sp.id === spaceFilter))
+    const m = new Map<string, { sp: Space; items: { a: WeeklyAction; kr: RoadmapItem; sp: Space }[] }>()
+    for (const r of rows) {
+      const g = m.get(r.sp.id) ?? { sp: r.sp, items: [] }
+      g.items.push(r); m.set(r.sp.id, g)
+    }
+    const groups = [...m.values()].sort((a, b) => a.sp.sort_order - b.sp.sort_order)
+    for (const g of groups) g.items.sort((x, y) => (x.a.completed ? 1 : 0) - (y.a.completed ? 1 : 0))
+    return groups
+  }, [actions, weekMonday, roadmapItems, spaceById, spaceFilter])
+  const focusTotal = focusBySpace.reduce((n, g) => n + g.items.length, 0)
+  const focusDone = focusBySpace.reduce((n, g) => n + g.items.filter(i => i.a.completed).length, 0)
 
   // ── mutations ──
   async function toggleAction(a: WeeklyAction) {
@@ -346,6 +391,16 @@ export default function Home({
       setLogs(prev => [created, ...prev]); setLogDraft(''); setLogComposer(null)
     } catch { toast('Could not save log') }
   }
+  async function submitActLog() {
+    const c = actComposer; const body = actDraft.trim()
+    if (!c || !body) { setActComposer(null); setActDraft(''); return }
+    try {
+      const created = await extrasDb.logs.create({
+        objective_id: c.objId, weekly_action_id: c.actionId, content: body, log_date: todayStr,
+      })
+      setLogs(prev => [created, ...prev]); setActDraft(''); setActComposer(null)
+    } catch { toast('Could not save update') }
+  }
   async function deleteKR(id: string) {
     try { await krsDb.remove(id); setRoadmapItems(prev => prev.filter(k => k.id !== id)); toast('Key Result deleted') }
     catch { toast('Failed to delete KR') }
@@ -407,7 +462,44 @@ export default function Home({
     )
   }
 
-  // metric sparkline (scaled to own min/max over a 100×30 box)
+  // One row in the Focus-this-week band: checkbox · title · carried · KR tag ·
+  // an inline update thread (objective_logs scoped to this action via weekly_action_id).
+  function focusRow(r: { a: WeeklyAction; kr: RoadmapItem; sp: Space }) {
+    const { a, kr } = r
+    const objId = kr.annual_objective_id
+    const carried = !a.completed ? carriedFor(a) : 0
+    const aLogs = logsByAction.get(a.id) ?? []
+    const open = !!openActLogs[a.id]
+    const composing = actComposer?.actionId === a.id
+    return (
+      <Fragment key={a.id}>
+        <div className={`frow${a.completed ? ' done' : ''}`}>
+          <button className={`fcb${a.completed ? ' on' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
+          <span className="ftitle">{a.title}</span>
+          {carried > 0 && <span className="fcarried" title={`Carried ${carried} week${carried > 1 ? 's' : ''}`}>carried</span>}
+          <span className="fkrtag" title={kr.title}><span className="kd" />{kr.title}</span>
+          <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
+            <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
+          </button>
+        </div>
+        {open && (
+          <div className="flogs">
+            {aLogs.map(l => (
+              <div key={l.id} className="logline"><span className="d">{(l.log_date ?? '').slice(5)}</span><span className="t">{l.content}</span></div>
+            ))}
+            {composing ? (
+              <textarea className="log-input" autoFocus value={actDraft} placeholder="Update on this action… (⌘↵ to save)"
+                onChange={e => setActDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitActLog(); if (e.key === 'Escape') { setActComposer(null); setActDraft('') } }}
+                onBlur={submitActLog} />
+            ) : objId ? (
+              <button className="addlog" onClick={() => setActComposer({ actionId: a.id, objId })}>＋ add update</button>
+            ) : null}
+          </div>
+        )}
+      </Fragment>
+    )
+  }
   function sparkPoints(vals: number[]): string {
     if (vals.length < 2) return ''
     const min = Math.min(...vals), max = Math.max(...vals), range = max - min || 1
@@ -799,6 +891,31 @@ export default function Home({
         {quote.author && <span>— {quote.author}</span>}
       </div>
 
+      {/* focus this week — consolidated actions across objectives */}
+      {focusTotal > 0 && (
+        <div className="focusw">
+          <div className="focus-head">
+            <span className="lbl">Focus this week</span>
+            <span className="fcount">{focusDone} / {focusTotal} done</span>
+            <span className="fbar"><i style={{ width: `${Math.round((focusDone / focusTotal) * 100)}%` }} /></span>
+            <span className="rule" />
+            {focusDone > 0 && <button className="dtoggle" onClick={() => setHideFocusDone(v => !v)}>{hideFocusDone ? 'show done' : 'hide done'}</button>}
+          </div>
+          <div className={`focuslist${hideFocusDone ? ' hide-done' : ''}`}>
+            {focusBySpace.map(g => {
+              const d = g.items.filter(i => i.a.completed).length
+              if (hideFocusDone && d === g.items.length) return null
+              return (
+                <div key={g.sp.id} className="sgrp" style={{ ['--sc']: spaceDisplayColor(g.sp) } as CSSProperties}>
+                  <div className="sgrp-h"><span className="dot" /><span className="nm">{g.sp.name}</span><span className="n">{d}/{g.items.length}</span></div>
+                  {g.items.map(focusRow)}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
       {/* vitals — metric + habit flip cards */}
       {(metricKRs.length > 0 || habitKRs.length > 0) && (
         <div className="vitals">
@@ -911,6 +1028,45 @@ export default function Home({
 
         .seclbl{display:flex;align-items:center;gap:10px;margin:0 0 11px;}
         .seclbl .rule{flex:1;height:1px;background:var(--line);}
+
+        /* focus this week — consolidated weekly actions */
+        .focusw{margin-bottom:26px;}
+        .focus-head{display:flex;align-items:center;gap:12px;margin:0 0 12px;}
+        .focus-head .lbl{font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label);}
+        .focus-head .fcount{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--navy-300);}
+        .focus-head .fbar{flex:0 0 150px;height:5px;border-radius:3px;background:var(--navy-700);overflow:hidden;}
+        .focus-head .fbar i{display:block;height:100%;background:var(--nw-nominal-text);border-radius:3px;transition:width .2s;}
+        .focus-head .rule{flex:1;height:1px;background:var(--line);}
+        .dtoggle{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.04em;color:var(--navy-400);background:var(--surface-2);border:1px solid var(--line-2);border-radius:6px;padding:4px 9px;cursor:pointer;}
+        .dtoggle:hover{color:var(--navy-100);border-color:var(--navy-400);}
+        .focuslist{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px 0;}
+        .sgrp{padding:9px 18px;}
+        .sgrp + .sgrp{border-top:1px solid var(--line);}
+        .sgrp-h{display:flex;align-items:center;gap:8px;margin:0 0 5px;}
+        .sgrp-h .dot{width:8px;height:8px;border-radius:3px;background:var(--sc,var(--navy-500));flex-shrink:0;}
+        .sgrp-h .nm{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--nw-label-dim);}
+        .sgrp-h .n{font-family:var(--font-mono);font-size:9px;color:var(--navy-600);}
+        .frow{display:flex;align-items:center;gap:12px;padding:7px 4px;border-radius:8px;}
+        .frow:hover{background:rgba(255,255,255,.014);}
+        .fcb{width:18px;height:18px;border-radius:6px;flex-shrink:0;border:1.6px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;transition:.12s;}
+        .fcb:hover{border-color:var(--nw-nominal-text);}
+        .fcb.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
+        .ftitle{flex:1;min-width:0;font-size:13.5px;color:var(--navy-50);line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .frow.done .ftitle{color:var(--navy-500);text-decoration:line-through;}
+        .fcarried{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.04em;color:var(--nw-caution-text);background:rgba(245,184,64,.1);border-radius:5px;padding:2px 7px;flex-shrink:0;}
+        .fkrtag{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-300);background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;}
+        .fkrtag .kd{width:6px;height:6px;border-radius:2px;background:var(--sc,var(--navy-500));flex-shrink:0;}
+        .frow.done .fkrtag{opacity:.5;}
+        .flogchip{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--navy-500);background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 7px;cursor:pointer;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;flex-shrink:0;}
+        .flogchip:hover{color:var(--navy-200);border-color:var(--navy-400);}
+        .flogchip.has{color:var(--navy-200);}
+        .flogchip.open{color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}
+        .flogchip .lcar{display:inline-block;font-size:7px;transition:transform .15s;}
+        .flogchip.open .lcar{transform:rotate(90deg);}
+        .flogs{margin:1px 0 7px 30px;display:flex;flex-direction:column;gap:4px;border-left:2px solid var(--line);padding-left:10px;}
+        .addlog{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);border:1px dashed var(--line-2);border-radius:6px;padding:4px 9px;background:none;cursor:pointer;align-self:flex-start;}
+        .addlog:hover{color:var(--accent);border-color:var(--accent);}
+        .hide-done .frow.done{display:none;}
 
         /* key metric flip cards */
         .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;}

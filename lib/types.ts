@@ -35,6 +35,9 @@ export interface ObjectiveLog {
   // Optional KR attachment. Null = objective-level log (legacy / general).
   // Set = the entry belongs to a specific Key Result within the objective.
   roadmap_item_id?: string | null
+  // Optional weekly-action attachment. Set = the entry is a note/update on a
+  // specific action (an action's thread). Null = not action-scoped.
+  weekly_action_id?: string | null
   // Optional human-set title; null means the entry is shown labeled by date alone.
   // Body content (`content`) is markdown; rendered with `marked` at display time
   // via <MarkdownBody>. New notes default to edit mode in the panel; existing

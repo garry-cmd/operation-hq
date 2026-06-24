@@ -56,6 +56,7 @@ export const links = {
 export type NewLogInput = {
   objective_id: string
   roadmap_item_id?: string | null
+  weekly_action_id?: string | null
   title?: string | null
   content: string
   log_date: string
