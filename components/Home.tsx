@@ -529,6 +529,7 @@ export default function Home({
           <span className="ftitle">{a.title}</span>
           {carried > 0 && <span className="fcarried" title={`Carried ${carried} week${carried > 1 ? 's' : ''}`}>carried</span>}
           <span className="fkrtag" title={kr.title}><span className="kd" />{kr.title}</span>
+          <button className="sched back" title="Move to backlog" onClick={() => scheduleAction(a, null)}>backlog</button>
           <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
             <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
           </button>
