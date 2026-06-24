@@ -472,6 +472,10 @@ export default function Home({
   function colActionRow(item: { a: WeeklyAction; kr: RoadmapItem | null }, scheduled: boolean) {
     const { a, kr } = item
     const carried = scheduled && !a.completed ? carriedFor(a) : 0
+    const objId = kr?.annual_objective_id
+    const aLogs = logsByAction.get(a.id) ?? []
+    const open = !!openActLogs[a.id]
+    const composing = actComposer?.actionId === a.id
     return (
       <Fragment key={a.id}>
         <div className={`act${a.completed ? ' done' : ''}`}>
@@ -484,9 +488,27 @@ export default function Home({
               ? <button className="sched week" title="Move to backlog" onClick={() => scheduleAction(a, null)}>this wk</button>
               : <button className="sched back" title="Schedule this week" onClick={() => scheduleAction(a, weekMonday)}>backlog</button>}
             {durBadge(a)}
+            <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
+              <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
+            </button>
           </div>
         </div>
         {durPicker(a)}
+        {open && (
+          <div className="flogs">
+            {aLogs.map(l => (
+              <div key={l.id} className="logline"><span className="d">{(l.log_date ?? '').slice(5)}</span><span className="t">{l.content}</span></div>
+            ))}
+            {composing ? (
+              <textarea className="log-input" autoFocus value={actDraft} placeholder="Update on this action… (⌘↵ to save)"
+                onChange={e => setActDraft(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submitActLog(); if (e.key === 'Escape') { setActComposer(null); setActDraft('') } }}
+                onBlur={submitActLog} />
+            ) : objId ? (
+              <button className="addlog" onClick={() => setActComposer({ actionId: a.id, objId })}>＋ add update</button>
+            ) : null}
+          </div>
+        )}
       </Fragment>
     )
   }
