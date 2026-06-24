@@ -957,7 +957,7 @@ export default function Home({
           {showActCol && (
             <div className="act-col">
               {actThisWeek.length > 0 && (
-                <div className="ac-grp"><div className="ac-lbl">This week</div>{actThisWeek.map(it => colActionRow(it, true))}</div>
+                <div className="ac-grp"><div className="ac-lbl">Action Items</div>{actThisWeek.map(it => colActionRow(it, true))}</div>
               )}
               {actBacklog.length > 0 && (
                 <div className="ac-grp"><div className="ac-lbl">Backlog</div>{actBacklog.map(it => colActionRow(it, false))}</div>
