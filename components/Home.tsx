@@ -123,6 +123,7 @@ interface Props {
   setLogs: Dispatch<SetStateAction<ObjectiveLog[]>>
   initialKRId?: string | null
   onConsumeInitialKRId?: () => void
+  onQuarterClose?: (quarter: string, spaceId: string | null) => void
   toast: (m: string) => void
 }
 
@@ -131,7 +132,7 @@ export default function Home({
   metricCheckins, habitCheckins, setHabitCheckins,
   reviews, weekForSpace, onCloseWeek, onLogMetric,
   setObjectives, setRoadmapItems, onOpenObjective,
-  logs, setLogs, initialKRId, onConsumeInitialKRId, toast,
+  logs, setLogs, initialKRId, onConsumeInitialKRId, onQuarterClose, toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   const [spaceFilter, setSpaceFilter] = useState<string | null>(() => {
@@ -185,6 +186,15 @@ export default function Home({
   const isCurrentWeek = weekMonday === getMonday()
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(weekMonday, i)), [weekMonday])
   const [quote] = useState(() => randomQuote())
+
+  // Show "Close Quarter" CTA in the last 3 weeks of the quarter (or after quarter end).
+  const showQuarterCloseCTA = useMemo(() => {
+    const qb = quarterBounds(ACTIVE_Q)
+    if (!qb) return false
+    const today = parseDateLocal(todayStr)
+    const daysLeft = (qb.end.getTime() - today.getTime()) / 864e5
+    return daysLeft <= 21  // within 3 weeks of end or past end
+  }, [todayStr])
 
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])
@@ -998,6 +1008,13 @@ export default function Home({
             <option value="">All spaces</option>
             {orderedSpaces.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+          {showQuarterCloseCTA && onQuarterClose && (
+            <button
+              className="qclose-btn"
+              onClick={() => onQuarterClose(ACTIVE_Q, spaceFilter)}
+              title={`Close ${ACTIVE_Q}`}
+            >Close {ACTIVE_Q} →</button>
+          )}
         </div>
       </div>
 
@@ -1131,6 +1148,8 @@ export default function Home({
         .hd{display:flex;align-items:center;gap:13px;padding:8px 0 2px;flex-wrap:wrap;}
         .hd-brand{font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--nw-cream);letter-spacing:-.015em;}
         .hd-qtr{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--nw-label);letter-spacing:.14em;}
+        .qclose-btn{font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--accent);border:none;border-radius:7px;padding:5px 12px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
+        .qclose-btn:hover{background:var(--accent-2,#4a8af4);}
         .hd-controls{margin-left:auto;display:flex;align-items:center;gap:9px;}
         .wknav{display:flex;align-items:center;gap:2px;background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:2px;}
         .wknav button{background:none;border:none;color:var(--navy-300);font-size:15px;cursor:pointer;padding:2px 8px;border-radius:6px;line-height:1;}

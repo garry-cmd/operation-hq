@@ -108,6 +108,9 @@ export interface RoadmapItem {
   // editor sets true when the user checks "Quarter-bound goal — no specific
   // deadline" in the KR modal, which also disables the date inputs.
   is_quarter_bound: boolean
+  // Quarter-close fields. Set during the quarter-end ritual.
+  close_score: number | null   // 0.0–1.0 grade assigned at close time
+  close_note: string | null    // reflection written during close ceremony
   created_at: string
 }
 
@@ -459,4 +462,17 @@ export interface NewFileVersionInput {
   source?: string | null
   dest?: string | null
   note?: string | null
+}
+
+export interface QuarterReview {
+  id: string
+  quarter: string
+  space_id: string | null
+  proud_of: string | null
+  didnt_go: string | null
+  next_quarter: string | null
+  overall_note: string | null
+  closed_at: string | null
+  created_at: string
+  updated_at: string
 }

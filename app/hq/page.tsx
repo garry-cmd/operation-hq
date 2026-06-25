@@ -40,10 +40,12 @@ import NavRail from '@/components/NavRail'
 import CommandPalette from '@/components/CommandPalette'
 import type { SearchEntry } from '@/lib/search'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
+import QuarterCloseWizard from '@/components/QuarterCloseWizard'
 import PlanWeek from '@/components/PlanWeek'
 import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
+import type { QuarterReview } from '@/lib/types'
 
 type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'files' | 'tags' | 'settings'
 
@@ -116,6 +118,7 @@ export default function HQPage() {
   const [activeSpaceId, setActiveSpaceId] = useState('')
   const [closingWizard, setClosingWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [planningWizard, setPlanningWizard] = useState<{ spaceId: string; week: string } | null>(null)
+  const [quarterClose, setQuarterClose] = useState<{ quarter: string; spaceId: string | null } | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
   // Currently-open objective panel (links/logs), opened from Home. Lifted to page level so
   // <main> can widen its max-width when the panel is open (push-aside layout).
@@ -692,6 +695,7 @@ export default function HQPage() {
             setLogs={setLogs}
             initialKRId={initialKRId}
             onConsumeInitialKRId={() => setInitialKRId(null)}
+            onQuarterClose={(quarter, spaceId) => setQuarterClose({ quarter, spaceId })}
             toast={setToast}
           />
         </main>
@@ -917,6 +921,34 @@ export default function HQPage() {
             weekStart={planningWizard.week}
             onAddAction={a => setActions(prev => [...prev, a])}
             onClose={() => setPlanningWizard(null)}
+          />
+        )
+      })()}
+
+      {/* Quarter-close ceremony — fullscreen overlay. Launched from Home header or Reflect.
+          spaceId null means all-spaces view (runs across all objectives/KRs). */}
+      {quarterClose && (() => {
+        const qc = quarterClose
+        const qcSpace = spaces.find(s => s.id === qc.spaceId) ?? null
+        const qcItems = roadmapItems.filter(i =>
+          i.quarter === qc.quarter &&
+          (qc.spaceId === null || i.space_id === qc.spaceId) &&
+          !i.is_parked
+        )
+        const qcObjs = objectives.filter(o =>
+          qc.spaceId === null || o.space_id === qc.spaceId
+        )
+        return (
+          <QuarterCloseWizard
+            quarter={qc.quarter}
+            space={qcSpace}
+            spaces={spaces}
+            objectives={qcObjs}
+            roadmapItems={qcItems}
+            setRoadmapItems={setRoadmapItems}
+            toast={setToast}
+            onClose={() => setQuarterClose(null)}
+            onPlanNextQuarter={() => setScreen('roadmap')}
           />
         )
       })()}
