@@ -528,11 +528,13 @@ export default function Home({
           <button className={`fcb${a.completed ? ' on' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
           <span className="ftitle">{a.title}</span>
           {carried > 0 && <span className="fcarried" title={`Carried ${carried} week${carried > 1 ? 's' : ''}`}>carried</span>}
-          <span className="fkrtag" title={kr.title}><span className="kd" />{kr.title}</span>
-          <button className="sched back" title="Move to backlog" onClick={() => scheduleAction(a, null)}>backlog</button>
-          <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
-            <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
-          </button>
+          <div className="frow-actions">
+            <span className="fkrtag" title={kr.title}><span className="kd" />{kr.title}</span>
+            <button className="sched back" title="Move to backlog" onClick={() => scheduleAction(a, null)}>backlog</button>
+            <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
+              <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
+            </button>
+          </div>
         </div>
         {open && (
           <div className="flogs">
@@ -1181,6 +1183,24 @@ export default function Home({
         .addlog{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);border:1px dashed var(--line-2);border-radius:6px;padding:4px 9px;background:none;cursor:pointer;align-self:flex-start;}
         .addlog:hover{color:var(--accent);border-color:var(--accent);}
         .hide-done .frow.done{display:none;}
+        .frow-actions{display:contents;}
+
+        /* mobile: focus-head + action rows */
+        @media(max-width:899px){
+          .focus-head{flex-wrap:wrap;row-gap:6px;}
+          .focus-head .lbl{flex:0 0 auto;}
+          .focus-head .fcount{flex:0 0 auto;}
+          .focus-head .fbar{flex:1 1 100%;order:3;margin-top:0;}
+          .focus-head .rule{display:none;}
+          .dtoggle{order:4;margin-left:auto;}
+          .frow{flex-wrap:wrap;row-gap:3px;align-items:flex-start;padding:8px 4px;}
+          .fcb{margin-top:2px;}
+          .ftitle{flex:1 1 0;min-width:0;white-space:normal;}
+          .fcarried{order:1;}
+          .frow-actions{display:flex;align-items:center;gap:8px;flex:0 0 100%;margin-left:22px;box-sizing:border-box;}
+          .fkrtag{max-width:none;flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;}
+          .frow .sched,.frow .flogchip{flex-shrink:0;}
+        }
 
         /* key metric flip cards */
         .metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;}
