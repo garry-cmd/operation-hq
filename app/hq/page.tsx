@@ -623,9 +623,12 @@ export default function HQPage() {
           NavRail is permanently visible. Sticky so it stays during scroll. */}
       {isMobile && (
         <div style={{
-          position: 'sticky', top: 0, zIndex: 25,
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 25,
           display: 'flex', alignItems: 'center', gap: 10,
-          padding: '10px 14px',
+          paddingTop: 'max(10px, env(safe-area-inset-top))',
+          paddingBottom: 10,
+          paddingLeft: 14,
+          paddingRight: 14,
           background: 'var(--navy-800)',
           borderBottom: '1px solid var(--navy-600)',
           minHeight: 48,
@@ -648,6 +651,8 @@ export default function HQPage() {
           </div>
         </div>
       )}
+      {/* Spacer that compensates for the fixed mobile top bar height so content isn't hidden under it */}
+      {isMobile && <div style={{ height: 'calc(48px + max(0px, env(safe-area-inset-top)))' }} />}
       {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}

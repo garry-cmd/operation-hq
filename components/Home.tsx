@@ -1459,6 +1459,13 @@ export default function Home({
           .metrics{grid-template-columns:repeat(2,1fr);}
           .body{flex-direction:column;}
         }
+        @media (max-width:899px){
+          .metrics{grid-template-columns:1fr;}
+          .mcard{height:130px;}
+          .habits-cards{grid-template-columns:1fr;}
+          .hcard{height:116px;}
+          .vrow + .vrow{margin-top:12px;}
+        }
         @media (max-width:760px){
           .exp{flex-direction:column;}
           .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);}
