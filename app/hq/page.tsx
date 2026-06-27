@@ -605,7 +605,6 @@ export default function HQPage() {
             notebooks={notebooks}
             tagsByNote={tagsByNote}
             setTagsByNote={setTagsByNote}
-            googleConnected={googleConnected}
             driveGranted={driveGranted}
             trackedFiles={trackedFiles}
             setTrackedFiles={setTrackedFiles}
