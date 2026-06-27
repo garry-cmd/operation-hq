@@ -846,31 +846,21 @@ export default function Home({
             </div>
           </div>
 
-          {/* ── Vitals strip: metric + habit cards for this objective ── */}
+          {/* ── Vitals strip: full metric + habit flip cards, per-objective ── */}
           {hasVitals && (
             <div className="obj-vitals">
-              {objMetricKRs.map(kr => {
-                const c = latestMetricByKR.get(kr.id)
-                const d = kr.metric_direction === 'down' ? '↓' : '↑'
-                return (
-                  <div key={kr.id} className="ov-chip metric-chip" title="Log a reading" onClick={() => onLogMetric(kr.id)}>
-                    <span className="ov-label">metric</span>
-                    <span className="ov-title">{kr.title}</span>
-                    <span className="ov-val">{fmtMetric(c?.value, kr.metric_unit)} <span className="ov-dir">{d}</span></span>
-                  </div>
-                )
-              })}
-              {objHabitKRs.map(kr => {
-                const wkDone = weekDates.filter(d => checkinSet.has(`${kr.id}:${d}`)).length
-                const tone = healthTone(kr.health_status)
-                return (
-                  <div key={kr.id} className="ov-chip habit-chip">
-                    <span className="ov-label">habit</span>
-                    <span className="ov-title">{kr.title}</span>
-                    <span className="ov-val" style={{ color: `var(--${tone.cls === 't-nominal' ? 'nw-nominal-text' : tone.cls === 't-alarm' ? 'nw-alarm-text' : 'navy-300'})` }}>{wkDone}<span className="ov-dir"> / 7</span></span>
-                  </div>
-                )
-              })}
+              {objMetricKRs.length > 0 && (
+                <div className="vrow" style={{ marginBottom: 0 }}>
+                  <div className="sublbl">Metrics</div>
+                  <div className="metrics">{objMetricKRs.map(metricCard)}</div>
+                </div>
+              )}
+              {objHabitKRs.length > 0 && (
+                <div className="vrow" style={{ marginBottom: 0 }}>
+                  <div className="sublbl">Habits · 4-week rolling</div>
+                  <div className="habits-cards">{objHabitKRs.map(habitCard)}</div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1339,14 +1329,7 @@ export default function Home({
         .vitals{margin-bottom:24px;}
 
         /* Per-objective vitals strip */
-        .obj-vitals{display:flex;flex-wrap:wrap;gap:8px;padding:10px 16px 4px;border-top:1px solid var(--line);}
-        .ov-chip{display:flex;align-items:center;gap:7px;background:var(--surface-2,var(--navy-800));border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:default;min-width:0;}
-        .metric-chip{cursor:pointer;}
-        .metric-chip:hover{border-color:var(--accent);background:var(--accent-bg);}
-        .ov-label{font-family:var(--font-mono);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--nw-label);flex-shrink:0;}
-        .ov-title{font-size:12px;color:var(--navy-200);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;}
-        .ov-val{font-family:var(--font-mono);font-size:13px;font-weight:700;color:var(--nw-cream);font-variant-numeric:tabular-nums;margin-left:auto;flex-shrink:0;padding-left:8px;}
-        .ov-dir{font-size:10px;font-weight:400;color:var(--navy-400);}
+        .obj-vitals{display:flex;flex-direction:column;gap:12px;padding:14px 16px 6px;border-top:1px solid var(--line);}
 
         /* Add KR row */
         .addkr-btn{width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);padding:8px 16px;cursor:pointer;font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--navy-400);border-radius:0 0 12px 12px;transition:color .12s,background .12s;}
