@@ -82,6 +82,12 @@ export default function Notes({
   const [listView, setListView] = useState<'card' | 'table'>('card')
   const [sortCol, setSortCol] = useState<'title' | 'updated' | 'created' | 'tags'>('updated')
   const [sortAsc, setSortAsc] = useState(false)
+  // Active filters: selected tags + date field + date range
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filterTags, setFilterTags] = useState<string[]>([])
+  const [filterDateField, setFilterDateField] = useState<'updated' | 'created'>('updated')
+  const [filterDateFrom, setFilterDateFrom] = useState<string | null>(null)  // ISO date string
+  const [filterDateTo, setFilterDateTo] = useState<string | null>(null)
   const isMobile = useIsMobile(900)
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
   const [mobileListOpen, setMobileListOpen] = useState(false)
@@ -154,10 +160,31 @@ export default function Notes({
     return notes.filter(n => (tagsByNote.get(n.id) ?? []).includes(scope.tag)).sort(byPinnedThenUpdated)
   }, [notes, scope, childrenByParent, tagsByNote])
 
+  // Filter on top of scope — tags + date range
+  const filterActive = filterTags.length > 0 || filterDateFrom !== null || filterDateTo !== null
+  const displayNotes = useMemo(() => {
+    if (!filterActive) return filteredNotes
+    return filteredNotes.filter(note => {
+      // Tag filter: note must have ALL selected tags
+      if (filterTags.length > 0) {
+        const noteTags = tagsByNote.get(note.id) ?? []
+        if (!filterTags.every(t => noteTags.includes(t))) return false
+      }
+      // Date range filter
+      if (filterDateFrom || filterDateTo) {
+        const dateStr = filterDateField === 'updated' ? note.updated_at : note.created_at
+        const d = dateStr.slice(0, 10) // YYYY-MM-DD
+        if (filterDateFrom && d < filterDateFrom) return false
+        if (filterDateTo && d > filterDateTo) return false
+      }
+      return true
+    })
+  }, [filteredNotes, filterActive, filterTags, filterDateField, filterDateFrom, filterDateTo, tagsByNote])
+
   // Sorted note list for table view
   const sortedNotes = useMemo(() => {
-    if (listView !== 'table') return filteredNotes
-    return [...filteredNotes].sort((a, b) => {
+    if (listView !== 'table') return displayNotes
+    return [...displayNotes].sort((a, b) => {
       let av = '', bv = ''
       if (sortCol === 'title') { av = (a.title || '').toLowerCase(); bv = (b.title || '').toLowerCase() }
       else if (sortCol === 'updated') { av = a.updated_at; bv = b.updated_at }
@@ -171,7 +198,7 @@ export default function Notes({
       const cmp = av < bv ? -1 : av > bv ? 1 : 0
       return sortAsc ? cmp : -cmp
     })
-  }, [filteredNotes, listView, sortCol, sortAsc, tagsByNote])
+  }, [displayNotes, listView, sortCol, sortAsc, tagsByNote])
 
   const selectedNote = useMemo(
     () => selectedNoteId ? notes.find(n => n.id === selectedNoteId) ?? null : null,
@@ -184,13 +211,13 @@ export default function Notes({
 
   // Stats for the stats bar
   const noteStats = useMemo(() => {
-    const tagged = filteredNotes.filter(n => (tagsByNote.get(n.id) ?? []).length > 0).length
-    const pinned = filteredNotes.filter(n => n.pinned_at).length
-    const latest = filteredNotes.length > 0
-      ? filteredNotes.reduce((a, b) => a.updated_at > b.updated_at ? a : b).updated_at
+    const tagged = displayNotes.filter(n => (tagsByNote.get(n.id) ?? []).length > 0).length
+    const pinned = displayNotes.filter(n => n.pinned_at).length
+    const latest = displayNotes.length > 0
+      ? displayNotes.reduce((a, b) => a.updated_at > b.updated_at ? a : b).updated_at
       : null
-    return { total: filteredNotes.length, tagged, pinned, latest }
-  }, [filteredNotes, tagsByNote])
+    return { total: displayNotes.length, tagged, pinned, latest }
+  }, [displayNotes, tagsByNote])
 
   const middleHeading = useMemo(() => {
     if (scope.kind === 'inbox') return 'Inbox'
@@ -520,8 +547,41 @@ export default function Notes({
                 </button>
               </div>
             )}
+            {/* Filter button */}
+            {!isMobile && (
+              <button title="Filter notes" onClick={() => setFilterOpen(o => !o)} style={{
+                width: 26, height: 22, background: filterOpen || filterActive ? 'var(--accent-bg)' : 'none',
+                border: 'none', borderRadius: 4, cursor: 'pointer',
+                color: filterOpen || filterActive ? 'var(--accent)' : 'var(--t-3)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                position: 'relative',
+              }}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M2 4h12M4 8h8M6 12h4"/>
+                </svg>
+                {filterActive && (
+                  <span style={{ position: 'absolute', top: 2, right: 2, width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', border: '1px solid var(--bg)' }} />
+                )}
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Filter panel */}
+        {filterOpen && !isMobile && (
+          <FilterPanel
+            allTags={allTags}
+            filterTags={filterTags}
+            filterDateField={filterDateField}
+            filterDateFrom={filterDateFrom}
+            filterDateTo={filterDateTo}
+            onTagToggle={tag => setFilterTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+            onDateField={setFilterDateField}
+            onDateFrom={setFilterDateFrom}
+            onDateTo={setFilterDateTo}
+            onClear={() => { setFilterTags([]); setFilterDateFrom(null); setFilterDateTo(null) }}
+          />
+        )}
 
         {/* Stats bar */}
         {filteredNotes.length > 0 && !isMobile && (
@@ -550,7 +610,7 @@ export default function Notes({
           </div>
         )}
 
-        {filteredNotes.length === 0 ? (
+        {displayNotes.length === 0 ? (
           <div style={{ padding: '40px 20px', textAlign: 'center' }}>
             <div style={{ ...LABEL_STYLE, marginBottom: 8, display: 'block' }}>No notes</div>
             {scope.kind !== 'tag' && (
@@ -637,7 +697,7 @@ export default function Notes({
         ) : (
           /* ── CARD VIEW ── */
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {filteredNotes.map(note => (
+            {displayNotes.map(note => (
               <NoteListItem
                 key={note.id}
                 note={note}
@@ -971,6 +1031,268 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
 function formatDateShort(iso: string): string {
   const d = new Date(iso)
   return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })
+}
+
+// ── FilterPanel ────────────────────────────────────────────────────
+
+function FilterPanel({
+  allTags, filterTags, filterDateField, filterDateFrom, filterDateTo,
+  onTagToggle, onDateField, onDateFrom, onDateTo, onClear,
+}: {
+  allTags: string[]
+  filterTags: string[]
+  filterDateField: 'updated' | 'created'
+  filterDateFrom: string | null
+  filterDateTo: string | null
+  onTagToggle: (tag: string) => void
+  onDateField: (f: 'updated' | 'created') => void
+  onDateFrom: (d: string | null) => void
+  onDateTo: (d: string | null) => void
+  onClear: () => void
+}) {
+  const [tagsOpen, setTagsOpen] = useState(true)
+  const [dateOpen, setDateOpen] = useState(true)
+  // Calendar picker state: null = no picker open, 'from' | 'to'
+  const [calendarFor, setCalendarFor] = useState<'from' | 'to' | null>(null)
+  // Calendar nav: which month/year is displayed
+  const today = new Date()
+  const [calYear, setCalYear] = useState(today.getFullYear())
+  const [calMonth, setCalMonth] = useState(today.getMonth()) // 0-based
+
+  const hasFilter = filterTags.length > 0 || filterDateFrom !== null || filterDateTo !== null
+
+  function pickDate(iso: string) {
+    if (calendarFor === 'from') onDateFrom(iso)
+    else if (calendarFor === 'to') onDateTo(iso)
+    setCalendarFor(null)
+  }
+
+  function openCalendar(which: 'from' | 'to') {
+    // Init calendar to the currently selected date's month, or today
+    const existing = which === 'from' ? filterDateFrom : filterDateTo
+    if (existing) {
+      const d = new Date(existing + 'T12:00:00')
+      setCalYear(d.getFullYear())
+      setCalMonth(d.getMonth())
+    } else {
+      setCalYear(today.getFullYear())
+      setCalMonth(today.getMonth())
+    }
+    setCalendarFor(which === calendarFor ? null : which)
+  }
+
+  const LABEL: React.CSSProperties = {
+    fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
+    letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--nw-label)',
+  }
+  const SECTION_BTN: React.CSSProperties = {
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
+    background: 'none', border: 'none', cursor: 'pointer', padding: '8px 14px 6px',
+  }
+  const DATE_BTN = (active: boolean): React.CSSProperties => ({
+    flex: 1, background: active ? 'var(--accent-bg)' : 'var(--surface-2, var(--hover))',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--line)'}`,
+    borderRadius: 5, padding: '4px 8px', cursor: 'pointer',
+    fontFamily: 'var(--font-mono)', fontSize: 11, color: active ? 'var(--accent)' : 'var(--t-2)',
+    textAlign: 'left' as const, minWidth: 0,
+  })
+
+  return (
+    <div style={{
+      borderBottom: '1px solid var(--line)', background: 'var(--surface)',
+      flexShrink: 0,
+    }}>
+      {/* Tags section */}
+      <button style={SECTION_BTN} onClick={() => setTagsOpen(o => !o)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><path d="M5.5 2L4 14M12 2l-1.5 12M2 5.5h12M1.5 10.5h12"/></svg>
+          <span style={LABEL}>Tags</span>
+        </div>
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="var(--t-3)" strokeWidth="1.5" strokeLinecap="round"
+          style={{ transform: tagsOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <path d="M2 4l4 4 4-4"/>
+        </svg>
+      </button>
+      {tagsOpen && (
+        <div style={{ padding: '0 14px 8px', display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {allTags.length === 0 ? (
+            <span style={{ fontSize: 11.5, color: 'var(--t-3)' }}>No tags yet</span>
+          ) : allTags.map(tag => {
+            const on = filterTags.includes(tag)
+            return (
+              <button key={tag} onClick={() => onTagToggle(tag)} style={{
+                fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                background: on ? 'var(--accent)' : 'var(--hover)',
+                color: on ? '#fff' : 'var(--t-2)',
+                border: 'none', cursor: 'pointer', fontFamily: 'var(--font-mono)',
+              }}>
+                #{tag}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      <div style={{ height: 1, background: 'var(--line)' }} />
+
+      {/* Date section */}
+      <button style={SECTION_BTN} onClick={() => setDateOpen(o => !o)}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="1.5" y="2.5" width="13" height="12" rx="1"/><path d="M1.5 6.5h13M5 1v3M11 1v3"/></svg>
+          <span style={LABEL}>Date</span>
+        </div>
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="var(--t-3)" strokeWidth="1.5" strokeLinecap="round"
+          style={{ transform: dateOpen ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+          <path d="M2 4l4 4 4-4"/>
+        </svg>
+      </button>
+      {dateOpen && (
+        <div style={{ padding: '0 14px 10px' }}>
+          {/* Field toggle */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 8 }}>
+            {(['updated', 'created'] as const).map(f => (
+              <button key={f} onClick={() => onDateField(f)} style={{
+                flex: 1, padding: '3px 0', border: 'none', borderRadius: 5, cursor: 'pointer',
+                fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '.08em',
+                textTransform: 'uppercase',
+                background: filterDateField === f ? 'var(--accent)' : 'var(--hover)',
+                color: filterDateField === f ? '#fff' : 'var(--t-3)',
+              }}>
+                {f === 'updated' ? 'Updated' : 'Created'}
+              </button>
+            ))}
+          </div>
+
+          {/* From / To pickers */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button style={DATE_BTN(!!filterDateFrom)} onClick={() => openCalendar('from')}>
+              {filterDateFrom ? formatShortDate(filterDateFrom) : 'From'}
+              {filterDateFrom && (
+                <span onClick={e => { e.stopPropagation(); onDateFrom(null); if (calendarFor === 'from') setCalendarFor(null) }}
+                  style={{ marginLeft: 6, color: 'var(--t-3)', cursor: 'pointer' }}>×</span>
+              )}
+            </button>
+            <span style={{ color: 'var(--t-3)', fontSize: 12, flexShrink: 0 }}>→</span>
+            <button style={DATE_BTN(!!filterDateTo)} onClick={() => openCalendar('to')}>
+              {filterDateTo ? formatShortDate(filterDateTo) : 'To'}
+              {filterDateTo && (
+                <span onClick={e => { e.stopPropagation(); onDateTo(null); if (calendarFor === 'to') setCalendarFor(null) }}
+                  style={{ marginLeft: 6, color: 'var(--t-3)', cursor: 'pointer' }}>×</span>
+              )}
+            </button>
+          </div>
+
+          {/* Calendar */}
+          {calendarFor && (
+            <MiniCalendar
+              year={calYear} month={calMonth}
+              selected={calendarFor === 'from' ? filterDateFrom : filterDateTo}
+              rangeFrom={filterDateFrom} rangeTo={filterDateTo}
+              onPrev={() => { if (calMonth === 0) { setCalMonth(11); setCalYear(y => y - 1) } else setCalMonth(m => m - 1) }}
+              onNext={() => { if (calMonth === 11) { setCalMonth(0); setCalYear(y => y + 1) } else setCalMonth(m => m + 1) }}
+              onPick={pickDate}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Clear */}
+      {hasFilter && (
+        <div style={{ padding: '4px 14px 10px' }}>
+          <button onClick={onClear} style={{
+            fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--accent)',
+            background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+          }}>
+            Clear all filters
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function MiniCalendar({ year, month, selected, rangeFrom, rangeTo, onPrev, onNext, onPick }: {
+  year: number; month: number
+  selected: string | null; rangeFrom: string | null; rangeTo: string | null
+  onPrev: () => void; onNext: () => void
+  onPick: (iso: string) => void
+}) {
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const DAY_NAMES = ['Su','Mo','Tu','We','Th','Fr','Sa']
+
+  // Build the day grid for this month
+  const firstDay = new Date(year, month, 1).getDay() // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  // Pad with nulls for the first row
+  const cells: (number | null)[] = []
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d)
+  // Pad to complete last row
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  function isoOf(day: number) {
+    return `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+  }
+  function inRange(iso: string) {
+    if (!rangeFrom || !rangeTo) return false
+    return iso > rangeFrom && iso < rangeTo
+  }
+
+  return (
+    <div style={{
+      marginTop: 8, background: 'var(--surface)', border: '1px solid var(--line)',
+      borderRadius: 9, padding: '10px 10px 8px', userSelect: 'none',
+    }}>
+      {/* Month nav */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <button onClick={onPrev} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t-2)', padding: '2px 6px', borderRadius: 4, fontSize: 14 }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>‹</button>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600, color: 'var(--t-1)', letterSpacing: '.06em' }}>
+          {MONTH_NAMES[month]} {year}
+        </span>
+        <button onClick={onNext} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t-2)', padding: '2px 6px', borderRadius: 4, fontSize: 14 }}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>›</button>
+      </div>
+      {/* Day-of-week headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1, marginBottom: 2 }}>
+        {DAY_NAMES.map(d => (
+          <div key={d} style={{ textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--t-3)', fontWeight: 600, padding: '1px 0' }}>{d}</div>
+        ))}
+      </div>
+      {/* Day cells */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,1fr)', gap: 1 }}>
+        {cells.map((day, i) => {
+          if (day === null) return <div key={i} />
+          const iso = isoOf(day)
+          const isSelected = iso === selected
+          const isRange = inRange(iso)
+          const isFrom = iso === rangeFrom
+          const isTo = iso === rangeTo
+          return (
+            <button key={i} onClick={() => onPick(iso)} style={{
+              width: '100%', aspectRatio: '1', border: 'none', borderRadius: 5, cursor: 'pointer',
+              fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: isSelected ? 700 : 400,
+              background: isSelected || isFrom || isTo
+                ? 'var(--accent)'
+                : isRange ? 'var(--accent-bg)' : 'none',
+              color: isSelected || isFrom || isTo ? '#fff' : isRange ? 'var(--accent)' : 'var(--t-1)',
+            }}
+              onMouseEnter={e => { if (!isSelected && !isFrom && !isTo) e.currentTarget.style.background = 'var(--hover)' }}
+              onMouseLeave={e => { if (!isSelected && !isFrom && !isTo) e.currentTarget.style.background = isRange ? 'var(--accent-bg)' : 'none' }}>
+              {day}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function formatShortDate(iso: string): string {
+  const d = new Date(iso + 'T12:00:00')
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })
 }
 
 function formatRelative(iso: string): string {
