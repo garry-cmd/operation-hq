@@ -25,6 +25,26 @@ import { AnnualObjective, RoadmapItem, ObjectiveLink, ObjectiveLog, LinkKind } f
 import * as extrasDb from '@/lib/db/objectiveExtras'
 import MarkdownBody from './MarkdownBody'
 
+// ─── Resource kind metadata ────────────────────────────────────────────
+const LINK_KINDS: {
+  kind: import('@/lib/types').LinkKind
+  label: string
+  emoji: string
+  urlPlaceholder: string
+  namePlaceholder: string
+}[] = [
+  { kind: 'todoist_project', label: 'Todoist Project',     emoji: '✅', urlPlaceholder: 'Todoist project URL (https://todoist.com/app/project/…)', namePlaceholder: 'Project name' },
+  { kind: 'evernote_notebook', label: 'Evernote Notebook', emoji: '📓', urlPlaceholder: 'Evernote notebook link', namePlaceholder: 'Notebook name' },
+  { kind: 'drive_folder',    label: 'Drive Folder',        emoji: '📁', urlPlaceholder: 'Google Drive folder URL', namePlaceholder: 'Folder name' },
+  { kind: 'evernote_note',   label: 'Evernote Note',       emoji: '📝', urlPlaceholder: 'Evernote note link', namePlaceholder: 'Note title' },
+  { kind: 'file',            label: 'Drive File',           emoji: '📄', urlPlaceholder: 'Google Drive file URL', namePlaceholder: 'File name' },
+  { kind: 'link',            label: 'Web Link',             emoji: '🔗', urlPlaceholder: 'Paste URL (https://…)', namePlaceholder: '' },
+]
+
+function kindMeta(kind: string) {
+  return LINK_KINDS.find(k => k.kind === kind) ?? LINK_KINDS[LINK_KINDS.length - 1]
+}
+
 type Props = {
   objective: AnnualObjective
   krs: RoadmapItem[]              // for the header summary line
@@ -43,10 +63,11 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
   const [newNoteContent, setNewNoteContent] = useState('')
   const [savingNote, setSavingNote] = useState(false)
 
-  const [creatingRef, setCreatingRef] = useState<LinkKind | null>(null) // 'link' | 'file' | null
+  const [creatingRef, setCreatingRef] = useState<LinkKind | null>(null)
   const [newRefUrl, setNewRefUrl] = useState('')
-  const [newRefName, setNewRefName] = useState('') // friendly name for files
+  const [newRefName, setNewRefName] = useState('')
   const [savingRef, setSavingRef] = useState(false)
+  const [showKindPicker, setShowKindPicker] = useState(false)
 
   // References (kind='link' | 'file'), most recent first.
   const objRefs = [...links].sort(
@@ -105,10 +126,11 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
     if (savingRef || !creatingRef) return
     const url = normalizeUrl(newRefUrl.trim())
     if (!url) return
-    // For files, friendly name is required. For links, fall back to domain.
+    const meta = LINK_KINDS.find(k => k.kind === creatingRef)!
+    const needsName = creatingRef !== 'link'
     let title = newRefName.trim()
     if (!title) {
-      if (creatingRef === 'file') return // file requires friendly name
+      if (needsName) return
       title = url.replace(/https?:\/\/(www\.)?/, '').split('/')[0]
     }
     setSavingRef(true)
@@ -124,7 +146,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
       cancelNewRef()
     } catch (err) {
       console.error('saveNewRef failed:', err)
-      toast(`Failed to save ${creatingRef}.`)
+      toast(`Failed to save ${meta.label}.`)
     } finally {
       setSavingRef(false)
     }
@@ -134,6 +156,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
     setCreatingRef(null)
     setNewRefUrl('')
     setNewRefName('')
+    setShowKindPicker(false)
   }
 
   async function deleteRef(id: string) {
@@ -187,66 +210,69 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
             References {objRefs.length > 0 && <span style={{ color: 'var(--navy-500)', fontWeight: 600 }}>({objRefs.length})</span>}
           </div>
           {!creatingRef && (
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={() => setCreatingRef('link')}
-                style={addPillStyle}>+ Link</button>
-              <button onClick={() => setCreatingRef('file')}
-                style={addPillStyle}>+ File</button>
+            <div style={{ position: 'relative' }}>
+              <button onClick={() => setShowKindPicker(p => !p)} style={addPillStyle}>+ Resource</button>
+              {showKindPicker && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 49 }} onClick={() => setShowKindPicker(false)} />
+                  <div style={{ position: 'absolute', right: 0, top: 28, zIndex: 50, background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 10, padding: '6px 0', minWidth: 180, boxShadow: '0 8px 24px rgba(0,0,0,.4)' }}>
+                    {LINK_KINDS.map(k => (
+                      <button key={k.kind} onClick={() => { setCreatingRef(k.kind); setShowKindPicker(false) }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--navy-100)', fontSize: 13, textAlign: 'left' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'var(--navy-700)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                        <span style={{ fontSize: 15 }}>{k.emoji}</span>
+                        <span>{k.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>
 
-        {/* Add-link form */}
-        {creatingRef === 'link' && (
-          <div style={formCardStyle}>
-            <input
-              value={newRefUrl}
-              onChange={e => setNewRefUrl(e.target.value)}
-              placeholder="Paste URL (https://…)"
-              autoFocus
-              style={formInputStyle}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveNewRef() } }}
-            />
-            <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-              <button onClick={cancelNewRef} style={btnCancelStyle}>Cancel</button>
-              <button onClick={saveNewRef} disabled={savingRef || !newRefUrl.trim()}
-                style={{ ...btnSaveStyle, opacity: savingRef || !newRefUrl.trim() ? 0.5 : 1 }}>
-                {savingRef ? 'Saving…' : 'Save link'}
-              </button>
+        {/* Unified add-resource form */}
+        {creatingRef && (() => {
+          const meta = LINK_KINDS.find(k => k.kind === creatingRef)!
+          const needsName = creatingRef !== 'link'
+          const canSave = !!newRefUrl.trim() && (!needsName || !!newRefName.trim())
+          return (
+            <div style={formCardStyle}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
+                {meta.emoji} {meta.label}
+              </div>
+              {needsName && (
+                <input
+                  value={newRefName}
+                  onChange={e => setNewRefName(e.target.value)}
+                  placeholder={meta.namePlaceholder}
+                  autoFocus
+                  style={{ ...formInputStyle, marginBottom: 6 }}
+                />
+              )}
+              <input
+                value={newRefUrl}
+                onChange={e => setNewRefUrl(e.target.value)}
+                placeholder={meta.urlPlaceholder}
+                autoFocus={!needsName}
+                style={formInputStyle}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveNewRef() } }}
+              />
+              <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
+                <button onClick={cancelNewRef} style={btnCancelStyle}>Cancel</button>
+                <button onClick={saveNewRef} disabled={savingRef || !canSave}
+                  style={{ ...btnSaveStyle, opacity: savingRef || !canSave ? 0.5 : 1 }}>
+                  {savingRef ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-
-        {/* Add-file form */}
-        {creatingRef === 'file' && (
-          <div style={formCardStyle}>
-            <input
-              value={newRefName}
-              onChange={e => setNewRefName(e.target.value)}
-              placeholder="Friendly name (e.g. 'Q2 program v3.pdf')"
-              autoFocus
-              style={{ ...formInputStyle, marginBottom: 6 }}
-            />
-            <input
-              value={newRefUrl}
-              onChange={e => setNewRefUrl(e.target.value)}
-              placeholder="Paste Google Drive URL"
-              style={formInputStyle}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveNewRef() } }}
-            />
-            <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
-              <button onClick={cancelNewRef} style={btnCancelStyle}>Cancel</button>
-              <button onClick={saveNewRef} disabled={savingRef || !newRefUrl.trim() || !newRefName.trim()}
-                style={{ ...btnSaveStyle, opacity: savingRef || !newRefUrl.trim() || !newRefName.trim() ? 0.5 : 1 }}>
-                {savingRef ? 'Saving…' : 'Save file'}
-              </button>
-            </div>
-          </div>
-        )}
+          )
+        })()}
 
         {objRefs.length === 0 && !creatingRef ? (
           <div style={{ fontSize: 12, color: 'var(--navy-500)', textAlign: 'center', padding: '12px 0 4px', lineHeight: 1.5 }}>
-            No links or files yet.
+            No resources yet. Add a Todoist project, Evernote notebook, Drive folder, or link.
           </div>
         ) : (
           objRefs.map(ref => <RefRow key={ref.id} link={ref} onDelete={() => deleteRef(ref.id)} />)
@@ -324,10 +350,8 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
 // a small × to delete. File icon vs link icon based on `kind`.
 function RefRow({ link, onDelete }: { link: ObjectiveLink; onDelete: () => void }) {
   const [hover, setHover] = useState(false)
-  const isFile = link.kind === 'file'
-  const subtitle = isFile
-    ? hostFromUrl(link.url) // "drive.google.com" etc.
-    : link.url.replace(/https?:\/\/(www\.)?/, '')
+  const meta = kindMeta(link.kind)
+  const subtitle = hostFromUrl(link.url)
   return (
     <div
       onMouseEnter={() => setHover(true)}
@@ -347,23 +371,13 @@ function RefRow({ link, onDelete }: { link: ObjectiveLink; onDelete: () => void 
       }}
       onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
     >
-      {isFile ? (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, color: 'var(--indigo-text)' }}>
-          <path d="M3 1.5h5L11 4.5V12.5H3z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-          <path d="M8 1.5V4.5h3" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-        </svg>
-      ) : (
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0, color: 'var(--teal-text)' }}>
-          <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2" />
-          <path d="M1.5 7h11M7 1.5c1.5 1.7 2.3 3.6 2.3 5.5S8.5 12.3 7 14M7 1.5c-1.5 1.7-2.3 3.6-2.3 5.5S5.5 12.3 7 14" stroke="currentColor" strokeWidth="1.2" />
-        </svg>
-      )}
+      <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1 }}>{meta.emoji}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
           {link.title}
         </div>
         <div style={{ fontSize: 10, color: 'var(--navy-400)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginTop: 1 }}>
-          {subtitle}
+          {meta.label} · {subtitle}
         </div>
       </div>
       <button

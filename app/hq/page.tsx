@@ -691,6 +691,7 @@ export default function HQPage() {
             setObjectives={setObjectives}
             setRoadmapItems={setRoadmapItems}
             onOpenObjective={setOpenObjectiveId}
+            links={links}
             logs={logs}
             setLogs={setLogs}
             initialKRId={initialKRId}

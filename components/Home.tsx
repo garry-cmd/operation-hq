@@ -119,6 +119,7 @@ interface Props {
   setObjectives: Dispatch<SetStateAction<AnnualObjective[]>>
   setRoadmapItems: Dispatch<SetStateAction<RoadmapItem[]>>
   onOpenObjective: (objectiveId: string) => void
+  links: import('@/lib/types').ObjectiveLink[]
   logs: ObjectiveLog[]
   setLogs: Dispatch<SetStateAction<ObjectiveLog[]>>
   initialKRId?: string | null
@@ -132,6 +133,7 @@ export default function Home({
   metricCheckins, habitCheckins, setHabitCheckins,
   reviews, weekForSpace, onCloseWeek, onLogMetric,
   setObjectives, setRoadmapItems, onOpenObjective,
+  links,
   logs, setLogs, initialKRId, onConsumeInitialKRId, onQuarterClose, toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
@@ -801,6 +803,11 @@ export default function Home({
               {pace && <span className={`pacechip ${pace.cls}`} style={{ marginTop: 7, display: 'inline-block' }}>{pace.txt}</span>}
             </div>
             {pillEls}
+            <ObjResources
+              objId={obj.id}
+              links={links.filter(l => l.objective_id === obj.id)}
+              onManage={() => onOpenObjective(obj.id)}
+            />
             <div className="rail-acts">
               <button className="ohb" title="Links & objective log" onClick={() => onOpenObjective(obj.id)}>⋯</button>
               <button className="ohb" title="Edit objective" onClick={() => setEditingObjective(obj)}>✎</button>
@@ -1492,6 +1499,60 @@ export default function Home({
           .col-name{max-width:150px;}
         }
       `}</style>
+    </div>
+  )
+}
+
+// ─── ObjResources ──────────────────────────────────────────────────────
+// Compact resource strip on the expanded objective card rail.
+// Shows linked Todoist projects, Evernote notebooks, Drive folders, etc.
+// as clickable chips. "+ Manage" opens the ObjectivePanel.
+function ObjResources({
+  objId, links, onManage,
+}: {
+  objId: string
+  links: import('@/lib/types').ObjectiveLink[]
+  onManage: () => void
+}) {
+  if (links.length === 0) {
+    return (
+      <div style={{ marginTop: 8 }}>
+        <button onClick={onManage}
+          style={{ fontSize: 11, color: 'var(--navy-500)', background: 'transparent', border: '1px dashed var(--navy-600)', borderRadius: 6, padding: '3px 10px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+          + link resources
+        </button>
+      </div>
+    )
+  }
+
+  const EMOJI: Record<string, string> = {
+    todoist_project: '✅', evernote_notebook: '📓', drive_folder: '📁',
+    evernote_note: '📝', file: '📄', link: '🔗', todoist_task: '✅',
+  }
+
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+      {links.map(l => (
+        <button key={l.id}
+          onClick={() => window.open(l.url, '_blank', 'noopener,noreferrer')}
+          title={l.url}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            fontSize: 11, fontWeight: 600, color: 'var(--navy-200)',
+            background: 'var(--navy-750, var(--navy-700))',
+            border: '1px solid var(--navy-600)',
+            borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
+            fontFamily: 'var(--font-mono)',
+          }}>
+          <span style={{ fontSize: 12 }}>{EMOJI[l.kind] ?? '🔗'}</span>
+          <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
+          <span style={{ fontSize: 10, opacity: 0.5 }}>↗</span>
+        </button>
+      ))}
+      <button onClick={onManage}
+        style={{ fontSize: 11, color: 'var(--navy-500)', background: 'transparent', border: '1px dashed var(--navy-600)', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', fontFamily: 'var(--font-mono)' }}>
+        +
+      </button>
     </div>
   )
 }

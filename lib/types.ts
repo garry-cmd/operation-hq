@@ -53,7 +53,7 @@ export interface ObjectiveLog {
 // filename in `title`. Same table, different chrome in the panel. Adding new
 // kinds (e.g. 'image' for inline-paste later) won't need a DB migration since
 // the column has no CHECK constraint.
-export type LinkKind = 'link' | 'file'
+export type LinkKind = 'link' | 'file' | 'todoist_project' | 'evernote_notebook' | 'drive_folder' | 'todoist_task' | 'evernote_note'
 
 export interface ObjectiveLink {
   id: string
