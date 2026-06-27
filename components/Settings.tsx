@@ -1,4 +1,5 @@
 'use client'
+import { PinIcon } from './Icons'
 import { useCallback, useEffect, useState } from 'react'
 import { getMonday } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
@@ -279,7 +280,7 @@ export default function Settings({ toast, googleConnected, driveGranted, onConne
                     )}
                     <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                       <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color: 'var(--nw-cream, var(--navy-100))' }}>
-                        {m.pinned && <span title="Pinned" style={{ marginRight: 5 }}>📌</span>}
+                        {m.pinned && <PinIcon size={11} color="var(--accent)" style={{ marginRight: 5, flexShrink: 0 }}/>}
                         {m.content}
                       </div>
                       <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>

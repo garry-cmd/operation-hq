@@ -1,4 +1,6 @@
 'use client'
+import React from 'react'
+import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, DriveFileIcon, LinkIcon } from './Icons'
 /**
  * ObjectivePanel — the "back of card" for an annual objective.
  *
@@ -29,16 +31,16 @@ import MarkdownBody from './MarkdownBody'
 const LINK_KINDS: {
   kind: import('@/lib/types').LinkKind
   label: string
-  emoji: string
+  icon: React.ReactNode
   urlPlaceholder: string
   namePlaceholder: string
 }[] = [
-  { kind: 'todoist_project', label: 'Todoist Project',     emoji: '✅', urlPlaceholder: 'Todoist project URL (https://todoist.com/app/project/…)', namePlaceholder: 'Project name' },
-  { kind: 'evernote_notebook', label: 'Evernote Notebook', emoji: '📓', urlPlaceholder: 'Evernote notebook link', namePlaceholder: 'Notebook name' },
-  { kind: 'drive_folder',    label: 'Drive Folder',        emoji: '📁', urlPlaceholder: 'Google Drive folder URL', namePlaceholder: 'Folder name' },
-  { kind: 'evernote_note',   label: 'Evernote Note',       emoji: '📝', urlPlaceholder: 'Evernote note link', namePlaceholder: 'Note title' },
-  { kind: 'file',            label: 'Drive File',           emoji: '📄', urlPlaceholder: 'Google Drive file URL', namePlaceholder: 'File name' },
-  { kind: 'link',            label: 'Web Link',             emoji: '🔗', urlPlaceholder: 'Paste URL (https://…)', namePlaceholder: '' },
+  { kind: 'todoist_project', label: 'Todoist Project',     icon: <TodoistIcon size={14}/>, urlPlaceholder: 'Todoist project URL (https://todoist.com/app/project/…)', namePlaceholder: 'Project name' },
+  { kind: 'evernote_notebook', label: 'Evernote Notebook', icon: <EvernoteNotebookIcon size={14}/>, urlPlaceholder: 'Evernote notebook link', namePlaceholder: 'Notebook name' },
+  { kind: 'drive_folder',    label: 'Drive Folder',        icon: <DriveFolderIcon size={14}/>, urlPlaceholder: 'Google Drive folder URL', namePlaceholder: 'Folder name' },
+  { kind: 'evernote_note',   label: 'Evernote Note',       icon: <EvernoteNoteIcon size={14}/>, urlPlaceholder: 'Evernote note link', namePlaceholder: 'Note title' },
+  { kind: 'file',            label: 'Drive File',           icon: <DriveFileIcon size={14}/>, urlPlaceholder: 'Google Drive file URL', namePlaceholder: 'File name' },
+  { kind: 'link',            label: 'Web Link',             icon: <LinkIcon size={14}/>, urlPlaceholder: 'Paste URL (https://…)', namePlaceholder: '' },
 ]
 
 function kindMeta(kind: string) {
@@ -221,7 +223,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
                         style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--navy-100)', fontSize: 13, textAlign: 'left' }}
                         onMouseEnter={e => (e.currentTarget.style.background = 'var(--navy-700)')}
                         onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                        <span style={{ fontSize: 15 }}>{k.emoji}</span>
+                        <span style={{ display:'inline-flex', alignItems:'center' }}>{k.icon}</span>
                         <span>{k.label}</span>
                       </button>
                     ))}
@@ -240,7 +242,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
           return (
             <div style={formCardStyle}>
               <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--navy-400)', textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: 8 }}>
-                {meta.emoji} {meta.label}
+                {meta.icon} {meta.label}
               </div>
               {needsName && (
                 <input
@@ -371,7 +373,7 @@ function RefRow({ link, onDelete }: { link: ObjectiveLink; onDelete: () => void 
       }}
       onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
     >
-      <span style={{ fontSize: 15, flexShrink: 0, lineHeight: 1 }}>{meta.emoji}</span>
+      <span style={{ display:'inline-flex', alignItems:'center', flexShrink: 0 }}>{meta.icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--navy-100)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
           {link.title}

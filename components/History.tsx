@@ -1,4 +1,5 @@
 'use client'
+import { NotebookStackIcon } from './Icons'
 import { WeeklyReview } from '@/lib/types'
 import { ACTIVE_Q, formatWeek } from '@/lib/utils'
 import StatusPill from './StatusPill'
@@ -13,7 +14,7 @@ export default function History({ reviews }: { reviews: WeeklyReview[] }) {
       <div className="rounded-xl overflow-hidden" style={{ background: 'var(--navy-700)', border: '1px solid var(--navy-600)' }}>
         {reviews.length === 0 && (
           <div className="text-center py-12 text-sm" style={{ color: 'var(--navy-400)' }}>
-            <div className="text-3xl mb-2">📚</div>
+            <div className="mb-2"><NotebookStackIcon size={32} color="var(--t-3)"/></div>
             No reviews yet. Complete your first weekly review in the Check-in tab.
           </div>
         )}

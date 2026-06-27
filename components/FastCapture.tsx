@@ -1,4 +1,5 @@
 'use client'
+import { InboxIcon } from './Icons'
 import { useState, useRef, useEffect, useMemo } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
@@ -204,7 +205,7 @@ export default function FastCapture({
                 <div className="fc-lbl">{active === 'note' ? 'Space (optional)' : 'Space'}</div>
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                   {active === 'note' && (
-                    <button type="button" onClick={() => setSecondVal('')} className={`fc-chip${secondVal === '' ? ' on' : ''}`}>📥 Inbox</button>
+                    <button type="button" onClick={() => setSecondVal('')} className={`fc-chip${secondVal === '' ? ' on' : ''}`}><InboxIcon size={12} style={{marginRight:4}}/> Inbox</button>
                   )}
                   {orderedSpaces.map(sp => (
                     <button type="button" key={sp.id} onClick={() => setSecondVal(sp.id)} className={`fc-chip${secondVal === sp.id ? ' on' : ''}`}>

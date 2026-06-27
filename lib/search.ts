@@ -1,3 +1,4 @@
+import type React from 'react'
 // Client-side search ranker for the command palette. Pure functions, no React.
 // Everything the app needs is already loaded into page.tsx state, so ranking
 // happens in-memory — instant, no round-trip. Postgres FTS would only earn its
@@ -21,7 +22,7 @@ export interface SearchRoute {
 export interface SearchEntry {
   id: string
   kind: SearchKind
-  icon: string
+  icon: React.ReactNode
   title: string
   body?: string
   tags?: string[]

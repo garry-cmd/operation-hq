@@ -1,4 +1,5 @@
 'use client'
+import { InboxIcon, LayersIcon } from './Icons'
 import { useMemo, useState } from 'react'
 import type { Space, RoadmapItem, TrackedFile, TrackedFileStatus, FileVersion, FileVersionDirection } from '@/lib/types'
 import * as filesDb from '@/lib/db/trackedFiles'
@@ -190,8 +191,8 @@ export default function Files({
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 20, fontWeight: 600, margin: '0 0 18px', color: 'var(--navy-50)', letterSpacing: '-.02em' }}>Files</h1>
 
         <div style={{ ...label, fontSize: 9.5, marginBottom: 8 }}>Smart views</div>
-        <ScopeRow active={scope.kind === 'inbox'} onClick={() => setScope({ kind: 'inbox' })} glyph="📥" name="Inbox" count={counts.inbox} />
-        <ScopeRow active={scope.kind === 'all'} onClick={() => setScope({ kind: 'all' })} glyph="∞" name="All files" count={counts.all} />
+        <ScopeRow active={scope.kind === 'inbox'} onClick={() => setScope({ kind: 'inbox' })} glyph={<InboxIcon size={13}/>} name="Inbox" count={counts.inbox} />
+        <ScopeRow active={scope.kind === 'all'} onClick={() => setScope({ kind: 'all' })} glyph={<LayersIcon size={13}/>} name="All files" count={counts.all} />
 
         <div style={{ ...label, fontSize: 9.5, margin: '16px 0 8px' }}>Spaces</div>
         {spaces.map(s => (
@@ -328,7 +329,7 @@ export default function Files({
 }
 
 function ScopeRow({ active, onClick, glyph, dot, name, count }: {
-  active: boolean; onClick: () => void; glyph?: string; dot?: string; name: string; count: number
+  active: boolean; onClick: () => void; glyph?: React.ReactNode; dot?: string; name: string; count: number
 }) {
   return (
     <button onClick={onClick} style={{
@@ -337,7 +338,7 @@ function ScopeRow({ active, onClick, glyph, dot, name, count }: {
       background: active ? 'var(--accent-bg, var(--navy-700, var(--navy-600)))' : 'transparent',
       color: active ? 'var(--nw-cream, var(--navy-100))' : 'var(--navy-300)', fontFamily: 'inherit',
     }}>
-      {dot ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} /> : <span style={{ width: 16, textAlign: 'center', fontSize: 12 }}>{glyph}</span>}
+      {dot ? <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot, flexShrink: 0 }} /> : <span style={{ width: 16, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{glyph}</span>}
       <span style={{ flex: 1, fontSize: 12.5, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
       {count > 0 && <span style={{ fontSize: 10.5, color: 'var(--navy-400)', fontFamily: 'var(--font-mono)' }}>{count}</span>}
     </button>

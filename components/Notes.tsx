@@ -12,6 +12,7 @@ import { extractNoteText } from '@/lib/noteText'
 import { useIsMobile } from '@/lib/useIsMobile'
 import { deleteAllMediaForNote } from '@/lib/db/noteMedia'
 import { NoteEditor } from './notes/NoteEditor'
+import { InboxIcon, LayersIcon, TagIcon, PinIcon, ChevronDown, ChevronRight, Dot, NotebookIcon, NotebookStackIcon } from './Icons'
 
 interface Props {
   spaces: Space[]
@@ -330,12 +331,12 @@ export default function Notes({
         <div style={{ padding: '14px 14px 8px' }}>
           <div style={{ ...LABEL_STYLE, marginBottom: 6 }}>Smart views</div>
           <SidebarRow
-            icon="📥" label="Inbox" count={counts.inbox}
+            icon={<InboxIcon size={13} color="currentColor"/>} label="Inbox" count={counts.inbox}
             active={scope.kind === 'inbox'}
             onClick={() => { setScope({ kind: 'inbox' }); setSelectedNoteId(null) }}
           />
           <SidebarRow
-            icon="∞" label="All notes" count={counts.all}
+            icon={<LayersIcon size={13} color="currentColor"/>} label="All notes" count={counts.all}
             active={scope.kind === 'all'}
             onClick={() => { setScope({ kind: 'all' }); setSelectedNoteId(null) }}
           />
@@ -415,7 +416,7 @@ export default function Notes({
             {allTags.map(tag => (
               <SidebarRow
                 key={tag}
-                icon="#"
+                icon={<TagIcon size={11} color="currentColor"/>}
                 label={tag}
                 count={counts.byTag[tag] ?? 0}
                 active={scope.kind === 'tag' && scope.tag === tag}
@@ -529,7 +530,7 @@ export default function Notes({
 
 /** Generic sidebar row — smart views, tags */
 function SidebarRow({ icon, label, count, active, onClick }: {
-  icon?: string; label: string; count?: number; active?: boolean; onClick: () => void
+  icon?: React.ReactNode; label: string; count?: number; active?: boolean; onClick: () => void
 }) {
   const [hover, setHover] = useState(false)
   return (
@@ -544,7 +545,7 @@ function SidebarRow({ icon, label, count, active, onClick }: {
         position: 'relative',
       }}>
       {active && <span style={{ position: 'absolute', left: 0, top: 4, bottom: 4, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />}
-      {icon && <span style={{ width: 14, textAlign: 'center', fontSize: 11, opacity: 0.7 }}>{icon}</span>}
+      {icon && <span style={{ width: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', opacity: 0.7 }}>{icon}</span>}
       <span style={{ flex: 1, fontSize: 13, fontWeight: active ? 600 : 500, color: active ? 'var(--accent-2)' : 'var(--t-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       {count != null && count > 0 && <span style={{ ...MONO_COUNT, color: active ? 'var(--accent)' : 'var(--t-3)' }}>{count}</span>}
     </button>
@@ -569,7 +570,7 @@ function SpaceRow({ space, expanded, count, active, onToggle, onSelect, onNewNot
       {active && <span style={{ position: 'absolute', left: 0, top: 4, bottom: 4, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />}
       <span onClick={e => { e.stopPropagation(); onToggle() }}
         style={{ width: 14, textAlign: 'center', color: 'var(--t-3)', fontSize: 9, cursor: 'pointer', flexShrink: 0 }}>
-        {expanded ? '▾' : '▸'}
+        {expanded ? <ChevronDown size={10}/> : <ChevronRight size={10}/>}
       </span>
       <span style={{ width: 7, height: 7, borderRadius: '50%', background: space.color, flexShrink: 0, boxShadow: `0 0 0 1px ${space.color}44` }} />
       <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: active ? 'var(--accent-2)' : 'var(--t-0)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
@@ -652,7 +653,7 @@ function NotebookBranch(props: {
         }}>
         {isActive && <span style={{ position: 'absolute', left: 6, top: 4, bottom: 4, width: 3, borderRadius: '0 3px 3px 0', background: 'var(--accent)' }} />}
         <span style={{ width: 10, textAlign: 'center', color: 'var(--t-3)', fontSize: 9, flexShrink: 0 }}>
-          {isStack ? (expanded ? '▾' : '▸') : '·'}
+          {isStack ? (expanded ? <ChevronDown size={9}/> : <ChevronRight size={9}/>) : <Dot size={8}/>}
         </span>
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{notebook.name}</span>
         {!hover && (props.counts.byNotebook[notebook.id] ?? 0) > 0 && (
@@ -762,7 +763,7 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
         cursor: 'pointer', fontFamily: 'inherit', transition: 'background .1s',
       }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-        {note.pinned_at && <span style={{ fontSize: 9, flexShrink: 0 }}>📌</span>}
+        {note.pinned_at && <PinIcon size={11} color="var(--accent)" style={{ flexShrink: 0 }}/>}
         <span style={{
           fontFamily: 'var(--font-display)',
           fontSize: 13.5, fontWeight: 600,

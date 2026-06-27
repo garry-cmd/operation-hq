@@ -32,6 +32,7 @@ import Toast from '@/components/Toast'
 import NavRail from '@/components/NavRail'
 import CommandPalette from '@/components/CommandPalette'
 import type { SearchEntry } from '@/lib/search'
+import { ObjectiveIcon, KRIcon, ActionIcon, NoteIcon, ReflectIcon, SpaceIcon, SearchNotebookIcon } from '@/components/Icons'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
 import QuarterCloseWizard from '@/components/QuarterCloseWizard'
 import MetricLogModal from '@/components/MetricLogModal'
@@ -334,7 +335,7 @@ export default function HQPage() {
 
     for (const o of objectives) {
       out.push({
-        id: `obj:${o.id}`, kind: 'Objective', icon: '◎', title: o.name,
+        id: `obj:${o.id}`, kind: 'Objective', icon: <ObjectiveIcon size={12}/>, title: o.name,
         ...spaceMeta(o.space_id), rec: recency(o.created_at),
         route: { screen: 'home', spaceId: o.space_id, objectiveId: o.id },
       })
@@ -343,7 +344,7 @@ export default function HQPage() {
     for (const i of roadmapItems) {
       const parked = i.is_parked
       out.push({
-        id: `kr:${i.id}`, kind: 'Key Result', icon: '◇', title: i.title,
+        id: `kr:${i.id}`, kind: 'Key Result', icon: <KRIcon size={12}/>, title: i.title,
         ...spaceMeta(i.space_id), hint: parked ? 'parked' : undefined,
         rec: recency(i.created_at),
         route: parked
@@ -370,7 +371,7 @@ export default function HQPage() {
       const sid = spaceForKR.get(a.roadmap_item_id)
       const thisWeek = isThisWeek(a)
       out.push({
-        id: `act:${a.id}`, kind: 'Action', icon: '▸', title: a.title,
+        id: `act:${a.id}`, kind: 'Action', icon: <ActionIcon size={12}/>, title: a.title,
         ...spaceMeta(sid), hint: thisWeek ? 'this week' : undefined,
         done: a.completed, rec: thisWeek ? 8 : 2,
         route: { screen: 'home', spaceId: sid, krId: a.roadmap_item_id },
@@ -379,7 +380,7 @@ export default function HQPage() {
 
     for (const n of notes) {
       out.push({
-        id: `note:${n.id}`, kind: 'Note', icon: '▤', title: n.title || 'Untitled',
+        id: `note:${n.id}`, kind: 'Note', icon: <NoteIcon size={12}/>, title: n.title || 'Untitled',
         body: extractNoteText(n.body), tags: tagsByNote.get(n.id),
         container: n.notebook_id ? notebookName.get(n.notebook_id) : undefined,
         ...spaceMeta(n.space_id), rec: recency(n.updated_at),
@@ -391,7 +392,7 @@ export default function HQPage() {
       const text = [r.win, r.slipped, r.adjust_notes].filter(Boolean).join(' ')
       if (!text) continue
       out.push({
-        id: `refl:${r.id}`, kind: 'Reflect', icon: '✶',
+        id: `refl:${r.id}`, kind: 'Reflect', icon: <ReflectIcon size={12}/>,
         title: `Reflection · ${formatWeek(r.week_start)}`, body: text,
         ...spaceMeta(r.space_id),
         route: { screen: 'reflect', spaceId: r.space_id, weekStart: r.week_start },
@@ -400,7 +401,7 @@ export default function HQPage() {
 
     for (const nb of notebooks) {
       out.push({
-        id: `nb:${nb.id}`, kind: 'Notebook', icon: '❑', title: nb.name,
+        id: `nb:${nb.id}`, kind: 'Notebook', icon: <SearchNotebookIcon size={12}/>, title: nb.name,
         ...spaceMeta(nb.space_id),
         route: { screen: 'notes', spaceId: nb.space_id },
       })
@@ -408,7 +409,7 @@ export default function HQPage() {
 
     for (const s of spaces) {
       out.push({
-        id: `space:${s.id}`, kind: 'Space', icon: '⬡', title: s.name,
+        id: `space:${s.id}`, kind: 'Space', icon: <SpaceIcon size={12}/>, title: s.name,
         spaceColor: s.color,
         route: { screen: 'home', spaceId: s.id },
       })

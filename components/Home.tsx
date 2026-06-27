@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, Fragment } from 'react'
+import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, DriveFileIcon, LinkIcon } from './Icons'
 import type { Dispatch, SetStateAction, ReactNode, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import type {
   Space, AnnualObjective, RoadmapItem, WeeklyAction, MetricCheckin,
@@ -1520,9 +1521,9 @@ function ObjResources({
     )
   }
 
-  const EMOJI: Record<string, string> = {
-    todoist_project: '✅', evernote_notebook: '📓', drive_folder: '📁',
-    evernote_note: '📝', file: '📄', link: '🔗', todoist_task: '✅',
+  const EMOJI: Record<string, React.ReactNode> = {
+    todoist_project: <TodoistIcon size={13}/>, evernote_notebook: <EvernoteNotebookIcon size={13}/>, drive_folder: <DriveFolderIcon size={13}/>,
+    evernote_note: <EvernoteNoteIcon size={13}/>, file: <DriveFileIcon size={13}/>, link: <LinkIcon size={13}/>, todoist_task: <TodoistIcon size={13}/>,
   }
 
   return (
@@ -1539,7 +1540,7 @@ function ObjResources({
             borderRadius: 6, padding: '3px 8px', cursor: 'pointer',
             fontFamily: 'var(--font-mono)',
           }}>
-          <span style={{ fontSize: 12 }}>{EMOJI[l.kind] ?? '🔗'}</span>
+          <span style={{ display:'inline-flex', alignItems:'center' }}>{EMOJI[l.kind] ?? <LinkIcon size={13}/>}</span>
           <span style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.title}</span>
           <span style={{ fontSize: 10, opacity: 0.5 }}>↗</span>
         </button>

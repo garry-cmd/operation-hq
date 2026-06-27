@@ -1,4 +1,6 @@
 'use client'
+import React from 'react'
+import { InboxIcon } from '../Icons'
 /**
  * NoteEditor — the standalone TipTap note editor, extracted from Notes.tsx so
  * it can be mounted anywhere (the Notes module's right pane AND the Home
@@ -663,7 +665,7 @@ const panelEmptyStyle: React.CSSProperties = {
 }
 
 function PanelRow({ label, active, onClick, indent, bold }: {
-  label: string; active?: boolean; onClick: () => void; indent?: boolean; bold?: boolean
+  label: React.ReactNode; active?: boolean; onClick: () => void; indent?: boolean; bold?: boolean
 }) {
   return (
     <button onClick={onClick}
@@ -694,7 +696,7 @@ function MovePanel({ spaces, notebooks, note, onMove, onClose }: {
     <div ref={ref} style={panelStyle}>
       <div style={panelHeaderStyle}>Move note</div>
       <div style={{ maxHeight: 320, overflowY: 'auto', padding: 4 }}>
-        <PanelRow label="📥 Inbox (no space)" active={here(null, null)} onClick={() => onMove(null, null)} />
+        <PanelRow label={<span style={{display:'inline-flex',alignItems:'center',gap:4}}><InboxIcon size={12}/>Inbox (no space)</span>} active={here(null, null)} onClick={() => onMove(null, null)} />
         {spaces.map(sp => {
           const nbs = notebooks.filter(nb => nb.space_id === sp.id)
           return (
