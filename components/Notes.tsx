@@ -79,6 +79,9 @@ export default function Notes({
   const [newNotebookFor, setNewNotebookFor] = useState<{ spaceId: string; parentId: string | null } | null>(null)
   const [newNotebookDraft, setNewNotebookDraft] = useState('')
   const [fullscreen, setFullscreen] = useState(false)
+  const [listView, setListView] = useState<'card' | 'table'>('card')
+  const [sortCol, setSortCol] = useState<'title' | 'updated' | 'created' | 'tags'>('updated')
+  const [sortAsc, setSortAsc] = useState(false)
   const isMobile = useIsMobile(900)
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
   const [mobileListOpen, setMobileListOpen] = useState(false)
@@ -151,6 +154,25 @@ export default function Notes({
     return notes.filter(n => (tagsByNote.get(n.id) ?? []).includes(scope.tag)).sort(byPinnedThenUpdated)
   }, [notes, scope, childrenByParent, tagsByNote])
 
+  // Sorted note list for table view
+  const sortedNotes = useMemo(() => {
+    if (listView !== 'table') return filteredNotes
+    return [...filteredNotes].sort((a, b) => {
+      let av = '', bv = ''
+      if (sortCol === 'title') { av = (a.title || '').toLowerCase(); bv = (b.title || '').toLowerCase() }
+      else if (sortCol === 'updated') { av = a.updated_at; bv = b.updated_at }
+      else if (sortCol === 'created') { av = a.created_at; bv = b.created_at }
+      else if (sortCol === 'tags') {
+        // sort by tag count then first tag alpha
+        const at = tagsByNote.get(a.id) ?? [], bt = tagsByNote.get(b.id) ?? []
+        av = at.length > 0 ? `${String(at.length).padStart(3,'0')}${at[0]}` : ''
+        bv = bt.length > 0 ? `${String(bt.length).padStart(3,'0')}${bt[0]}` : ''
+      }
+      const cmp = av < bv ? -1 : av > bv ? 1 : 0
+      return sortAsc ? cmp : -cmp
+    })
+  }, [filteredNotes, listView, sortCol, sortAsc, tagsByNote])
+
   const selectedNote = useMemo(
     () => selectedNoteId ? notes.find(n => n.id === selectedNoteId) ?? null : null,
     [notes, selectedNoteId],
@@ -159,6 +181,16 @@ export default function Notes({
   useEffect(() => {
     if (!selectedNote && fullscreen) { setFullscreen(false); onFocusChange?.(false) }
   }, [selectedNote, fullscreen, onFocusChange])
+
+  // Stats for the stats bar
+  const noteStats = useMemo(() => {
+    const tagged = filteredNotes.filter(n => (tagsByNote.get(n.id) ?? []).length > 0).length
+    const pinned = filteredNotes.filter(n => n.pinned_at).length
+    const latest = filteredNotes.length > 0
+      ? filteredNotes.reduce((a, b) => a.updated_at > b.updated_at ? a : b).updated_at
+      : null
+    return { total: filteredNotes.length, tagged, pinned, latest }
+  }, [filteredNotes, tagsByNote])
 
   const middleHeading = useMemo(() => {
     if (scope.kind === 'inbox') return 'Inbox'
@@ -434,13 +466,14 @@ export default function Notes({
         borderBottom: isMobile ? `1px solid ${BORDER}` : 'none',
         overflow: fullscreen ? 'hidden' : 'auto',
         visibility: fullscreen ? 'hidden' : 'visible',
-        ...(isMobile ? { display: mobileListOpen ? 'block' : 'none', maxHeight: '60vh', flexShrink: 0 } : {}),
+        display: 'flex', flexDirection: 'column',
+        ...(isMobile ? { display: mobileListOpen ? 'flex' : 'none', maxHeight: '60vh', flexShrink: 0 } : {}),
       }}>
-        {/* List header */}
+        {/* List header — sticky */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '14px 16px 10px', borderBottom: `1px solid ${BORDER}`,
-          position: 'sticky', top: 0, background: LIST_BG, zIndex: 2,
+          padding: '12px 14px 10px', borderBottom: `1px solid ${BORDER}`,
+          position: 'sticky', top: 0, background: LIST_BG, zIndex: 2, flexShrink: 0,
         }}>
           <div>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--t-0)', lineHeight: 1.2 }}>
@@ -448,20 +481,74 @@ export default function Notes({
             </div>
             <div style={{ ...MONO_COUNT, marginTop: 2 }}>{filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}</div>
           </div>
-          {scope.kind !== 'tag' && (
-            <button onClick={onCreateNote} title="New note" style={{
-              width: 26, height: 26, border: 'none', borderRadius: 5,
-              background: 'var(--accent)', color: '#fff', cursor: 'pointer',
-              display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 18, lineHeight: 1, fontFamily: 'inherit', fontWeight: 300,
-              flexShrink: 0,
-            }}
-              onMouseEnter={e => { e.currentTarget.style.opacity = '.85' }}
-              onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
-              +
-            </button>
-          )}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {scope.kind !== 'tag' && (
+              <button onClick={onCreateNote} title="New note" style={{
+                width: 26, height: 26, border: 'none', borderRadius: 5,
+                background: 'var(--accent)', color: '#fff', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 18, lineHeight: 1, fontFamily: 'inherit', fontWeight: 300, flexShrink: 0,
+              }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '.85' }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}>
+                +
+              </button>
+            )}
+            {/* View toggle — card / table */}
+            {!isMobile && (
+              <div style={{ display: 'flex', gap: 2, background: 'var(--surface-2)', borderRadius: 6, padding: 2 }}>
+                <button title="Card view" onClick={() => setListView('card')} style={{
+                  width: 26, height: 22, background: listView === 'card' ? 'var(--surface)' : 'none',
+                  border: 'none', borderRadius: 4, cursor: 'pointer', color: listView === 'card' ? 'var(--accent)' : 'var(--t-3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: listView === 'card' ? '0 1px 3px rgba(0,0,0,.3)' : 'none',
+                }}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <rect x="2" y="2" width="12" height="5" rx="1"/><rect x="2" y="9" width="12" height="5" rx="1"/>
+                  </svg>
+                </button>
+                <button title="Table view" onClick={() => setListView('table')} style={{
+                  width: 26, height: 22, background: listView === 'table' ? 'var(--surface)' : 'none',
+                  border: 'none', borderRadius: 4, cursor: 'pointer', color: listView === 'table' ? 'var(--accent)' : 'var(--t-3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: listView === 'table' ? '0 1px 3px rgba(0,0,0,.3)' : 'none',
+                }}>
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                    <rect x="1.5" y="2" width="13" height="12" rx="1"/>
+                    <path d="M1.5 6h13M1.5 10h13M5.5 2v12M10.5 2v12"/>
+                  </svg>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
+
+        {/* Stats bar */}
+        {filteredNotes.length > 0 && !isMobile && (
+          <div style={{
+            display: 'flex', borderBottom: `1px solid ${BORDER}`,
+            background: 'var(--surface)', flexShrink: 0,
+          }}>
+            {([
+              { val: noteStats.total, label: 'notes' },
+              { val: noteStats.tagged, label: 'tagged' },
+              { val: noteStats.pinned, label: 'pinned' },
+              { val: noteStats.latest ? formatRelative(noteStats.latest) : '—', label: 'latest' },
+            ] as { val: string | number; label: string }[]).map((s, i, arr) => (
+              <div key={s.label} style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                justifyContent: 'center', padding: '6px 0', gap: 1,
+                borderRight: i < arr.length - 1 ? `1px solid ${BORDER}` : 'none',
+              }}>
+                <div style={{
+                  fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
+                  fontSize: 13, fontWeight: 700, color: 'var(--t-0)', lineHeight: 1,
+                }}>{s.val}</div>
+                <div style={{ ...LABEL_STYLE, fontSize: 9, letterSpacing: '.14em' }}>{s.label}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {filteredNotes.length === 0 ? (
           <div style={{ padding: '40px 20px', textAlign: 'center' }}>
@@ -470,17 +557,97 @@ export default function Notes({
               <div style={{ fontSize: 12.5, color: 'var(--t-3)' }}>Hit + to create one.</div>
             )}
           </div>
+        ) : listView === 'table' ? (
+          /* ── TABLE VIEW ── */
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {/* Sort header row */}
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 72px 72px 96px',
+              alignItems: 'center', padding: '0 12px', height: 30,
+              borderBottom: `1px solid ${BORDER}`,
+              background: 'var(--surface)', position: 'sticky', top: 0, zIndex: 1,
+            }}>
+              {(['title', 'updated', 'created', 'tags'] as const).map(col => (
+                <button key={col} onClick={() => {
+                  if (sortCol === col) setSortAsc(a => !a)
+                  else { setSortCol(col); setSortAsc(col === 'title') }
+                }} style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 3,
+                  fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
+                  letterSpacing: '.12em', textTransform: 'uppercase',
+                  color: sortCol === col ? 'var(--nw-label)' : 'var(--t-3)',
+                  textAlign: 'left', padding: 0, fontVariantNumeric: 'tabular-nums',
+                }}>
+                  {col}
+                  {sortCol === col && (
+                    <span style={{ fontSize: 9 }}>{sortAsc ? '↑' : '↓'}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            {/* Table rows */}
+            {sortedNotes.map(note => {
+              const tags = tagsByNote.get(note.id) ?? []
+              const sel = selectedNoteId === note.id
+              return (
+                <button key={note.id} onClick={() => { setSelectedNoteId(note.id); if (isMobile) setMobileListOpen(false) }}
+                  style={{
+                    display: 'grid', gridTemplateColumns: '1fr 72px 72px 96px',
+                    alignItems: 'center', width: '100%', padding: '0 12px', height: 36,
+                    border: 'none', borderBottom: `1px solid ${BORDER}`,
+                    borderLeft: `3px solid ${sel ? 'var(--accent)' : 'transparent'}`,
+                    background: sel ? 'var(--accent-bg)' : 'none',
+                    cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+                  }}
+                  onMouseEnter={e => { if (!sel) e.currentTarget.style.background = 'var(--hover)' }}
+                  onMouseLeave={e => { if (!sel) e.currentTarget.style.background = 'none' }}>
+                  {/* Title */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600,
+                    color: sel ? 'var(--accent-2)' : 'var(--t-0)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    paddingRight: 8,
+                  }}>
+                    {note.pinned_at && (
+                      <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--accent)', flexShrink: 0 }} />
+                    )}
+                    {note.title || <span style={{ color: 'var(--t-3)', fontStyle: 'italic' }}>Untitled</span>}
+                  </div>
+                  {/* Updated */}
+                  <div style={{ ...MONO_COUNT, fontSize: 10.5 }}>{formatRelative(note.updated_at)}</div>
+                  {/* Created */}
+                  <div style={{ ...MONO_COUNT, fontSize: 10.5 }}>{formatDateShort(note.created_at)}</div>
+                  {/* Tags */}
+                  <div style={{ display: 'flex', gap: 3, overflow: 'hidden' }}>
+                    {tags.slice(0, 2).map(t => (
+                      <span key={t} style={{
+                        fontSize: 9.5, fontWeight: 600, padding: '1px 5px', borderRadius: 99,
+                        background: 'var(--accent-bg)', color: 'var(--accent)',
+                        fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap',
+                      }}>#{t}</span>
+                    ))}
+                    {tags.length > 2 && <span style={{ ...MONO_COUNT, fontSize: 9.5 }}>+{tags.length - 2}</span>}
+                  </div>
+                </button>
+              )
+            })}
+          </div>
         ) : (
-          filteredNotes.map(note => (
-            <NoteListItem
-              key={note.id}
-              note={note}
-              tags={tagsByNote.get(note.id) ?? []}
-              selected={selectedNoteId === note.id}
-              onClick={() => { setSelectedNoteId(note.id); if (isMobile) setMobileListOpen(false) }}
-              onTagClick={onJumpToTag}
-            />
-          ))
+          /* ── CARD VIEW ── */
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {filteredNotes.map(note => (
+              <NoteListItem
+                key={note.id}
+                note={note}
+                tags={tagsByNote.get(note.id) ?? []}
+                selected={selectedNoteId === note.id}
+                onClick={() => { setSelectedNoteId(note.id); if (isMobile) setMobileListOpen(false) }}
+                onTagClick={onJumpToTag}
+              />
+            ))}
+          </div>
         )}
       </section>
 
@@ -799,6 +966,11 @@ function NoteListItem({ note, tags, selected, onClick, onTagClick }: {
       </div>
     </button>
   )
+}
+
+function formatDateShort(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: '2-digit' })
 }
 
 function formatRelative(iso: string): string {
