@@ -3,7 +3,7 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 24, 2026**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 26, 2026**.
 
 ---
 
@@ -50,6 +50,32 @@ running deployment can't see it.
 ---
 
 ## Current state — shipped
+
+### Jun 26 (session 2) — Notes, Home, and Modal UI refresh
+
+**Notes module — major UI pass:**
+
+- **Notes.tsx rebuilt** — instrument-panel aesthetic: Space Grotesk display titles, mono amber section labels (`LABEL_STYLE`), cobalt accent on selected state, tabular-mono counts. Sidebar uses `SidebarRow` + `SpaceRow` with space color dot + glow, cobalt left-bar on active row. Note list: Space Grotesk titles, preview, mono dates, cobalt tag chips.
+- **Table view + stats bar** — view toggle in list header (card ↔ table). Table view has sortable columns (Title / Updated / Created / Tags), amber sort indicator, pinned dot prefix, cobalt selected state. Stats bar always visible: notes count, tagged count, pinned count, latest date.
+- **Filter panel** — funnel icon in list header (dot when active). Tags section: multi-select toggle chips (AND logic). Date section: Updated/Created toggle + From/To date pickers with a **MiniCalendar** (month nav, day grid, range highlighting). Stacks on top of scope; composable.
+- **SVG icon library** (`components/Icons.tsx`) — all emoji/unicode replaced with stroke SVGs: `InboxIcon`, `LayersIcon`, `NotebookIcon`, `NotebookStackIcon`, `PinIcon`, `TagIcon`, `TodoistIcon`, `EvernoteNotebookIcon`, `DriveFolderIcon`, `EvernoteNoteIcon`, `DriveFileIcon`, `LinkIcon`, `ObjectiveIcon`, `KRIcon`, `ActionIcon`, `NoteIcon`, `ReflectIcon`, `SpaceIcon`, `SearchNotebookIcon`, `ChevronDown`, `ChevronRight`, `Dot`. Swept across: `Notes.tsx`, `Files.tsx`, `FastCapture.tsx`, `Settings.tsx`, `Home.tsx`, `ObjectivePanel.tsx`, `NoteEditor.tsx`, `History.tsx`, `lib/search.ts`, `app/hq/page.tsx`.
+- **Evernote table repair** — 194 notes had `[Table]` placeholder bodies from the original ENEX migration. Those notes deleted from DB, `evernote-migrate.mjs` updated with proper TipTap table converter (`table > tableRow > tableCell/tableHeader > paragraph`) and `--repair` flag (only re-imports notes with `<table` in source HTML). Script on Desktop as `evernote-migrate.mjs`; run: `node evernote-migrate.mjs ~/Desktop/ --repair`.
+- **NoteEditor header redesign** — breadcrumb bar replacing the flat title-with-icons header: space color dot + `Space › Notebook` path, focus toggle left, save indicator + `⋯` menu right. `⋯` menu consolidates all scattered icon buttons: Pin, Link to KR, Move, Note history, Export .md, Delete. Title input: 30px display-weight, `Title` placeholder. Tags: cobalt mono chips + `+ tag` inline. Toolbar + editor CSS updated to HQ design tokens (`var(--t-0)`, `var(--surface)`, `var(--line)`, `var(--hover)`).
+
+**Home modal — section collapse + Vitals position:**
+
+- **Vitals band moved** above Focus this week (was below objectives). Order: Quote → Vitals (metrics + habit flip cards) → Focus this week → Objectives.
+- **All three sections collapsible** — Vitals, Focus this week, Objectives all start **collapsed** by default so the full page fits on one screen. Each section header is full-width clickable; chevron rotates 90° on expand; section meta (count, progress) visible in collapsed header. State: `vitalsOpen`, `focusOpen`, `objectivesOpen` (default all `false`). The "hide done" toggle still works inside the Focus header (stopPropagation so it doesn't collapse the section).
+
+**Modal design system refresh:**
+
+- **`Modal.tsx` rebuilt** — `var(--surface)` background, `var(--line)` border, Space Grotesk title, backdrop blur, Escape-to-close, `×` hover button. Shared CSS injected once: `.m-field`, `.m-label`, `.m-input`, `.m-btn`, `.m-btn-primary`, `.m-btn-danger`, `.m-row`, `.m-hint`, `.m-divider`, `.m-section-label`.
+- **`EditObjectiveModal`** — full restyle with new class names, clean layout.
+- **`MetricLogModal`** — inline styles updated to new tokens; logic/behavior unchanged.
+- **`EditKRModal`** — class names and `--navy-*` tokens swept.
+- **`CloseWeekWizard`, `QuarterCloseWizard`, `ActionPanel`, `ObjectivePanel`** — full token sweep (`--navy-50` through `--navy-900`, `--red-text`, `--indigo-*`, `--accent-dim`) replaced with new system. Layout and logic unchanged.
+
+**Irene space added:** `92e0a6df-631e-4bf3-a26a-66d924e21754`, color `#0ea5b8`. Notebooks: Cruising (19 notes), Maintenance (12 notes).
 
 ### Jun 26 — Objective external resource links + strategic direction shift
 
@@ -604,6 +630,7 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **Evernote `--repair` re-import** — run `node evernote-migrate.mjs ~/Desktop/ --repair` once to restore the 194 table-containing notes with proper TipTap table JSON. Script is on Desktop. The 194 placeholder notes were already deleted from DB this session; only the re-import remains.
 - **Issue 2 Phase B — weekly-update ritual (deferred).** Phase A gave actions an inline update thread; Phase B makes "weekly update" first-class: a `＋ this week's update` prompt stamped to the current week (per objective/KR), logs **grouped/badged by week**, and a tie-in to **Close Week** so the weekly reflection is part of the ritual. Build when Garry's tested Phase A.
 - **Action update thread only on the Focus band.** The `▸ note` thread lives on `.focusw` rows but not yet on the per-objective `.act-col` rows (`colActionRow`). Mirror it there if the dual surface is wanted — same `logsByAction`/`submitActLog`.
 - **Objective logs are ⋯-drawer only.** Objectives write/read logs through `ObjectivePanel`; KRs + actions have inline threads on Home. Promote objective logs inline on the card if more prominence is wanted (the card is dense — likely a full-width "Updates" strip under the expanded columns).
@@ -819,6 +846,7 @@ When re-patching files already touched this session, re-sync first
 | USPSA | `535fb6bd-9a9e-4cdc-8574-ebf61e43e13d` |
 | My OKRs | `d759151f-8a6c-4c28-9fe1-db303f4ecf3a` |
 | Keeply | `39450371-6432-4700-8f15-20fcd9ca2068` |
+| Irene | `92e0a6df-631e-4bf3-a26a-66d924e21754` |
 
 **Task lists** (global, no space): App Bugs `ed6849b4-…`, HQ Notes `1102a12c-…`,
 Keeply `efd02fa2-…`, Supplies `679e9e5f-…`, Admin & Compliance `67d8f402-…`, Reading `fa93467f-…`.
