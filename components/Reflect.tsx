@@ -49,7 +49,6 @@ type Props = {
   spaces: Space[]
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
-  onPlanWeek: (spaceId: string, week: string) => void
   roadmapItems: RoadmapItem[]
   metricCheckins: MetricCheckin[]
   habitCheckins: HabitCheckin[]
@@ -57,7 +56,7 @@ type Props = {
   toast: (m: string) => void
 }
 
-export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, onPlanWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
+export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
   const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
   const spaceById = new Map(spaces.map(s => [s.id, s]))
   const thisMonday = getMonday()
@@ -136,10 +135,6 @@ export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onC
                 <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--navy-400)', fontVariantNumeric: 'tabular-nums' }}>
                   {caughtUp ? `next · week of ${formatWeek(wk)}` : `week of ${formatWeek(wk)}`}
                 </span>
-                <button onClick={() => onPlanWeek(sp.id, wk)}
-                  style={{ fontSize: 12, fontWeight: 600, padding: '6px 12px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--surface-2)', color: 'var(--navy-200)', cursor: 'pointer' }}>
-                  Plan
-                </button>
                 {closed || caughtUp ? (
                   <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-nominal-text, #7fe27a)', padding: '5px 12px' }}>
                     {closed ? '✓ closed' : '✓ up to date'}

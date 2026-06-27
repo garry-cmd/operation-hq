@@ -1,4 +1,3 @@
-import * as tasksDb from '@/lib/db/tasks'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as notesDb from '@/lib/db/notes'
@@ -8,7 +7,7 @@ import { createCalendarEvent } from '@/lib/db/googleApi'
 import { markdownToTipTapDoc } from '@/lib/notes/markdownToDoc'
 import { getMonday } from '@/lib/utils'
 import type { ProposedAction } from '@/lib/agentTools'
-import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note, NoteBody, AnnualObjective } from '@/lib/types'
+import type { RoadmapItem, Space, HealthStatus, Note, NoteBody, AnnualObjective } from '@/lib/types'
 
 /**
  * Canonical executor for a propose-first agent action. Shared by the Chief of
@@ -18,14 +17,11 @@ import type { Task, RoadmapItem, Space, HealthStatus, CalendarBlock, Note, NoteB
  * rest of the app uses, then syncs the page-level state via the passed setters.
  */
 export interface ActionContext {
-  tasks: Task[]
   roadmapItems: RoadmapItem[]
   spaces: Space[]
   notes: Note[]
   objectives: AnnualObjective[]
-  setTasks: (fn: (p: Task[]) => Task[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
-  setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   setNotes?: (fn: (p: Note[]) => Note[]) => void
   setObjectives?: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
 }
@@ -65,31 +61,15 @@ function todayLocal(): string {
 /** Human-readable label for a proposed action's confirmation card. */
 export function describeAction(
   a: ProposedAction,
-  ctx: Pick<ActionContext, 'tasks' | 'roadmapItems' | 'spaces' | 'notes' | 'objectives'>,
+  ctx: Pick<ActionContext, 'roadmapItems' | 'spaces' | 'notes' | 'objectives'>,
 ): string {
   const input = a.input
-  if (a.tool === 'complete_task') {
-    const id = stripId(input.task_id, 'task'); const t = ctx.tasks.find(x => x.id === id)
-    if (t?.recurrence_rule && t.due_date) return `Complete \u201c${t.title}\u201d (recurring \u2014 rolls to next)`
-    return `Mark \u201c${t?.title ?? id}\u201d done`
-  }
-  if (a.tool === 'reschedule_task') {
-    const id = stripId(input.task_id, 'task'); const t = ctx.tasks.find(x => x.id === id)
-    return `Move \u201c${t?.title ?? id}\u201d \u2192 ${String(input.due_date ?? '')}`
-  }
-  if (a.tool === 'add_task') {
-    const sid = stripId(input.space_id, 'space')
-    const sp = sid ? ctx.spaces.find(s => s.id === sid)?.name : null
-    const due = input.due_date ? ` \u00b7 due ${String(input.due_date)}` : ''
-    return `Add task \u201c${String(input.title ?? '')}\u201d${sp ? ` to ${sp}` : ''}${due}`
-  }
+
   if (a.tool === 'set_kr_health') {
     const id = stripId(input.kr_id, 'kr'); const k = ctx.roadmapItems.find(x => x.id === id)
     return `Set \u201c${k?.title ?? id}\u201d \u2192 ${String(input.health ?? '').replace('_', ' ')}`
   }
-  if (a.tool === 'create_calendar_event') {
-    return `Add to calendar: \u201c${String(input.title ?? '')}\u201d \u00b7 ${String(input.date ?? '')} ${String(input.start_time ?? '')}\u2013${String(input.end_time ?? '')}`
-  }
+
   if (a.tool === 'create_note') {
     const sid = stripId(input.space_id, 'space')
     const sp = sid ? ctx.spaces.find(s => s.id === sid)?.name : null
@@ -109,26 +89,7 @@ export function describeAction(
     ].filter(Boolean).join(' + ')
     return `Edit note \u201c${n?.title || 'Untitled'}\u201d${bits ? ` (${bits})` : ''}`
   }
-  if (a.tool === 'update_task') {
-    const id = stripId(input.task_id, 'task'); const t = ctx.tasks.find(x => x.id === id)
-    const changes: string[] = []
-    if (input.title != null) changes.push(`title \u2192 \u201c${String(input.title)}\u201d`)
-    if (input.due_date != null) changes.push(`due ${String(input.due_date)}`)
-    if (input.priority != null) changes.push(`priority ${String(input.priority)}`)
-    if (input.description != null) changes.push('description')
-    if (input.duration_minutes != null) changes.push(`${Number(input.duration_minutes)}m`)
-    if (input.deadline_date != null) {
-      const d = String(input.deadline_date)
-      changes.push((d === 'none' || d === 'null') ? 'clear deadline' : `deadline ${d}`)
-    }
-    if (input.kr_id != null) {
-      const krRaw = String(input.kr_id)
-      if (krRaw === 'none' || krRaw === 'null') changes.push('unlink KR')
-      else { const k = ctx.roadmapItems.find(x => x.id === stripId(input.kr_id, 'kr')); changes.push(`link \u2192 ${k?.title ?? 'KR'}`) }
-    }
-    if (input.space_id != null) { const sp = ctx.spaces.find(s => s.id === stripId(input.space_id, 'space')); changes.push(`move \u2192 ${sp?.name ?? 'space'}`) }
-    return `Edit \u201c${t?.title ?? id}\u201d${changes.length ? `: ${changes.join(', ')}` : ''}`
-  }
+
   if (a.tool === 'log_metric') {
     const k = ctx.roadmapItems.find(x => x.id === stripId(input.kr_id, 'kr'))
     return `Log ${String(input.value ?? '')}${k?.metric_unit ? ` ${k.metric_unit}` : ''} \u2192 ${k?.title ?? 'metric'}`
@@ -171,33 +132,6 @@ export function describeAction(
  *  missing target so the caller can surface a failure + retry. */
 export async function runProposedAction(a: ProposedAction, ctx: ActionContext): Promise<void> {
   const input = a.input
-  if (a.tool === 'complete_task') {
-    const id = stripId(input.task_id, 'task')
-    const task = ctx.tasks.find(t => t.id === id)
-    if (!task) throw new Error('Task not found')
-    if (task.completed_at) return // already done — don't un-complete
-    // Canonical completion: recurring tasks roll their due date forward.
-    const updated = await tasksDb.toggleComplete(task)
-    ctx.setTasks(prev => prev.map(t => t.id === id ? updated : t))
-    return
-  }
-  if (a.tool === 'reschedule_task') {
-    const id = stripId(input.task_id, 'task'); const due = String(input.due_date ?? '')
-    if (!ctx.tasks.some(t => t.id === id)) throw new Error('Task not found')
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('Bad date')
-    await tasksDb.update(id, { due_date: due })
-    ctx.setTasks(prev => prev.map(t => t.id === id ? { ...t, due_date: due } : t))
-    return
-  }
-  if (a.tool === 'add_task') {
-    const title = String(input.title ?? '').trim()
-    if (!title) throw new Error('No title')
-    const sid = stripId(input.space_id, 'space') || null
-    const due = input.due_date ? String(input.due_date) : null
-    const created = await tasksDb.create({ title, space_id: sid, due_date: due })
-    ctx.setTasks(prev => [...prev, created])
-    return
-  }
   if (a.tool === 'set_kr_health') {
     const id = stripId(input.kr_id, 'kr'); const health = String(input.health ?? '') as HealthStatus
     if (!ctx.roadmapItems.some(k => k.id === id)) throw new Error('KR not found')
@@ -205,16 +139,7 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
     ctx.setRoadmapItems(prev => prev.map(k => k.id === id ? { ...k, health_status: health } : k))
     return
   }
-  if (a.tool === 'create_calendar_event') {
-    const title = String(input.title ?? '').trim()
-    const date = String(input.date ?? '')
-    if (!title || !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error('Bad event')
-    const startMin = hhmmToMin(input.start_time); const endMin = hhmmToMin(input.end_time)
-    if (endMin <= startMin) throw new Error('Bad time range')
-    const block = await createCalendarEvent(title, date, startMin, endMin)
-    ctx.setCalendarBlocks(prev => [...prev, block])
-    return
-  }
+
   if (a.tool === 'create_note') {
     const title = String(input.title ?? '').trim()
     const bodyText = String(input.body ?? '')
@@ -257,41 +182,6 @@ export async function runProposedAction(a: ProposedAction, ctx: ActionContext): 
     if (!Object.keys(patch).length) throw new Error('Nothing to update')
     const updated = await notesDb.update(id, patch)
     ctx.setNotes?.(prev => prev.map(n => n.id === id ? updated : n))
-    return
-  }
-  if (a.tool === 'update_task') {
-    const id = stripId(input.task_id, 'task')
-    if (!ctx.tasks.some(t => t.id === id)) throw new Error('Task not found')
-    const patch: Partial<Task> = {}
-    if (input.title != null) patch.title = String(input.title)
-    if (input.due_date != null) {
-      const due = String(input.due_date)
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('Bad date')
-      patch.due_date = due
-    }
-    if (input.priority != null) {
-      const p = Number(input.priority)
-      if (![1, 2, 3, 4].includes(p)) throw new Error('Bad priority')
-      patch.priority = p as Task['priority']
-    }
-    if (input.description != null) patch.description = String(input.description)
-    if (input.duration_minutes != null) {
-      const m = Number(input.duration_minutes)
-      if (!Number.isFinite(m) || m < 0) throw new Error('Bad duration')
-      patch.estimated_minutes = m
-    }
-    if (input.deadline_date != null) patch.deadline_date = dateOrNull(input.deadline_date)
-    if (input.kr_id != null) {
-      const r = String(input.kr_id)
-      patch.roadmap_item_id = (r === 'none' || r === 'null' || r === '') ? null : stripId(input.kr_id, 'kr')
-    }
-    if (input.space_id != null) {
-      patch.space_id = stripId(input.space_id, 'space') || null
-      patch.list_id = null // moving spaces clears the (space-scoped) list
-    }
-    if (!Object.keys(patch).length) throw new Error('Nothing to update')
-    const updated = await tasksDb.update(id, patch)
-    ctx.setTasks(prev => prev.map(t => t.id === id ? updated : t))
     return
   }
   if (a.tool === 'log_metric') {

@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'agent' | 'tasks' | 'notes' | 'calendar' | 'files' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
+export type Screen = 'home' | 'agent' | 'notes' | 'files' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
 
 interface Props {
   screen: Screen
@@ -34,7 +34,6 @@ interface Props {
 
   // Badges on nav rows. All optional / zero-friendly.
   homeAttentionCount?: number
-  tasksOverdueCount?: number
   parkedCount?: number
   reviewsCount?: number
 
@@ -69,9 +68,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
     items: [
       { id: 'home', label: 'Home', icon: <HomeIcon /> },
       { id: 'agent', label: 'Chief of Staff', icon: <AgentIcon /> },
-      { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
-      { id: 'calendar', label: 'Calendar', icon: <CalendarIcon /> },
       { id: 'files', label: 'Files', icon: <FilesIcon /> },
     ],
   },
@@ -114,7 +111,6 @@ export default function NavRail(props: Props) {
 
   function badge(id: Screen): number | undefined {
     if (id === 'home') return props.homeAttentionCount
-    if (id === 'tasks') return props.tasksOverdueCount
     if (id === 'park') return props.parkedCount
     if (id === 'reflect') return props.reviewsCount
     return undefined
@@ -236,8 +232,8 @@ export default function NavRail(props: Props) {
                     <span style={{
                       fontFamily: 'var(--font-mono)', fontVariantNumeric: 'tabular-nums',
                       fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 99,
-                      background: item.id === 'tasks' ? 'var(--red-bg)' : (isActive ? 'var(--accent)' : 'var(--surface-2)'),
-                      color: item.id === 'tasks' ? 'var(--red-text)' : (isActive ? '#fff' : 'var(--navy-300)'),
+                      background: isActive ? 'var(--accent)' : 'var(--surface-2)',
+                      color: isActive ? '#fff' : 'var(--navy-300)',
                       lineHeight: 1.5,
                     }}>
                       {b}

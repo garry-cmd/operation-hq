@@ -5,7 +5,7 @@ import {
   SearchEntry, SearchKind, RankedHit, rankEntries, parseQuery, highlightSegments, makeSnippet, Segment,
 } from '@/lib/search'
 
-const CHIPS: (SearchKind | 'All')[] = ['All', 'Objective', 'Key Result', 'Action', 'Task', 'Note']
+const CHIPS: (SearchKind | 'All')[] = ['All', 'Objective', 'Key Result', 'Action', 'Note']
 
 const RECENTS_KEY = 'hq-search-recents'
 function loadRecents(): string[] {
@@ -174,7 +174,7 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
             ref={inputRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search everything…  (try: rick · #stellar · task: · in:keeply)"
+            placeholder="Search everything…  (try: rick · #stellar · note: · in:keeply)"
             style={{ flex: 1, border: 'none', outline: 'none', background: 'none', color: 'var(--navy-50)', fontSize: 17, fontWeight: 500, fontFamily: 'inherit' }}
           />
           <span style={{ fontSize: 10.5, color: 'var(--navy-400)', background: 'var(--navy-700)', border: '1px solid var(--navy-500)', borderRadius: 5, padding: '2px 7px' }}>esc</span>
@@ -215,7 +215,7 @@ export default function CommandPalette({ open, onClose, entries, onPick }: {
           )}
           {!query.trim() && recentHits.length === 0 ? (
             <div style={{ padding: '34px 18px', textAlign: 'center', color: 'var(--navy-400)', fontSize: 13.5 }}>
-              Search objectives, KRs, actions, tasks, notes, notebooks — and tags.
+              Search objectives, KRs, actions, notes, notebooks — and tags.
             </div>
           ) : query.trim() && list.length === 0 ? (
             <div style={{ padding: '34px 18px', textAlign: 'center', color: 'var(--navy-400)', fontSize: 13.5 }}>

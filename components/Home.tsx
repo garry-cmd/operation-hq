@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect, Fragment } from 'react'
 import type { Dispatch, SetStateAction, ReactNode, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import type {
-  Space, AnnualObjective, RoadmapItem, WeeklyAction, MetricCheckin, Task,
+  Space, AnnualObjective, RoadmapItem, WeeklyAction, MetricCheckin,
   HabitCheckin, Note, Notebook, TrackedFile, WeeklyReview, ObjectiveLog,
 } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q, formatMinutes } from '@/lib/utils'
@@ -96,8 +96,6 @@ interface Props {
   actions: WeeklyAction[]
   setActions: Dispatch<SetStateAction<WeeklyAction[]>>
   metricCheckins: MetricCheckin[]
-  tasks: Task[]
-  setTasks: Dispatch<SetStateAction<Task[]>>
   habitCheckins: HabitCheckin[]
   setHabitCheckins: (fn: (h: HabitCheckin[]) => HabitCheckin[]) => void
   notes: Note[]
@@ -105,7 +103,6 @@ interface Props {
   notebooks: Notebook[]
   tagsByNote: Map<string, string[]>
   setTagsByNote: Dispatch<SetStateAction<Map<string, string[]>>>
-  googleConnected: boolean
   driveGranted: boolean
   trackedFiles: TrackedFile[]
   setTrackedFiles: Dispatch<SetStateAction<TrackedFile[]>>
@@ -113,8 +110,6 @@ interface Props {
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
   onOpenNote: (noteId: string) => void
-  onOpenTasks: () => void
-  onOpenCalendar: () => void
   onLogMetric: (krId: string) => void
   setObjectives: Dispatch<SetStateAction<AnnualObjective[]>>
   setRoadmapItems: Dispatch<SetStateAction<RoadmapItem[]>>

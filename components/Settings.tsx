@@ -99,6 +99,8 @@ export default function Settings({ toast, googleConnected, driveGranted, onConne
   const [editId, setEditId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
 
+  const unreviewedCount = (mems ?? []).filter(m => !m.reviewed_at && m.source).length
+
   const loadMems = useCallback(() => {
     memoryDb.listAll().then(setMems).catch(() => setMems([]))
   }, [])
@@ -141,6 +143,13 @@ export default function Settings({ toast, googleConnected, driveGranted, onConne
       setMems(prev => (prev ?? []).filter(m => m.id !== id))
       toast('Forgotten')
     } catch { toast('Could not delete') }
+  }
+
+  const onConfirm = async (id: string) => {
+    try {
+      await memoryDb.confirm(id)
+      setMems(prev => (prev ?? []).map(m => m.id === id ? { ...m, reviewed_at: new Date().toISOString() } : m))
+    } catch { toast('Could not confirm') }
   }
 
   return (
@@ -199,7 +208,14 @@ export default function Settings({ toast, googleConnected, driveGranted, onConne
       </div>
 
       <div style={{ ...card, marginTop: 18 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))', marginBottom: 4 }}>Agent memory</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--nw-cream, var(--navy-100))' }}>Agent memory</div>
+          {unreviewedCount > 0 && (
+            <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 99, background: 'var(--amber-bg)', color: 'var(--amber-text)', fontFamily: 'var(--font-mono)' }}>
+              {unreviewedCount} new from Scout
+            </span>
+          )}
+        </div>
         <p style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--navy-300)', margin: '0 0 14px' }}>
           Durable facts and preferences the Chief of Staff has learned about you. It saves these on its own as you chat, and reads them every conversation. Edit, pin, or delete anything here — pinned memories are kept first. You can also add one yourself.
         </p>
@@ -229,7 +245,8 @@ export default function Settings({ toast, googleConnected, driveGranted, onConne
             {mems.map(m => (
               <li key={m.id} style={{
                 border: '1px solid var(--navy-700, var(--navy-600))', borderRadius: 9, padding: '10px 12px',
-                background: m.pinned ? 'var(--navy-700, var(--navy-800))' : 'transparent',
+                background: !m.reviewed_at && m.source ? 'var(--amber-bg)' : m.pinned ? 'var(--navy-700, var(--navy-800))' : 'transparent',
+                borderColor: !m.reviewed_at && m.source ? 'var(--amber-text)' : undefined,
               }}>
                 {editId === m.id ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -240,15 +257,39 @@ export default function Settings({ toast, googleConnected, driveGranted, onConne
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color: 'var(--nw-cream, var(--navy-100))' }}>
-                      {m.pinned && <span title="Pinned" style={{ marginRight: 5 }}>📌</span>}
-                      {m.content}
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button onClick={() => togglePin(m)} style={smallBtn} title={m.pinned ? 'Unpin' : 'Pin (keep first)'}>{m.pinned ? 'Unpin' : 'Pin'}</button>
-                      <button onClick={() => startEdit(m)} style={smallBtn}>Edit</button>
-                      <button onClick={() => onRemove(m.id)} style={{ ...smallBtn, color: 'var(--nw-rose, #d66)', borderColor: 'var(--navy-600)' }}>Delete</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {/* Kind badge + provenance row */}
+                    {(m.kind || m.source) && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {m.kind && (
+                          <span style={{
+                            fontSize: 9.5, fontWeight: 600, padding: '1px 6px', borderRadius: 99,
+                            fontFamily: 'var(--font-mono)', textTransform: 'uppercase', letterSpacing: '.1em',
+                            background: m.kind === 'preference' ? 'var(--accent-bg)' : m.kind === 'fact' ? 'var(--teal-bg)' : 'var(--slate-bg)',
+                            color: m.kind === 'preference' ? 'var(--accent)' : m.kind === 'fact' ? 'var(--teal-text)' : 'var(--slate-text)',
+                          }}>{m.kind}</span>
+                        )}
+                        {m.source && (
+                          <span style={{ fontSize: 11, color: 'var(--navy-400)', fontFamily: 'var(--font-mono)' }}>{m.source}</span>
+                        )}
+                        {!m.reviewed_at && m.source && (
+                          <span style={{ fontSize: 9.5, padding: '1px 6px', borderRadius: 99, background: 'var(--amber-text)', color: 'var(--navy-900)', fontWeight: 600, fontFamily: 'var(--font-mono)' }}>unreviewed</span>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1, fontSize: 13, lineHeight: 1.5, color: 'var(--nw-cream, var(--navy-100))' }}>
+                        {m.pinned && <span title="Pinned" style={{ marginRight: 5 }}>📌</span>}
+                        {m.content}
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        {!m.reviewed_at && m.source && (
+                          <button onClick={() => onConfirm(m.id)} style={{ ...smallBtn, color: 'var(--ok, #7fe27a)', borderColor: 'var(--ok, #7fe27a)' }}>Keep</button>
+                        )}
+                        <button onClick={() => togglePin(m)} style={smallBtn} title={m.pinned ? 'Unpin' : 'Pin (keep first)'}>{m.pinned ? 'Unpin' : 'Pin'}</button>
+                        <button onClick={() => startEdit(m)} style={smallBtn}>Edit</button>
+                        <button onClick={() => onRemove(m.id)} style={{ ...smallBtn, color: 'var(--nw-rose, #d66)', borderColor: 'var(--navy-600)' }}>Delete</button>
+                      </div>
                     </div>
                   </div>
                 )}

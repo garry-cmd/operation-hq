@@ -42,34 +42,25 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   const admin = getSupabaseAdmin()
   const { today, weekStart } = input
   const weekEnd = addDays(weekStart, 6)
-  const horizon = addDays(today, 21)
 
-  const [spacesR, krsR, actionsR, tasksR, capR, blocksR, reviewsR, notesR, metricR, objsR, memsR] = await Promise.all([
+  const [spacesR, krsR, actionsR, reviewsR, notesR, metricR, objsR, memsR] = await Promise.all([
     admin.from('spaces').select('id,name,sort_order').order('sort_order'),
     admin.from('roadmap_items')
       .select('id,space_id,title,quarter,health_status,progress,is_parked,is_habit,is_metric,metric_unit,metric_direction,start_value,target_value,start_date,end_date')
       .eq('is_parked', false),
     admin.from('weekly_actions').select('id,roadmap_item_id,title,completed,week_start').eq('week_start', weekStart),
-    admin.from('tasks')
-      .select('id,space_id,title,priority,due_date,deadline_date,completed_at,parent_task_id,roadmap_item_id')
-      .is('completed_at', null).is('parent_task_id', null),
-    admin.from('calendar_capacity_blocks').select('space_id,kind,label,day_of_week,start_minute,end_minute').order('day_of_week'),
-    admin.from('calendar_blocks').select('title,block_date,start_minute,end_minute,status,space_id').gte('block_date', weekStart).lte('block_date', weekEnd),
     admin.from('weekly_reviews').select('space_id,week_start,rating,win,slipped,adjust_notes,krs_hit,krs_total,closed_at')
       .not('closed_at', 'is', null).order('week_start', { ascending: false }).limit(6),
     admin.from('notes').select('id,title,space_id,updated_at,roadmap_item_id').order('updated_at', { ascending: false }).limit(15),
     admin.from('metric_checkins').select('roadmap_item_id,value,week_start').order('week_start', { ascending: false }),
     admin.from('annual_objectives').select('id,name,space_id,status').eq('status', 'active'),
-    admin.from('agent_memory').select('id,content,pinned')
+    admin.from('agent_memory').select('id,content,pinned,kind,source,reviewed_at')
       .order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(40),
   ])
 
   const spaces = (spacesR.data ?? []) as Row[]
   const krs = (krsR.data ?? []) as Row[]
   const actions = (actionsR.data ?? []) as Row[]
-  const tasks = (tasksR.data ?? []) as Row[]
-  const caps = (capR.data ?? []) as Row[]
-  const blocks = (blocksR.data ?? []) as Row[]
   const reviews = (reviewsR.data ?? []) as Row[]
   const notes = (notesR.data ?? []) as Row[]
   const metrics = (metricR.data ?? []) as Row[]
@@ -99,17 +90,6 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     const arr = actionsByKr.get(id) ?? []; arr.push(a); actionsByKr.set(id, arr)
   }
 
-  // open tasks within the horizon (overdue + next 3 weeks + undated), grouped by space
-  const relevantTasks = tasks.filter(t => {
-    const due = str(t.due_date)
-    return !due || due <= horizon
-  })
-  const tasksBySpace = new Map<string, Row[]>()
-  for (const t of relevantTasks) {
-    const sid = str(t.space_id) || '∅'
-    const arr = tasksBySpace.get(sid) ?? []; arr.push(t); tasksBySpace.set(sid, arr)
-  }
-
   const lines: string[] = []
   const todayDow = DOW[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7]
   lines.push(`# HQ STATE — ${todayDow} ${today} (current week ${weekStart} → ${weekEnd})`)
@@ -120,7 +100,10 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
     lines.push('## What you’ve learned about the operator (your memory)')
     lines.push('Durable facts you saved in earlier conversations. Use them to be specific and personal. When one changes, update_memory or forget it; don’t re-save something already here.')
     for (const m of mems) {
-      lines.push(`- [mem:${str(m.id)}]${m.pinned ? ' 📌' : ''} ${str(m.content)}`)
+      const kindTag = str(m.kind) ? ` [${str(m.kind)}]` : ''
+      const srcTag = str(m.source) ? ` (${str(m.source)})` : ''
+      const reviewTag = !m.reviewed_at && m.source ? ' ⚑unreviewed' : ''
+      lines.push(`- [mem:${str(m.id)}]${m.pinned ? ' 📌' : ''}${kindTag}${reviewTag}${srcTag} ${str(m.content)}`)
     }
     lines.push('')
   }
@@ -129,8 +112,7 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
   for (const s of spaces) {
     const sid = str(s.id)
     const spaceKrs = krs.filter(k => str(k.space_id) === sid && str(k.health_status) !== 'done')
-    const spaceTasks = (tasksBySpace.get(sid) ?? [])
-    if (spaceKrs.length === 0 && spaceTasks.length === 0) continue
+    if (spaceKrs.length === 0) continue
 
     lines.push(`## ${str(s.name)} [space:${sid}]`)
 
@@ -159,56 +141,6 @@ export async function buildAgentContext(input: { today: string; weekStart: strin
       }
     }
 
-    if (spaceTasks.length) {
-      const sorted = spaceTasks.sort((a, b) => (str(a.due_date) || '9999') < (str(b.due_date) || '9999') ? -1 : 1)
-      lines.push(`  open tasks (${spaceTasks.length}):`)
-      for (const t of sorted.slice(0, 20)) {
-        const due = str(t.due_date)
-        const overdue = due && due < today ? ' ⚠OVERDUE' : ''
-        const dl = str(t.deadline_date) ? ` ⚑deadline ${str(t.deadline_date)}` : ''
-        const pr = num(t.priority)
-        const prBit = pr != null && pr <= 2 ? ` P${pr}` : ''
-        lines.push(`    · [task:${str(t.id)}] ${str(t.title)}${due ? ` (due ${due}${overdue})` : ''}${dl}${prBit}`)
-      }
-      if (spaceTasks.length > 20) lines.push(`    · …and ${spaceTasks.length - 20} more`)
-    }
-    lines.push('')
-  }
-
-  // ── tasks with no space ──
-  const noSpace = tasksBySpace.get('∅') ?? []
-  if (noSpace.length) {
-    lines.push(`## (no space) — inbox tasks`)
-    for (const t of noSpace.slice(0, 15)) {
-      const due = str(t.due_date)
-      const overdue = due && due < today ? ' ⚠OVERDUE' : ''
-      lines.push(`    · [task:${str(t.id)}] ${str(t.title)}${due ? ` (due ${due}${overdue})` : ''}`)
-    }
-    lines.push('')
-  }
-
-  // ── this week's calendar ──
-  if (blocks.length) {
-    lines.push(`## This week's calendar (${blocks.length} blocks)`)
-    const byDate = new Map<string, Row[]>()
-    for (const b of blocks) { const d = str(b.block_date); const arr = byDate.get(d) ?? []; arr.push(b); byDate.set(d, arr) }
-    for (const d of [...byDate.keys()].sort()) {
-      const dow = DOW[(new Date(d + 'T00:00:00Z').getUTCDay() + 6) % 7]
-      const items = (byDate.get(d) ?? []).sort((a, b) => num(a.start_minute)! - num(b.start_minute)!)
-      const parts = items.map(b => `${minutesToLabel(num(b.start_minute)!)} ${str(b.title)}${str(b.status) === 'proposed' ? ' (proposed)' : ''}`)
-      lines.push(`- ${dow} ${d}: ${parts.join(' · ')}`)
-    }
-    lines.push('')
-  }
-
-  // ── capacity windows (the reserved template) ──
-  if (caps.length) {
-    lines.push('## Capacity template (reserved working windows)')
-    for (const c of caps) {
-      const sp = str(c.space_id) ? (spaceName.get(str(c.space_id)) ?? 'space') : 'Any'
-      const kind = str(c.kind) === 'both' ? 'KR or task' : str(c.kind) === 'kr_action' ? 'KR work' : 'tasks'
-      lines.push(`- ${DOW[num(c.day_of_week) ?? 0]} ${minutesToLabel(num(c.start_minute)!)}–${minutesToLabel(num(c.end_minute)!)} · ${kind} · ${sp}`)
-    }
     lines.push('')
   }
 

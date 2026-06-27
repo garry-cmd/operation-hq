@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Task, TaskList, TaskSection, Notebook, Note, CapacityBlock, CalendarBlock, TrackedFile, FileVersion } from '@/lib/types'
+import { Space, AnnualObjective, RoadmapItem, WeeklyAction, DailyCheckin, WeeklyReview, ObjectiveLink, ObjectiveLog, HabitCheckin, MetricCheckin, Notebook, Note, TrackedFile, FileVersion } from '@/lib/types'
 import { getMonday, ACTIVE_Q, formatWeek } from '@/lib/utils'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as krsDb from '@/lib/db/krs'
@@ -11,13 +11,8 @@ import * as reviewsDb from '@/lib/db/reviews'
 import * as extrasDb from '@/lib/db/objectiveExtras'
 import * as spacesDb from '@/lib/db/spaces'
 import * as shareTokensDb from '@/lib/db/shareTokens'
-import * as tasksDb from '@/lib/db/tasks'
-import * as taskListsDb from '@/lib/db/taskLists'
-import * as taskSectionsDb from '@/lib/db/taskSections'
 import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
-import * as capacityDb from '@/lib/db/capacityBlocks'
-import * as calBlocksDb from '@/lib/db/calendarBlocks'
 import * as googleTokensDb from '@/lib/db/googleTokens'
 import * as trackedFilesDb from '@/lib/db/trackedFiles'
 import { extractNoteText } from '@/lib/noteText'
@@ -27,9 +22,7 @@ import Reflect from '@/components/Reflect'
 import ParkingLot from '@/components/ParkingLot'
 import Home from '@/components/Home'
 import Agent, { type ChatMsg } from '@/components/Agent'
-import Tasks from '@/components/Tasks'
 import Notes from '@/components/Notes'
-import Calendar from '@/components/Calendar'
 import Tags from '@/components/Tags'
 import Settings from '@/components/Settings'
 import Files from '@/components/Files'
@@ -41,13 +34,12 @@ import CommandPalette from '@/components/CommandPalette'
 import type { SearchEntry } from '@/lib/search'
 import CloseWeekWizard from '@/components/CloseWeekWizard'
 import QuarterCloseWizard from '@/components/QuarterCloseWizard'
-import PlanWeek from '@/components/PlanWeek'
 import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 import type { QuarterReview } from '@/lib/types'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'tasks' | 'notes' | 'calendar' | 'files' | 'tags' | 'settings'
+type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'notes' | 'files' | 'tags' | 'settings'
 
 
 export default function HQPage() {
@@ -91,15 +83,6 @@ export default function HQPage() {
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
-  // Tasks state (May 18). Lifted from Tasks.tsx so the NavRail badge can show
-  // today+overdue counts and the global search can include task titles. The
-  // Tasks component receives these as props plus the corresponding setters.
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [taskLists, setTaskLists] = useState<TaskList[]>([])
-  const [taskSections, setTaskSections] = useState<TaskSection[]>([])
-  const [tagsByTask, setTagsByTask] = useState<Map<string, string[]>>(new Map())
-  const [capacityBlocks, setCapacityBlocks] = useState<CapacityBlock[]>([])
-  const [calendarBlocks, setCalendarBlocks] = useState<CalendarBlock[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
   const [driveGranted, setDriveGranted] = useState(false)
   const [trackedFiles, setTrackedFiles] = useState<TrackedFile[]>([])
@@ -117,7 +100,6 @@ export default function HQPage() {
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
   const [closingWizard, setClosingWizard] = useState<{ spaceId: string; week: string } | null>(null)
-  const [planningWizard, setPlanningWizard] = useState<{ spaceId: string; week: string } | null>(null)
   const [quarterClose, setQuarterClose] = useState<{ quarter: string; spaceId: string | null } | null>(null)
   const [loggingMetricKRId, setLoggingMetricKRId] = useState<string | null>(null)
   // Currently-open objective panel (links/logs), opened from Home. Lifted to page level so
@@ -129,7 +111,6 @@ export default function HQPage() {
   // Cross-app jump targets. Set by Tags clicks; consumed (and cleared) by
   // the destination screen's mount effect so subsequent re-renders don't
   // re-select the item.
-  const [tasksInitialId, setTasksInitialId] = useState<string | null>(null)
   const [notesInitialId, setNotesInitialId] = useState<string | null>(null)
   // Reverse direction: when clicking a tag chip on a task/note row,
   // prefill the Tags page with that tag selected.
@@ -267,7 +248,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, tk, tl, ts, nb, nt, cap, calb, gstat, tf, fv] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, nb, nt, gstat, tf, fv] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -279,13 +260,8 @@ export default function HQPage() {
       extrasDb.logs.listAll().catch(fallback('objective_logs', [] as ObjectiveLog[])),
       spacesDb.listAll().catch(fallback('spaces', [] as Space[])),
       shareTokensDb.findActiveByLabel('Melissa').catch(fallback('share_tokens', null)),
-      tasksDb.listAll().catch(fallback('tasks', [] as Task[])),
-      taskListsDb.listAll().catch(fallback('task_lists', [] as TaskList[])),
-      taskSectionsDb.listAll().catch(fallback('task_sections', [] as TaskSection[])),
       notebooksDb.listAll().catch(fallback('notebooks', [] as Notebook[])),
       notesDb.listAll().catch(fallback('notes', [] as Note[])),
-      capacityDb.listAll().catch(fallback('calendar_capacity_blocks', [] as CapacityBlock[])),
-      calBlocksDb.listAll().catch(fallback('calendar_blocks', [] as CalendarBlock[])),
       googleTokensDb.getStatus().catch(fallback('google_status', { connected: false, driveGranted: false, hqCalendarId: null, readCalendarIds: [] })),
       trackedFilesDb.listAll().catch(fallback('tracked_files', [] as TrackedFile[])),
       trackedFilesDb.listAllVersions().catch(fallback('file_versions', [] as FileVersion[])),
@@ -301,34 +277,13 @@ export default function HQPage() {
     setLogs(lg)
     setSpaces(sp)
     if (st) setShareToken(st.token)
-    setTasks(tk)
-    setTaskLists(tl)
-    setTaskSections(ts)
     setNotebooks(nb)
     setNotes(nt)
-    setCapacityBlocks(cap)
-    setCalendarBlocks(calb)
     setGoogleConnected(gstat.connected)
     setDriveGranted(gstat.driveGranted)
     setTrackedFiles(tf)
     setFileVersions(fv)
-    // Tags follow tasks — a second query keyed by the loaded task ids. If
-    // it fails we silently fall back to empty (tag-driven UI degrades to
-    // "no tags," which is preferable to blocking task load).
-    try {
-      const tagRows = await tasksDb.listTagsForTasks(tk.map(t => t.id))
-      const map = new Map<string, string[]>()
-      for (const row of tagRows) {
-        const arr = map.get(row.task_id) ?? []
-        arr.push(row.tag)
-        map.set(row.task_id, arr)
-      }
-      setTagsByTask(map)
-    } catch (err) {
-      console.error('loadAll: task_tags failed:', err)
-      setTagsByTask(new Map())
-    }
-    // Note tags — same pattern as task_tags above.
+    // Note tags:
     try {
       const noteTagRows = await notesDb.listTagsForNotes(nt.map(n => n.id))
       const map = new Map<string, string[]>()
@@ -422,15 +377,6 @@ export default function HQPage() {
       })
     }
 
-    for (const t of tasks) {
-      out.push({
-        id: `task:${t.id}`, kind: 'Task', icon: '☑', title: t.title,
-        body: t.description ?? undefined, tags: tagsByTask.get(t.id),
-        ...spaceMeta(t.space_id), done: !!t.completed_at, rec: recency(t.updated_at),
-        route: { screen: 'tasks', taskId: t.id },
-      })
-    }
-
     for (const n of notes) {
       out.push({
         id: `note:${n.id}`, kind: 'Note', icon: '▤', title: n.title || 'Untitled',
@@ -469,18 +415,16 @@ export default function HQPage() {
     }
 
     return out
-  }, [objectives, roadmapItems, actions, tasks, notes, reviews, notebooks, spaces, tagsByTask, tagsByNote, weekStartBySpace, legacyWeekStart])
+  }, [objectives, roadmapItems, actions, notes, reviews, notebooks, spaces, tagsByNote, weekStartBySpace, legacyWeekStart])
 
   // Global keyboard layer:
   //   ⌘K  command palette
   //   ⌘T  new task   ·  ⌘N  new note   (PWA only — browser tabs reserve ⌘T/⌘N)
-  //   g <key>  go-to nav:  h Home · t Tasks · n Notes · r Roadmap
-  //                        c Calendar · s Scout · f Reflect · p Parking
+  //   g <key>  go-to nav:  h Home · n Notes · r Roadmap · s Scout · f Reflect · p Parking
   useEffect(() => {
     let gLeaderAt = 0
     const GO: Record<string, Screen> = {
-      h: 'home', t: 'tasks', n: 'notes', r: 'roadmap',
-      c: 'calendar', s: 'agent', f: 'reflect', p: 'park',
+      h: 'home', n: 'notes', r: 'roadmap', s: 'agent', f: 'reflect', p: 'park',
     }
     function isTyping(t: EventTarget | null): boolean {
       const el = t as HTMLElement | null
@@ -541,7 +485,6 @@ export default function HQPage() {
   function handleSearchPick(entry: SearchEntry) {
     const r = entry.route
     if (r.spaceId) switchSpace(r.spaceId)
-    if (r.taskId) setTasksInitialId(r.taskId)
     if (r.noteId) setNotesInitialId(r.noteId)
     if (r.objectiveId) setOpenObjectiveId(r.objectiveId)
     if (r.screen === 'reflect' && r.spaceId && r.weekStart) {
@@ -561,7 +504,6 @@ export default function HQPage() {
   const spaceRoadmapItemIds = new Set(spaceRoadmapItems.map(i => i.id))
   const spaceCheckins = checkins.filter(c => spaceRoadmapItemIds.has(c.roadmap_item_id))
   const spaceReviews = reviews.filter(r => r.space_id === activeSpaceId)
-  const spaceTasks = tasks.filter(t => t.space_id === activeSpaceId)
   // In-progress draft for this space (Step 1 saved, Step 2 abandoned).
   // Surfaced as the page-level banner below — the lighter parallel to the
   // forced-launcher overlay. Null when no draft, so the banner stays hidden.
@@ -592,19 +534,7 @@ export default function HQPage() {
         onSpaceSelect={switchSpace}
         onSpaceCreated={space => setSpaces(prev => [...prev, space])}
         onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
-        homeAttentionCount={(() => {
-          const td = new Date()
-          const today = `${td.getFullYear()}-${String(td.getMonth() + 1).padStart(2, '0')}-${String(td.getDate()).padStart(2, '0')}`
-          return tasks.filter(t => !t.completed_at && !t.parent_task_id && t.due_date && t.due_date < today).length
-        })()}
-        tasksOverdueCount={(() => {
-          // Matches the Tasks "Today" smart view filter: open tasks with a
-          // due_date on or before today. Empty due_date is "Later" — doesn't
-          // count toward this badge.
-          const todayLocal = new Date()
-          const today = `${todayLocal.getFullYear()}-${String(todayLocal.getMonth() + 1).padStart(2, '0')}-${String(todayLocal.getDate()).padStart(2, '0')}`
-          return tasks.filter(t => !t.completed_at && t.due_date && t.due_date <= today).length
-        })()}
+
         parkedCount={parkedCount}
         reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}
         agentWorking={agentPending}
@@ -668,8 +598,6 @@ export default function HQPage() {
             actions={actions}
             setActions={setActions}
             metricCheckins={metricCheckins}
-            tasks={tasks}
-            setTasks={setTasks}
             habitCheckins={habitCheckins}
             setHabitCheckins={setHabitCheckins}
             notes={notes}
@@ -685,8 +613,6 @@ export default function HQPage() {
             weekForSpace={weekForSpace}
             onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })}
             onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
-            onOpenTasks={() => setScreen('tasks')}
-            onOpenCalendar={() => setScreen('calendar')}
             onLogMetric={krId => setLoggingMetricKRId(krId)}
             setObjectives={setObjectives}
             setRoadmapItems={setRoadmapItems}
@@ -700,25 +626,7 @@ export default function HQPage() {
             toast={setToast}
           />
         </main>
-      ) : screen === 'tasks' && !loading ? (
-        <Tasks
-          spaces={spaces}
-          activeSpaceId={activeSpaceId}
-          objectives={objectives}
-          roadmapItems={roadmapItems}
-          tasks={tasks}
-          setTasks={setTasks}
-          lists={taskLists}
-          setLists={setTaskLists}
-          sections={taskSections}
-          setSections={setTaskSections}
-          tagsByTask={tagsByTask}
-          setTagsByTask={setTagsByTask}
-          initialTaskId={tasksInitialId}
-          onConsumeInitialTaskId={() => setTasksInitialId(null)}
-          onJumpToTag={tag => { setTagsInitialTag(tag); setScreen('tags') }}
-          toast={setToast}
-        />
+
       ) : screen === 'notes' && !loading ? (
         <Notes
           spaces={spaces}
@@ -736,22 +644,7 @@ export default function HQPage() {
           onFocusChange={setNotesFocus}
           toast={setToast}
         />
-      ) : screen === 'calendar' && !loading ? (
-        <Calendar
-          spaces={spaces}
-          objectives={objectives}
-          roadmapItems={roadmapItems}
-          actions={actions}
-          tasks={tasks}
-          capacityBlocks={capacityBlocks}
-          setCapacityBlocks={setCapacityBlocks}
-          calendarBlocks={calendarBlocks}
-          setCalendarBlocks={setCalendarBlocks}
-          googleConnected={googleConnected}
-          onConnectGoogle={connectGoogle}
-          onDisconnectGoogle={disconnectGoogle}
-          toast={setToast}
-        />
+
       ) : screen === 'files' && !loading ? (
         <Files
           spaces={spaces}
@@ -767,12 +660,9 @@ export default function HQPage() {
         />
       ) : screen === 'agent' && !loading ? (
         <Agent
-          tasks={tasks}
-          setTasks={setTasks}
           roadmapItems={roadmapItems}
           setRoadmapItems={setRoadmapItems}
           spaces={spaces}
-          setCalendarBlocks={setCalendarBlocks}
           notes={notes}
           setNotes={setNotes}
           objectives={objectives}
@@ -788,7 +678,6 @@ export default function HQPage() {
         <Tags
           spaces={spaces}
           initialTag={tagsInitialTag}
-          onJumpToTask={(id) => { setTasksInitialId(id); setTagsInitialTag(null); setScreen('tasks') }}
           onJumpToNote={(id) => { setNotesInitialId(id); setTagsInitialTag(null); setScreen('notes') }}
           toast={setToast}
         />
@@ -825,7 +714,7 @@ export default function HQPage() {
               </div>
             )}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
-            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} onPlanWeek={(spaceId, week) => setPlanningWizard({ spaceId, week })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
+            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
@@ -873,7 +762,6 @@ export default function HQPage() {
         setObjectives={setObjectives}
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}
-        setTasks={setTasks}
         setNotes={setNotes}
         toast={setToast}
         openRequest={captureRequest}
@@ -910,21 +798,6 @@ export default function HQPage() {
         )
       })()}
 
-      {/* Plan-week wizard — same per-space launch model as the close wizard.
-          Launched from Reflect's launcher (or Focus's own copy until it's
-          deleted). Re-derives the target space's objectives/KRs. */}
-      {planningWizard && (() => {
-        const ps = planningWizard.spaceId
-        return (
-          <PlanWeek
-            objectives={objectives.filter(o => o.space_id === ps)}
-            roadmapItems={roadmapItems.filter(i => i.space_id === ps)}
-            weekStart={planningWizard.week}
-            onAddAction={a => setActions(prev => [...prev, a])}
-            onClose={() => setPlanningWizard(null)}
-          />
-        )
-      })()}
 
       {/* Quarter-close ceremony — fullscreen overlay. Launched from Home header or Reflect.
           spaceId null means all-spaces view (runs across all objectives/KRs). */}

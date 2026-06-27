@@ -4,7 +4,7 @@
 // complexity if the dataset outgrew memory, which it won't at solo-user scale.
 
 export type SearchKind =
-  | 'Objective' | 'Key Result' | 'Action' | 'Task' | 'Note' | 'Reflect' | 'Notebook' | 'Space'
+  | 'Objective' | 'Key Result' | 'Action' | 'Note' | 'Reflect' | 'Notebook' | 'Space'
 
 // Opaque routing payload consumed by page.tsx's pick handler. Kept as a loose
 // shape here so lib/search stays decoupled from the Screen union.
@@ -12,7 +12,6 @@ export interface SearchRoute {
   screen: string
   spaceId?: string | null
   weekStart?: string
-  taskId?: string
   noteId?: string
   objectiveId?: string
   actionId?: string
@@ -52,11 +51,11 @@ const FIELD_WEIGHT: Record<string, number> = {
 
 // Type priority used only as a tiebreak when scores are equal.
 const KIND_BOOST: Record<SearchKind, number> = {
-  Objective: 30, 'Key Result': 26, Action: 22, Task: 18,
+  Objective: 30, 'Key Result': 26, Action: 22,
   Note: 16, Reflect: 14, Notebook: 10, Space: 10,
 }
 const KIND_ORDER: SearchKind[] = [
-  'Objective', 'Key Result', 'Action', 'Task', 'Note', 'Reflect', 'Notebook', 'Space',
+  'Objective', 'Key Result', 'Action', 'Note', 'Reflect', 'Notebook', 'Space',
 ]
 
 function escapeRe(s: string): string {
@@ -117,7 +116,7 @@ function entryFields(e: SearchEntry): Record<string, string | undefined> {
 
 // Map a `type:` operator keyword to a SearchKind.
 const KIND_OPS: Record<string, SearchKind> = {
-  task: 'Task', tasks: 'Task', note: 'Note', notes: 'Note',
+  note: 'Note', notes: 'Note',
   kr: 'Key Result', krs: 'Key Result', obj: 'Objective', objective: 'Objective',
   objectives: 'Objective', action: 'Action', actions: 'Action',
   reflect: 'Reflect', notebook: 'Notebook', space: 'Space',
@@ -133,7 +132,7 @@ export interface ParsedQuery {
 // Parse scoping operators non-destructively (the raw text stays in the box):
 //   #tag            → restrict to tagged items
 //   in:<space>      → restrict to a space by name
-//   task:/note:/... → restrict to a kind  (e.g. "task: rick")
+//   note:/... → restrict to a kind  (e.g. "note: rick")
 // Everything else is a content token used for matching.
 export function parseQuery(query: string): ParsedQuery {
   let tagOnly = false

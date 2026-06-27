@@ -14,7 +14,7 @@ import { streamAgentMessage, type AgentMessage, type ProposedAction } from '@/li
 import { runProposedAction, describeAction, type ActionContext } from '@/lib/agentActions'
 import { useVoice } from '@/lib/voice/useVoice'
 import BriefingsFeed from '@/components/BriefingsFeed'
-import type { Task, RoadmapItem, Space, CalendarBlock, Note, AnnualObjective } from '@/lib/types'
+import type { RoadmapItem, Space, Note, AnnualObjective } from '@/lib/types'
 
 const STARTERS = [
   "What's slipping right now?",
@@ -62,15 +62,12 @@ function classifyConfirm(t: string): 'yes' | 'no' | 'unclear' {
 }
 
 export default function Agent({
-  tasks, setTasks, roadmapItems, setRoadmapItems, spaces, setCalendarBlocks, notes, setNotes, objectives, setObjectives, onOpenNote, toast,
+  roadmapItems, setRoadmapItems, spaces, notes, setNotes, objectives, setObjectives, onOpenNote, toast,
   messages, setMessages, pending, setPending,
 }: {
-  tasks: Task[]
-  setTasks: (fn: (p: Task[]) => Task[]) => void
   roadmapItems: RoadmapItem[]
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   spaces: Space[]
-  setCalendarBlocks: (fn: (p: CalendarBlock[]) => CalendarBlock[]) => void
   notes: Note[]
   setNotes: (fn: (p: Note[]) => Note[]) => void
   objectives: AnnualObjective[]
@@ -93,7 +90,7 @@ export default function Agent({
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
 
-  const ctx: ActionContext = { tasks, roadmapItems, spaces, notes, objectives, setTasks, setRoadmapItems, setCalendarBlocks, setNotes, setObjectives }
+  const ctx: ActionContext = { roadmapItems, spaces, notes, objectives, setRoadmapItems, setNotes, setObjectives }
 
   const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })()
   const weekStart = getMonday()
@@ -216,7 +213,7 @@ export default function Agent({
         <div style={nwLabel}>Daily · Agent</div>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 600, color: 'var(--navy-50)', margin: '5px 0 0', letterSpacing: '-.02em' }}>Chief of Staff</h1>
         <p style={{ margin: '5px 0 0', fontSize: 13, color: 'var(--navy-400)' }}>
-          Knows your whole operation — spaces, KRs, tasks, calendar, reflections. It can also propose actions; nothing changes until you approve.
+          Knows your whole operation — spaces, KRs, actions, notes, reflections. It can also propose actions; nothing changes until you approve.
         </p>
         <BriefingsFeed ctx={ctx} onOpenNote={onOpenNote} toast={toast} />
       </div>

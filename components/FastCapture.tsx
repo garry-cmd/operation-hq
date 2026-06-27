@@ -3,15 +3,14 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import * as actionsDb from '@/lib/db/actions'
-import * as tasksDb from '@/lib/db/tasks'
 import * as notesDb from '@/lib/db/notes'
-import { AnnualObjective, RoadmapItem, WeeklyAction, Space, Task, Note } from '@/lib/types'
+import { AnnualObjective, RoadmapItem, WeeklyAction, Space, Note } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
 import { getCurrentQuarterKRs } from '@/lib/krFilters'
 import { spaceDisplayColorById } from '@/lib/spaceColor'
 import { textToTipTapDoc } from '@/lib/notes/textToDoc'
 
-type CaptureType = 'task' | 'note' | 'action' | 'keyresult' | 'parking' | 'objective'
+type CaptureType = 'note' | 'action' | 'keyresult' | 'parking' | 'objective'
 
 type Props = {
   spaces: Space[]
@@ -22,7 +21,6 @@ type Props = {
   setObjectives: (fn: (p: AnnualObjective[]) => AnnualObjective[]) => void
   setRoadmapItems: (fn: (p: RoadmapItem[]) => RoadmapItem[]) => void
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
-  setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   setNotes: React.Dispatch<React.SetStateAction<Note[]>>
   toast: (m: string) => void
   // External open command (global hotkeys in page.tsx). Bump `key` to re-fire.
@@ -32,7 +30,6 @@ type Props = {
 // Order matters: index 0 sits closest to the FAB (first thumb-hit), last index
 // highest in the stack. Daily captures (Task, Note) nearest; strategic above.
 const TYPES: { id: CaptureType; label: string; color: string; icon: string }[] = [
-  { id: 'task',      label: 'Task',        color: 'var(--accent)',      icon: '✓'  },
   { id: 'note',      label: 'Note',        color: 'var(--indigo-text)', icon: '✎'  },
   { id: 'action',    label: 'Action',      color: 'var(--teal-text)',   icon: '◆'  },
   { id: 'keyresult', label: 'Key Result',  color: 'var(--navy-300)',    icon: 'KR' },
@@ -46,7 +43,7 @@ function ymdLocal(d: Date): string {
 
 export default function FastCapture({
   spaces, objectives, roadmapItems, weekStart, activeSpaceId,
-  setObjectives, setRoadmapItems, setActions, setTasks, setNotes, toast,
+  setObjectives, setRoadmapItems, setActions, setNotes, toast,
   openRequest,
 }: Props) {
   const [dialOpen, setDialOpen] = useState(false)
@@ -66,7 +63,7 @@ export default function FastCapture({
     if (!active) return
     if (active === 'action')    setSecondVal(activeKRs[0]?.id ?? '')
     else if (active === 'keyresult') setSecondVal(activeObjs[0]?.id ?? '')
-    else                        setSecondVal(activeSpaceId) // task / note / parking / objective default to active space
+    else                        setSecondVal(activeSpaceId) // note / parking / objective default to active space
     setNoteBody(''); setDueChoice('none'); setKrSearch('')
     setTimeout(() => inputRef.current?.focus(), 50)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -87,18 +84,6 @@ export default function FastCapture({
     // Notes may be body-only; everything else needs a title.
     if (active === 'note' ? (!hasTitle && !noteBody.trim()) : !hasTitle) return
     try {
-      if (active === 'task') {
-        const due = dueChoice === 'none' ? null
-          : dueChoice === 'today' ? ymdLocal(new Date())
-          : ymdLocal(new Date(Date.now() + 86_400_000))
-        const created = await tasksDb.create({
-          title: title.trim(),
-          space_id: secondVal || activeSpaceId,
-          due_date: due,
-        })
-        setTasks(prev => [...prev, created])
-        toast('Task added!')
-      }
       if (active === 'note') {
         const created = await notesDb.create({
           title: title.trim(),
@@ -200,7 +185,6 @@ export default function FastCapture({
                 active === 'objective' ? 'e.g. Get in amazing shape this year' :
                 active === 'keyresult' ? 'e.g. Lose 40 lbs by June 30' :
                 active === 'action'    ? 'e.g. Wednesday strength session' :
-                active === 'task'      ? 'e.g. Email the vendor about pricing' :
                 active === 'note'      ? 'Note title (optional)' :
                                          'e.g. 200 KB swings sub-15 min'
               }
@@ -213,22 +197,9 @@ export default function FastCapture({
             )}
 
             {/* TASK — due chips */}
-            {active === 'task' && (
-              <div style={{ marginBottom: 12 }}>
-                <div className="fc-lbl">Due</div>
-                <div style={{ display: 'flex', gap: 7 }}>
-                  {(['none', 'today', 'tomorrow'] as const).map(d => (
-                    <button type="button" key={d} onClick={() => setDueChoice(d)}
-                      className={`fc-chip${dueChoice === d ? ' on' : ''}`}>
-                      {d === 'none' ? 'No date' : d === 'today' ? 'Today' : 'Tomorrow'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* SPACE chips — task / note / objective / parking */}
-            {(active === 'task' || active === 'note' || active === 'objective' || active === 'parking') && (
+            {(active === 'note' || active === 'objective' || active === 'parking') && (
               <div style={{ marginBottom: 14 }}>
                 <div className="fc-lbl">{active === 'note' ? 'Space (optional)' : 'Space'}</div>
                 <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
