@@ -1,6 +1,6 @@
 /**
- * Tauri bridge — uses the __TAURI__ global injected by the Rust shell.
- * Safe to import in the web app; all functions degrade gracefully in a browser.
+ * Tauri bridge — calls Rust commands via window.__TAURI__.core.invoke.
+ * Safe to import anywhere; degrades gracefully in a plain browser.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -9,42 +9,26 @@ declare const window: any
 export const isTauri = (): boolean =>
   typeof window !== 'undefined' && typeof window.__TAURI__ !== 'undefined'
 
-/**
- * Open a native file picker. Returns the selected path, or null if cancelled.
- */
-export async function pickFile(opts?: {
-  title?: string
-  filters?: { name: string; extensions: string[] }[]
-}): Promise<string | null> {
+async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return window.__TAURI__.core.invoke(cmd, args)
+}
+
+/** Open a native file picker. Returns the selected path, or null if cancelled. */
+export async function pickFile(opts?: { title?: string }): Promise<string | null> {
   if (!isTauri()) return null
   try {
-    const result = await window.__TAURI__.dialog.open({
-      title: opts?.title ?? 'Select file',
-      multiple: false,
-      directory: false,
-      filters: opts?.filters,
-    })
-    if (!result) return null
-    return typeof result === 'string' ? result : null
+    return await invoke<string | null>('pick_file')
   } catch (e) {
     console.error('pickFile failed', e)
     return null
   }
 }
 
-/**
- * Open a native folder picker. Returns the selected path, or null if cancelled.
- */
+/** Open a native folder picker. Returns the selected path, or null if cancelled. */
 export async function pickFolder(opts?: { title?: string }): Promise<string | null> {
   if (!isTauri()) return null
   try {
-    const result = await window.__TAURI__.dialog.open({
-      title: opts?.title ?? 'Select folder',
-      multiple: false,
-      directory: true,
-    })
-    if (!result) return null
-    return typeof result === 'string' ? result : null
+    return await invoke<string | null>('pick_folder')
   } catch (e) {
     console.error('pickFolder failed', e)
     return null
@@ -52,7 +36,7 @@ export async function pickFolder(opts?: { title?: string }): Promise<string | nu
 }
 
 /**
- * Open a file or URL in its default app.
+ * Open a file or URL in its default app (Excel, Finder, browser, etc.).
  * Falls back to window.open in the browser.
  */
 export async function shellOpen(pathOrUrl: string): Promise<void> {
@@ -61,7 +45,7 @@ export async function shellOpen(pathOrUrl: string): Promise<void> {
     return
   }
   try {
-    await window.__TAURI__.shell.open(pathOrUrl)
+    await invoke('shell_open', { url: pathOrUrl })
   } catch (e) {
     console.error('shellOpen failed', e)
     window.open(pathOrUrl, '_blank', 'noopener,noreferrer')
@@ -78,8 +62,9 @@ export async function onTauriEvent(
 ): Promise<() => void> {
   if (!isTauri()) return () => {}
   try {
-    const unlisten = await window.__TAURI__.event.listen(event, (e: { payload: unknown }) =>
-      handler(e.payload)
+    const unlisten = await window.__TAURI__.event.listen(
+      event,
+      (e: { payload: unknown }) => handler(e.payload)
     )
     return unlisten
   } catch (e) {
