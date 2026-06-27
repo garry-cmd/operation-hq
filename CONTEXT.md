@@ -51,6 +51,18 @@ running deployment can't see it.
 
 ## Current state — shipped
 
+### Jun 26 — Objective external resource links + strategic direction shift
+
+**Strategic decision:** Native Tasks and Notes modules are being replaced by best-in-class apps (Todoist for tasks, Evernote for notes). HQ's role is the strategic layer — OKRs, weekly planning, focus, reflection — with external apps linked to objectives rather than replicated inside HQ.
+
+**Objective external resources (shipped, commit `b6db0ce`).** Each objective card now has a compact resource strip in the rail (below pills) showing linked external resources as emoji chips — ✅ Todoist project, 📓 Evernote notebook, 📁 Drive folder, 📝 Evernote note, 📄 Drive file, 🔗 web link. Click any chip to open in a new tab. No resources yet → a quiet `+ link resources` dashed button opens the ObjectivePanel. In ObjectivePanel, `+ Link` / `+ File` replaced with `+ Resource` dropdown (kind picker → name + URL form). No migration needed — `objective_links.kind` is plain text, no constraint.
+
+Files: `lib/types.ts` (extended `LinkKind` union), `components/ObjectivePanel.tsx` (LINK_KINDS constant, kind picker, unified add form, emoji RefRow), `components/Home.tsx` (`links` prop added, `ObjResources` strip component), `app/hq/page.tsx` (`links` passed into `<Home>`).
+
+**Limitation noted:** URL-paste UX is clunky — correct fix is the Tauri desktop app (see next session). Resource strip left in place; ObjectivePanel links feature pre-existed.
+
+**FinderOpener attempt (not shipped).** Explored a custom `openpath://` URL scheme helper app to open local Finder folders from the browser. Multiple approaches tried (Automator, AppleScript, bash bundle); none worked reliably due to macOS packaging/permissions complexity. Dropped in favor of Drive folder links as interim workaround, with Tauri as the real solution.
+
 ### Jun 24 (latest) — Home Vitals (habit flip cards) + OKR pacing/run-rate + Focus this week & per-action update threads
 
 Three builds on the Home component (clone HEAD at session start `1148564`), all mock-before-build (`hq-habit-flip-mock`, `hq-pacing-mock`, `hq-focus-week-mock`, `hq-home-vitals-mock`).
@@ -649,7 +661,8 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-0. **Files / Drive — SHIPPED** (see top entry). Residual follow-ups:
+0. **Tauri desktop app** — next session start. Unlocks: native file/folder picker for objective resource links, `shell.open()` for Finder/app launches, system-wide ⌘T/⌘N capture hotkeys, "open in Excel/Acrobat" for tracked files. Closes multiple backlog items at once. Plan before building (thin companion shell, not a full port).
+1. **Files / Drive — SHIPPED** (see top entry). Residual follow-ups:
    - **Native "double-click → open in Excel/Acrobat"** — what Garry actually wants for files; the browser
      can't launch local apps. Needs a thin **Tauri** capture/companion shell exposing `openLocalFile(path)`
      (capture Drive files' local synced paths; degrade to "Open in Drive" in plain browser). Same shell would
@@ -694,6 +707,7 @@ Share-page query optimization · PWA install prompt · more keyboard shortcuts (
 - **RLS hardening pass** — `spaces` RLS disabled; others `owner_all USING (true)`. Fine solo, exposed multi-user.
 
 ### Parked / open decisions
+- **Todoist + Evernote as external surfaces (Jun 26 decision).** Native Tasks and Notes stay in HQ but are no longer the primary surface for daily work. Todoist handles task capture/reminders/mobile; Evernote handles notes/web clipping/OCR. HQ links to them from objective cards. Native Tasks module kept for KR-linked work that needs alignment scoring.
 - **"Plan your first week" for empty spaces** — Path 1 (AI infra) / Path 2 (form recovery) / Path 3 (empty-state CTAs).
 - **`annual_objectives.notes` column** — dormant since Apr 27, replaced by `objective_logs`. Drop someday, no urgency.
 - **Notes editor** — TipTap, locked.
