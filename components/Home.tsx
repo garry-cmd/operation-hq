@@ -147,10 +147,7 @@ export default function Home({
   const [addActionObj, setAddActionObj] = useState<string | null>(null)
   const [actionKRSel, setActionKRSel] = useState<string>('')
   const [actionDraft, setActionDraft] = useState('')
-  // Add KR inline
-  const [addKRObj, setAddKRObj] = useState<string | null>(null)
-  const [addKRDraft, setAddKRDraft] = useState('')
-  const [addKRType, setAddKRType] = useState<'outcome' | 'habit' | 'metric'>('outcome')
+
   const [logComposer, setLogComposer] = useState<{ krId: string; objId: string } | null>(null)
   const [logDraft, setLogDraft] = useState('')
   const [flippedM, setFlippedM] = useState<Record<string, boolean>>({})
@@ -389,33 +386,6 @@ export default function Home({
     try { await actionsDb.update(a.id, { estimated_minutes: mins }) }
     catch { toast('Could not set duration'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
   }
-  async function submitAddKR(objId: string) {
-    const t = addKRDraft.trim()
-    if (!t) { setAddKRObj(null); return }
-    const obj = objectives.find(o => o.id === objId)
-    if (!obj) return
-    const spaceId = obj.space_id
-    const maxSort = roadmapItems.filter(k => k.annual_objective_id === objId).reduce((m, k) => Math.max(m, k.sort_order ?? 0), 0)
-    try {
-      const created = await krsDb.create({
-        space_id: spaceId,
-        annual_objective_id: objId,
-        title: t,
-        quarter: ACTIVE_Q,
-        sort_order: maxSort + 1,
-        status: 'active',
-        health_status: 'not_started',
-        is_habit: addKRType === 'habit',
-        is_metric: addKRType === 'metric',
-        is_quarter_bound: addKRType !== 'habit',
-      })
-      setRoadmapItems(prev => [...prev, created])
-      setAddKRDraft('')
-      setAddKRObj(null)
-      toast(`KR added`)
-    } catch { toast('Failed to add KR') }
-  }
-
   async function submitObjAction() {
     const t = actionDraft.trim(); const krId = actionKRSel
     if (!t || !krId) return
@@ -800,11 +770,6 @@ export default function Home({
         </div>
       )
     }
-    // Per-objective vitals: metric and habit KRs belonging to this objective
-    const objMetricKRs = allKRs.filter(k => k.annual_objective_id === obj.id && k.is_metric && k.quarter === ACTIVE_Q && !k.is_parked && k.health_status !== 'done' && k.health_status !== 'failed')
-    const objHabitKRs  = allKRs.filter(k => k.annual_objective_id === obj.id && k.is_habit  && !k.is_parked && k.health_status !== 'done')
-    const hasVitals = objMetricKRs.length > 0 || objHabitKRs.length > 0
-
     const showActCol = actThisWeek.length > 0 || actBacklog.length > 0 || addActionObj === obj.id
     const addBtn = (
       <button className="addact" onClick={() => { setAddActionObj(obj.id); setActionKRSel(allKRs[0]?.id ?? ''); setActionDraft('') }}>+ action</button>
@@ -845,24 +810,6 @@ export default function Home({
               <button className="ohb" title="Edit objective" onClick={() => setEditingObjective(obj)}>✎</button>
             </div>
           </div>
-
-          {/* ── Vitals strip: full metric + habit flip cards, per-objective ── */}
-          {hasVitals && (
-            <div className="obj-vitals">
-              {objMetricKRs.length > 0 && (
-                <div className="vrow" style={{ marginBottom: 0 }}>
-                  <div className="sublbl">Metrics</div>
-                  <div className="metrics">{objMetricKRs.map(metricCard)}</div>
-                </div>
-              )}
-              {objHabitKRs.length > 0 && (
-                <div className="vrow" style={{ marginBottom: 0 }}>
-                  <div className="sublbl">Habits · 4-week rolling</div>
-                  <div className="habits-cards">{objHabitKRs.map(habitCard)}</div>
-                </div>
-              )}
-            </div>
-          )}
 
           <div className="kr-col">
             {fullKRs.map(kr => {
@@ -1038,34 +985,6 @@ export default function Home({
           )}
         </div>
 
-        {/* ── Add KR row ── */}
-        {addKRObj === obj.id ? (
-          <div className="addkr-row">
-            {/* Type pills */}
-            <div className="addkr-types">
-              {(['outcome', 'habit', 'metric'] as const).map(t => (
-                <button key={t} className={`addkr-type${addKRType === t ? ' on' : ''}`}
-                  onClick={() => setAddKRType(t)}>{t}</button>
-              ))}
-            </div>
-            <input className="addkr-input" autoFocus
-              value={addKRDraft}
-              placeholder={`New ${addKRType} KR…`}
-              onChange={e => setAddKRDraft(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') submitAddKR(obj.id)
-                if (e.key === 'Escape') { setAddKRObj(null); setAddKRDraft('') }
-              }}
-              onBlur={() => { if (!addKRDraft.trim()) setAddKRObj(null) }}
-            />
-            <button className="addkr-submit" onClick={() => submitAddKR(obj.id)}>Add</button>
-            <button className="addkr-cancel" onClick={() => { setAddKRObj(null); setAddKRDraft('') }}>✕</button>
-          </div>
-        ) : (
-          <button className="addkr-btn" onClick={() => { setAddKRObj(obj.id); setAddKRDraft(''); setAddKRType('outcome') }}>
-            + key result
-          </button>
-        )}
       </div>
     )
   }
@@ -1109,6 +1028,25 @@ export default function Home({
         <p>&ldquo;{quote.text}&rdquo;</p>
         {quote.author && <span>— {quote.author}</span>}
       </div>
+
+      {/* vitals — metric + habit flip cards */}
+      {(metricKRs.length > 0 || habitKRs.length > 0) && (
+        <div className="vitals">
+          <div className="seclbl"><span className="lbl">Vitals</span><span className="rule" /></div>
+          {metricKRs.length > 0 && (
+            <div className="vrow">
+              <div className="sublbl">Metrics · {ACTIVE_Q}</div>
+              <div className="metrics">{metricKRs.map(metricCard)}</div>
+            </div>
+          )}
+          {habitKRs.length > 0 && (
+            <div className="vrow">
+              <div className="sublbl">Habits · 4-week rolling</div>
+              <div className="habits-cards">{habitKRs.map(habitCard)}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* focus this week — consolidated actions across objectives */}
       {focusTotal > 0 && (
@@ -1328,22 +1266,6 @@ export default function Home({
         /* vitals band — metrics + habit flip cards */
         .vitals{margin-bottom:24px;}
 
-        /* Per-objective vitals strip */
-        .obj-vitals{display:flex;flex-direction:column;gap:12px;padding:14px 16px 6px;border-top:1px solid var(--line);}
-
-        /* Add KR row */
-        .addkr-btn{width:100%;text-align:left;background:none;border:none;border-top:1px solid var(--line);padding:8px 16px;cursor:pointer;font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.06em;color:var(--navy-400);border-radius:0 0 12px 12px;transition:color .12s,background .12s;}
-        .addkr-btn:hover{color:var(--accent);background:var(--accent-bg);}
-        .addkr-row{display:flex;align-items:center;gap:7px;padding:8px 12px;border-top:1px solid var(--line);background:var(--surface-2,var(--navy-800));border-radius:0 0 12px 12px;flex-wrap:nowrap;}
-        .addkr-types{display:flex;gap:4px;flex-shrink:0;}
-        .addkr-type{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:5px;border:1px solid var(--line);background:none;color:var(--navy-400);cursor:pointer;white-space:nowrap;}
-        .addkr-type.on{background:var(--accent);border-color:var(--accent);color:#fff;}
-        .addkr-input{flex:1;min-width:0;background:var(--surface);border:1px solid var(--navy-600);border-radius:6px;padding:5px 9px;color:var(--navy-50);font-size:13px;font-family:inherit;outline:none;}
-        .addkr-input:focus{border-color:var(--accent);}
-        .addkr-submit{background:var(--accent);border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;padding:5px 11px;cursor:pointer;font-family:inherit;white-space:nowrap;flex-shrink:0;}
-        .addkr-submit:hover{opacity:.85;}
-        .addkr-cancel{background:none;border:none;color:var(--navy-400);font-size:14px;cursor:pointer;padding:4px 5px;border-radius:4px;flex-shrink:0;}
-        .addkr-cancel:hover{color:var(--navy-100);background:var(--navy-700);}
         .vrow + .vrow{margin-top:16px;}
         .sublbl{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label-dim);margin:0 0 9px;}
 
