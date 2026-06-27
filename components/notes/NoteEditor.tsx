@@ -334,96 +334,193 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
     ? { maxWidth: 1100, margin: '0 auto', width: '100%' }
     : {}
 
+  // Breadcrumb: resolve space + notebook names
+  const noteSpace = note.space_id ? spaces.find(s => s.id === note.space_id) : null
+  const noteNotebook = note.notebook_id ? notebooks.find(n => n.id === note.notebook_id) : null
+
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!moreOpen) return
+    function onDoc(e: MouseEvent) { if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [moreOpen])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {/* Header: title + tags + save indicator + delete */}
-      <div style={{ padding: '20px 24px 0' }}>
+
+      {/* ── Breadcrumb bar ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 6,
+        padding: '0 16px', height: 40, flexShrink: 0,
+        borderBottom: '1px solid var(--line)',
+        background: 'var(--surface)',
+      }}>
+        {/* Back / collapse */}
+        <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode' : 'Focus mode'}
+          style={{ background: 'none', border: 'none', color: 'var(--t-3)', cursor: 'pointer', padding: '4px', display: 'inline-flex', alignItems: 'center', borderRadius: 4 }}
+          onMouseEnter={e => { e.currentTarget.style.color = 'var(--t-1)'; e.currentTarget.style.background = 'var(--hover)' }}
+          onMouseLeave={e => { e.currentTarget.style.color = 'var(--t-3)'; e.currentTarget.style.background = 'none' }}>
+          {fullscreen
+            ? <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M10 1.5v3.5h3.5M10 5l4-4M6 14.5v-3.5H2.5M6 11l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            : <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+          }
+        </button>
+
+        {/* Breadcrumb path */}
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden' }}>
+          {noteSpace && (
+            <>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: noteSpace.color, flexShrink: 0 }} />
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--t-2)', whiteSpace: 'nowrap' }}>{noteSpace.name}</span>
+            </>
+          )}
+          {noteNotebook && (
+            <>
+              <span style={{ color: 'var(--t-3)', fontSize: 11 }}>›</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--t-2)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{noteNotebook.name}</span>
+            </>
+          )}
+          {!noteSpace && !noteNotebook && (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--t-3)' }}>Inbox</span>
+          )}
+        </div>
+
+        {/* Save state */}
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--t-3)', flexShrink: 0 }}>
+          {uploadState === 'uploading' ? 'Uploading…'
+            : uploadState === 'error' ? '⚠ ' + uploadErr
+            : saveState === 'saving' ? 'Saving…'
+            : saveState === 'saved' ? '✓' : ''}
+        </span>
+
+        {/* ⋯ More menu */}
+        <div ref={moreRef} style={{ position: 'relative', flexShrink: 0 }}>
+          <button onClick={() => { setMoreOpen(o => !o); setMoveOpen(false); setLinkOpen(false); setHistoryOpen(false) }}
+            title="More options"
+            style={{
+              background: moreOpen ? 'var(--hover)' : 'none', border: 'none', borderRadius: 5,
+              color: 'var(--t-2)', cursor: 'pointer', padding: '4px 7px',
+              display: 'inline-flex', alignItems: 'center', fontSize: 16, lineHeight: 1,
+              fontFamily: 'inherit',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
+            onMouseLeave={e => { if (!moreOpen) e.currentTarget.style.background = 'none' }}>
+            ⋯
+          </button>
+
+          {moreOpen && (
+            <div style={{
+              position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 50,
+              width: 220, background: 'var(--surface)', border: '1px solid var(--line)',
+              borderRadius: 9, padding: 4, boxShadow: '0 8px 32px rgba(0,0,0,.5)',
+            }}>
+              {/* Pin */}
+              <MoreItem icon={
+                <svg width="13" height="13" viewBox="0 0 16 16" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 11v4"/><path d="M5.5 2h5l-.75 5 2.25 2H4l2.25-2L5.5 2z"/></svg>
+              } label={pinned ? 'Unpin' : 'Pin to top'} onClick={() => { togglePin(); setMoreOpen(false) }} active={pinned} />
+
+              {/* Link to KR */}
+              <MoreItem icon={
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 9.5a3.5 3.5 0 0 0 5 0l1.5-1.5a3.5 3.5 0 0 0-5-5l-.75.75"/><path d="M9.5 6.5a3.5 3.5 0 0 0-5 0L3 8a3.5 3.5 0 0 0 5 5l.75-.75"/></svg>
+              } label={linkedKR ? 'Change KR link' : 'Link to KR'} active={!!linkedKR}
+                onClick={() => { setMoreOpen(false); setMoveOpen(false); setHistoryOpen(false); setLinkOpen(o => !o) }} />
+
+              <div style={{ height: 1, background: 'var(--line)', margin: '3px 0' }} />
+
+              {/* Move */}
+              <MoreItem icon={
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 6a1 1 0 0 1 1-1h3.5l1.5 1.5H13a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H2.5a1 1 0 0 1-1-1V6z"/></svg>
+              } label="Move" onClick={() => { setMoreOpen(false); setLinkOpen(false); setHistoryOpen(false); setMoveOpen(o => !o) }} />
+
+              <div style={{ height: 1, background: 'var(--line)', margin: '3px 0' }} />
+
+              {/* History */}
+              <MoreItem icon={
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 2v4h4"/><path d="M2.05 9A7 7 0 1 0 4 4.8L2 7"/><path d="M8 5v4l2.5 1.5"/></svg>
+              } label="Note history" onClick={() => { setMoreOpen(false); setLinkOpen(false); setMoveOpen(false); openHistory() }} />
+
+              {/* Export */}
+              <MoreItem icon={
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M8 2v9"/><path d="M5 8l3 3 3-3"/><path d="M3 13h10"/></svg>
+              } label="Export as Markdown" onClick={() => { setMoreOpen(false); exportMarkdown() }} />
+
+              <div style={{ height: 1, background: 'var(--line)', margin: '3px 0' }} />
+
+              {/* Delete */}
+              <MoreItem icon={
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 4h11M5.5 4V2.5h5V4M6.5 7v5M9.5 7v5M3.5 4l.75 9.5h7.5L12.5 4"/></svg>
+              } label="Delete note" danger onClick={() => { setMoreOpen(false); onDelete() }} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Floating panels — anchored below breadcrumb bar */}
+      <div style={{ position: 'relative' }}>
+        {moveOpen && (
+          <div style={{ position: 'absolute', top: 0, right: 8, zIndex: 40 }}>
+            <MovePanel spaces={spaces} notebooks={notebooks} note={note} onMove={moveTo} onClose={() => setMoveOpen(false)} />
+          </div>
+        )}
+        {linkOpen && (
+          <div style={{ position: 'absolute', top: 0, right: 8, zIndex: 40 }}>
+            <LinkKRPanel spaces={spaces} roadmapItems={roadmapItems} note={note} onLink={linkTo} onClose={() => setLinkOpen(false)} />
+          </div>
+        )}
+        {historyOpen && (
+          <div style={{ position: 'absolute', top: 0, right: 8, zIndex: 40 }}>
+            <HistoryPanel versions={versions} loading={versionsLoading} onRestore={restoreVersion} onClose={() => setHistoryOpen(false)} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Title ── */}
+      <div style={{ padding: '28px 28px 0', flexShrink: 0 }}>
         <div style={innerStyle}>
           <input
             value={title}
             onChange={e => setTitle(e.target.value)}
             onBlur={commitTitle}
             onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur() } }}
-            placeholder="Untitled"
+            placeholder="Title"
             style={{
               width: '100%', border: 'none', background: 'transparent',
-              fontSize: 24, fontWeight: 600, color: 'var(--navy-50)', letterSpacing: '-.02em',
-              outline: 'none', fontFamily: 'var(--font-display)', padding: '2px 0',
+              fontSize: 30, fontWeight: 700, color: 'var(--t-0)',
+              letterSpacing: '-.03em', lineHeight: 1.2,
+              outline: 'none', fontFamily: 'var(--font-display)', padding: '0',
             }} />
         </div>
       </div>
 
-      <div style={{ padding: '6px 24px 10px' }}>
-        <div style={{ ...innerStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center', flex: 1 }}>
-            {linkedKR && (() => {
-              const krSpace = spaces.find(s => s.id === linkedKR.space_id) ?? null
-              return (
-                <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-dim)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 240 }}>
-                  {krSpace && <span style={{ width: 7, height: 7, borderRadius: '50%', background: krSpace.color, flexShrink: 0 }} />}
-                  <button onClick={() => { setMoveOpen(false); setHistoryOpen(false); setLinkOpen(true) }}
-                    title={`Linked to KR: ${linkedKR.title}`}
-                    style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: 'inherit', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    🎯 {linkedKR.title}
-                  </button>
-                  <button onClick={() => linkTo(null)} title="Unlink KR" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
-                </span>
-              )
-            })()}
-            {tags.map(t => (
-              <span key={t} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--indigo-bg)', color: 'var(--indigo-text)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                #{t}
-                <button onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+      {/* ── Tags + KR link row ── */}
+      <div style={{ padding: '10px 28px 12px', flexShrink: 0 }}>
+        <div style={{ ...innerStyle, display: 'flex', flexWrap: 'wrap', gap: 5, alignItems: 'center' }}>
+          {linkedKR && (() => {
+            const krSpace = spaces.find(s => s.id === linkedKR.space_id) ?? null
+            return (
+              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-bg)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 5, maxWidth: 220 }}>
+                {krSpace && <span style={{ width: 6, height: 6, borderRadius: '50%', background: krSpace.color, flexShrink: 0 }} />}
+                <button onClick={() => { setMoreOpen(false); setMoveOpen(false); setHistoryOpen(false); setLinkOpen(true) }}
+                  title={`Linked KR: ${linkedKR.title}`}
+                  style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 11, fontFamily: 'inherit', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {linkedKR.title}
+                </button>
+                <button onClick={() => linkTo(null)} title="Unlink KR" style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
               </span>
-            ))}
-            <input value={tagInput} onChange={e => setTagInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
-              placeholder="+ tag"
-              style={{ background: 'none', border: 'none', color: 'var(--navy-300)', fontSize: 11.5, fontFamily: 'inherit', outline: 'none', width: 80 }} />
-          </div>
-          <div style={{ position: 'relative', fontSize: 11, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-            {uploadState === 'uploading' ? 'Uploading…'
-              : uploadState === 'error' ? '⚠ ' + uploadErr
-              : saveState === 'saving' ? 'Saving…'
-              : saveState === 'saved' ? '✓ Saved' : ''}
-            <IconBtn title={pinned ? 'Unpin note' : 'Pin note'} active={pinned} onClick={togglePin}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17v5"/><path d="M9 3h6l-1 7 3 3H7l3-3-1-7z"/></svg>
-            </IconBtn>
-            <IconBtn title={linkedKR ? `Linked to KR: ${linkedKR.title}` : 'Link to a KR'} active={linkOpen || !!linkedKR} onClick={() => { setMoveOpen(false); setHistoryOpen(false); setLinkOpen(o => !o) }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            </IconBtn>
-            <IconBtn title="Move to space / notebook" active={moveOpen} onClick={() => { setLinkOpen(false); setHistoryOpen(false); setMoveOpen(o => !o) }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-            </IconBtn>
-            <IconBtn title="Version history" active={historyOpen} onClick={() => { setLinkOpen(false); setMoveOpen(false); historyOpen ? setHistoryOpen(false) : openHistory() }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>
-            </IconBtn>
-            <IconBtn title="Export as Markdown" onClick={exportMarkdown}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>
-            </IconBtn>
-            <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode' : 'Focus mode (hide panels)'}
-              style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', padding: 0, display: 'inline-flex', alignItems: 'center', fontFamily: 'inherit' }}
-              onMouseEnter={e => { e.currentTarget.style.color = 'var(--navy-100)' }}
-              onMouseLeave={e => { e.currentTarget.style.color = 'var(--navy-400)' }}>
-              {fullscreen ? (
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M10 1.5v3.5h3.5M10 5l4-4M6 14.5v-3.5H2.5M6 11l-4 4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              )}
-            </button>
-            <button onClick={onDelete} title="Delete note" style={{ marginLeft: 8, background: 'none', border: 'none', color: 'var(--navy-400)', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>
-              🗑
-            </button>
-            {moveOpen && (
-              <MovePanel spaces={spaces} notebooks={notebooks} note={note} onMove={moveTo} onClose={() => setMoveOpen(false)} />
-            )}
-            {linkOpen && (
-              <LinkKRPanel spaces={spaces} roadmapItems={roadmapItems} note={note} onLink={linkTo} onClose={() => setLinkOpen(false)} />
-            )}
-            {historyOpen && (
-              <HistoryPanel versions={versions} loading={versionsLoading} onRestore={restoreVersion} onClose={() => setHistoryOpen(false)} />
-            )}
-          </div>
+            )
+          })()}
+          {tags.map(t => (
+            <span key={t} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, background: 'var(--accent-bg)', color: 'var(--accent)', display: 'inline-flex', alignItems: 'center', gap: 4, fontFamily: 'var(--font-mono)' }}>
+              #{t}
+              <button onClick={() => removeTag(t)} style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit' }}>×</button>
+            </span>
+          ))}
+          <input value={tagInput} onChange={e => setTagInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }}
+            placeholder="+ tag"
+            style={{ background: 'none', border: 'none', color: 'var(--t-3)', fontSize: 11.5, fontFamily: 'var(--font-mono)', outline: 'none', width: 64 }} />
         </div>
       </div>
 
@@ -459,7 +556,7 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
       />
 
       {/* Body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '14px 24px 60px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 28px 60px' }}>
         <div style={innerStyle}>
           <EditorContent editor={editor} />
         </div>
@@ -467,20 +564,20 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
 
       {/* Editor styles injected once; scoped to .notes-editor */}
       <style>{`
-        .notes-editor { outline: none; min-height: 200px; color: var(--navy-50); font-size: 14px; line-height: 1.6; }
-        .notes-editor p { margin: 0 0 10px; }
-        .notes-editor h1 { font-size: 22px; font-weight: 700; margin: 18px 0 10px; color: var(--navy-50); }
-        .notes-editor h2 { font-size: 18px; font-weight: 700; margin: 16px 0 8px; color: var(--navy-50); }
-        .notes-editor h3 { font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: var(--navy-50); }
+        .notes-editor { outline: none; min-height: 200px; color: var(--t-0); font-size: 14.5px; line-height: 1.7; }
+        .notes-editor p { margin: 0 0 12px; }
+        .notes-editor h1 { font-family: var(--font-display); font-size: 22px; font-weight: 700; margin: 20px 0 10px; color: var(--t-0); }
+        .notes-editor h2 { font-family: var(--font-display); font-size: 18px; font-weight: 700; margin: 18px 0 8px; color: var(--t-0); }
+        .notes-editor h3 { font-family: var(--font-display); font-size: 15px; font-weight: 700; margin: 14px 0 6px; color: var(--t-0); }
         .notes-editor ul { list-style-type: disc; padding-left: 22px; margin: 0 0 10px; }
         .notes-editor ol { list-style-type: decimal; padding-left: 22px; margin: 0 0 10px; }
         .notes-editor ul ul { list-style-type: circle; }
         .notes-editor ul ul ul { list-style-type: square; }
         .notes-editor li { margin: 3px 0; }
-        .notes-editor code { background: var(--navy-700); padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
-        .notes-editor pre { background: var(--navy-800); padding: 10px 12px; border-radius: 6px; margin: 0 0 10px; overflow-x: auto; }
+        .notes-editor code { background: var(--surface-2, var(--navy-700)); padding: 1px 5px; border-radius: 3px; font-family: var(--font-mono); font-size: 12.5px; }
+        .notes-editor pre { background: var(--surface); padding: 10px 14px; border-radius: 7px; margin: 0 0 12px; overflow-x: auto; }
         .notes-editor pre code { background: none; padding: 0; }
-        .notes-editor blockquote { border-left: 3px solid var(--navy-500); padding-left: 12px; margin: 10px 0; color: var(--navy-200); }
+        .notes-editor blockquote { border-left: 3px solid var(--accent); padding-left: 14px; margin: 12px 0; color: var(--t-2); }
         .notes-editor a { color: var(--accent); text-decoration: underline; }
         .notes-editor .note-link {
           color: var(--accent);
@@ -628,10 +725,11 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
         .notes-editor ul[data-type="taskList"] li > div { flex: 1; }
         .notes-editor p.is-editor-empty:first-child::before {
           content: attr(data-placeholder);
-          color: var(--navy-400);
+          color: var(--t-3);
           float: left;
           height: 0;
           pointer-events: none;
+          font-style: italic;
         }
       `}</style>
     </div>
@@ -647,6 +745,24 @@ function IconBtn({ title, active, onClick, children }: {
       onMouseEnter={e => { if (!active) e.currentTarget.style.color = 'var(--navy-100)' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.color = 'var(--navy-400)' }}>
       {children}
+    </button>
+  )
+}
+
+function MoreItem({ icon, label, onClick, danger, active }: {
+  icon: React.ReactNode; label: string; onClick: () => void; danger?: boolean; active?: boolean
+}) {
+  return (
+    <button onClick={onClick} style={{
+      display: 'flex', alignItems: 'center', gap: 9, width: '100%', textAlign: 'left',
+      padding: '6px 10px', border: 'none', borderRadius: 5, cursor: 'pointer',
+      background: 'none', fontFamily: 'inherit', fontSize: 13,
+      color: danger ? 'var(--alarm, #e05c5c)' : active ? 'var(--accent)' : 'var(--t-1)',
+    }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', color: danger ? 'var(--alarm, #e05c5c)' : active ? 'var(--accent)' : 'var(--t-3)', flexShrink: 0 }}>{icon}</span>
+      {label}
     </button>
   )
 }
@@ -791,19 +907,19 @@ function Toolbar({ editor, onPickImage, onPickFile }: { editor: Editor | null; o
   const btn = (active: boolean, onClick: () => void, label: string, title: string) => (
     <button onClick={onClick} title={title}
       style={{
-        background: active ? 'var(--accent-dim)' : 'none',
-        color: active ? 'var(--accent)' : 'var(--navy-200)',
+        background: active ? 'var(--accent-bg)' : 'none',
+        color: active ? 'var(--accent)' : 'var(--t-2)',
         border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer',
         fontSize: 13, fontWeight: 600, fontFamily: 'inherit', minWidth: 26,
       }}
-      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--navy-700)' }}
+      onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--hover)' }}
       onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none' }}>
       {label}
     </button>
   )
-  const sep = <span style={{ width: 1, height: 16, background: 'var(--navy-700)', margin: '0 2px' }} />
+  const sep = <span style={{ width: 1, height: 14, background: 'var(--line)', margin: '0 2px' }} />
   return (
-    <div style={{ display: 'flex', gap: 2, padding: '4px 18px 10px', borderBottom: '1px solid var(--navy-700)' }}>
+    <div style={{ display: 'flex', gap: 2, padding: '4px 22px 8px', borderBottom: '1px solid var(--line)', background: 'var(--surface)', flexShrink: 0, flexWrap: 'wrap' }}>
       {btn(editor.isActive('heading', { level: 2 }), () => editor.chain().focus().toggleHeading({ level: 2 }).run(), 'H2', 'Heading')}
       {btn(editor.isActive('heading', { level: 3 }), () => editor.chain().focus().toggleHeading({ level: 3 }).run(), 'H3', 'Sub-heading')}
       {sep}
@@ -819,20 +935,20 @@ function Toolbar({ editor, onPickImage, onPickFile }: { editor: Editor | null; o
       {btn(false, () => editor.chain().focus().setHorizontalRule().run(), '―', 'Divider')}
       {sep}
       <button onClick={onPickImage} title="Insert image"
-        style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+        style={{ background: 'none', color: 'var(--t-2)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="M21 15l-5-5L5 21" /></svg>
       </button>
       <button onClick={onPickFile} title="Attach file"
-        style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+        style={{ background: 'none', color: 'var(--t-2)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" /></svg>
       </button>
       <button onClick={() => editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()} title="Insert table"
-        style={{ background: 'none', color: 'var(--navy-200)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
-        onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+        style={{ background: 'none', color: 'var(--t-2)', border: 'none', padding: '4px 8px', borderRadius: 4, cursor: 'pointer', minWidth: 26, display: 'inline-flex', alignItems: 'center' }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
         onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="1" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" /><line x1="15" y1="3" x2="15" y2="21" /></svg>
       </button>
@@ -845,14 +961,14 @@ function TableToolbar({ editor }: { editor: Editor }) {
   const tbtn = (onClick: () => void, label: string, title: string, danger = false) => (
     <button onClick={onClick} title={title}
       style={{ background: 'none', color: danger ? 'var(--red-text)' : 'var(--navy-200)', border: 'none', padding: '3px 7px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 500, fontFamily: 'inherit', whiteSpace: 'nowrap' }}
-      onMouseEnter={e => { e.currentTarget.style.background = 'var(--navy-700)' }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--hover)' }}
       onMouseLeave={e => { e.currentTarget.style.background = 'none' }}>
       {label}
     </button>
   )
-  const div = <span style={{ width: 1, height: 14, background: 'var(--navy-700)', margin: '0 4px' }} />
+  const div = <span style={{ width: 1, height: 14, background: 'var(--line)', margin: '0 4px' }} />
   return (
-    <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, padding: '5px 18px 8px', borderBottom: '1px solid var(--navy-700)' }}>
+    <div style={{ position: 'relative', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1, padding: '5px 22px 8px', borderBottom: '1px solid var(--line)', background: 'var(--surface)', flexShrink: 0 }}>
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', color: 'var(--nw-label)', textTransform: 'uppercase', marginRight: 6 }}>Table</span>
       {tbtn(() => editor.chain().focus().addRowBefore().run(), '+Row↑', 'Add row above')}
       {tbtn(() => editor.chain().focus().addRowAfter().run(), '+Row↓', 'Add row below')}
