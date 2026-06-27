@@ -1,10 +1,11 @@
 /**
- * Tauri bridge — communicates with the Rust shell via a local HTTP server
- * running on localhost:7744. Degrades gracefully in a plain browser.
+ * Tauri bridge — communicates with the Rust shell via a custom URI scheme.
+ * The Tauri shell registers hq://localhost/<command> as a URI scheme handler.
+ * fetch() calls to that scheme are intercepted by Rust, which opens native
+ * dialogs and returns JSON. Degrades gracefully in a plain browser.
  */
 
-const HQ_PORT = 7744
-const BASE = `http://127.0.0.1:${HQ_PORT}`
+const BASE = 'hq://localhost'
 
 let _isTauri: boolean | null = null
 
@@ -12,7 +13,7 @@ let _isTauri: boolean | null = null
 export async function checkIsTauri(): Promise<boolean> {
   if (_isTauri !== null) return _isTauri
   try {
-    const res = await fetch(`${BASE}/ping`, { signal: AbortSignal.timeout(300) })
+    const res = await fetch(`${BASE}/ping`)
     _isTauri = res.ok
   } catch {
     _isTauri = false
@@ -61,11 +62,7 @@ export async function shellOpen(pathOrUrl: string): Promise<void> {
     return
   }
   try {
-    await fetch(`${BASE}/shell-open`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: pathOrUrl }),
-    })
+    await fetch(`${BASE}/shell-open?url=${encodeURIComponent(pathOrUrl)}`)
   } catch (e) {
     console.error('shellOpen failed', e)
     window.open(pathOrUrl, '_blank', 'noopener,noreferrer')
@@ -73,7 +70,7 @@ export async function shellOpen(pathOrUrl: string): Promise<void> {
 }
 
 /**
- * Listen for Tauri events (global shortcuts etc.) via __TAURI__.event if available.
+ * Listen for Tauri events (global shortcuts etc.) via __TAURI__.event.
  * Returns an unlisten function. No-op in the browser.
  */
 export async function onTauriEvent(
