@@ -144,6 +144,11 @@ export default function Home({
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => loadLS<Record<string, boolean>>('hq-home-obj-collapsed', {}))
   const toggleCollapse = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
   const [durPickerAction, setDurPickerAction] = useState<string | null>(null)
+  // Section collapse — all start collapsed so everything fits on one page
+  const [vitalsOpen, setVitalsOpen] = useState(false)
+  const [focusOpen, setFocusOpen] = useState(false)
+  const [objectivesOpen, setObjectivesOpen] = useState(false)
+
   const [addActionObj, setAddActionObj] = useState<string | null>(null)
   const [actionKRSel, setActionKRSel] = useState<string>('')
   const [actionDraft, setActionDraft] = useState('')
@@ -1032,17 +1037,26 @@ export default function Home({
       {/* vitals — metric + habit flip cards */}
       {(metricKRs.length > 0 || habitKRs.length > 0) && (
         <div className="vitals">
-          <div className="seclbl"><span className="lbl">Vitals</span><span className="rule" /></div>
-          {metricKRs.length > 0 && (
-            <div className="vrow">
-              <div className="sublbl">Metrics · {ACTIVE_Q}</div>
-              <div className="metrics">{metricKRs.map(metricCard)}</div>
-            </div>
-          )}
-          {habitKRs.length > 0 && (
-            <div className="vrow">
-              <div className="sublbl">Habits · 4-week rolling</div>
-              <div className="habits-cards">{habitKRs.map(habitCard)}</div>
+          <button className="sec-hdr" onClick={() => setVitalsOpen(v => !v)}>
+            <span className={`sec-chev${vitalsOpen ? ' open' : ''}`}>▸</span>
+            <span className="lbl">Vitals</span>
+            <span className="sec-meta">{metricKRs.length + habitKRs.length} tracked</span>
+            <span className="rule" />
+          </button>
+          {vitalsOpen && (
+            <div className="sec-body">
+              {metricKRs.length > 0 && (
+                <div className="vrow">
+                  <div className="sublbl">Metrics · {ACTIVE_Q}</div>
+                  <div className="metrics">{metricKRs.map(metricCard)}</div>
+                </div>
+              )}
+              {habitKRs.length > 0 && (
+                <div className="vrow">
+                  <div className="sublbl">Habits · 4-week rolling</div>
+                  <div className="habits-cards">{habitKRs.map(habitCard)}</div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1051,25 +1065,30 @@ export default function Home({
       {/* focus this week — consolidated actions across objectives */}
       {focusTotal > 0 && (
         <div className="focusw">
-          <div className="focus-head">
+          <button className="sec-hdr" onClick={() => setFocusOpen(v => !v)}>
+            <span className={`sec-chev${focusOpen ? ' open' : ''}`}>▸</span>
             <span className="lbl">Focus this week</span>
-            <span className="fcount">{focusDone} / {focusTotal} done</span>
+            <span className="sec-meta">{focusDone} / {focusTotal} done</span>
             <span className="fbar"><i style={{ width: `${Math.round((focusDone / focusTotal) * 100)}%` }} /></span>
             <span className="rule" />
-            {focusDone > 0 && <button className="dtoggle" onClick={() => setHideFocusDone(v => !v)}>{hideFocusDone ? 'show done' : 'hide done'}</button>}
-          </div>
-          <div className={`focuslist${hideFocusDone ? ' hide-done' : ''}`}>
-            {focusBySpace.map(g => {
-              const d = g.items.filter(i => i.a.completed).length
-              if (hideFocusDone && d === g.items.length) return null
-              return (
-                <div key={g.sp.id} className="sgrp" style={{ ['--sc']: spaceDisplayColor(g.sp) } as CSSProperties}>
-                  <div className="sgrp-h"><span className="dot" /><span className="nm">{g.sp.name}</span><span className="n">{d}/{g.items.length}</span></div>
-                  {g.items.map(focusRow)}
-                </div>
-              )
-            })}
-          </div>
+            {focusOpen && focusDone > 0 && <button className="dtoggle" onClick={e => { e.stopPropagation(); setHideFocusDone(v => !v) }}>{hideFocusDone ? 'show done' : 'hide done'}</button>}
+          </button>
+          {focusOpen && (
+            <div className="sec-body">
+              <div className={`focuslist${hideFocusDone ? ' hide-done' : ''}`}>
+                {focusBySpace.map(g => {
+                  const d = g.items.filter(i => i.a.completed).length
+                  if (hideFocusDone && d === g.items.length) return null
+                  return (
+                    <div key={g.sp.id} className="sgrp" style={{ ['--sc']: spaceDisplayColor(g.sp) } as CSSProperties}>
+                      <div className="sgrp-h"><span className="dot" /><span className="nm">{g.sp.name}</span><span className="n">{d}/{g.items.length}</span></div>
+                      {g.items.map(focusRow)}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1078,23 +1097,29 @@ export default function Home({
       {/* body: objectives (grouped by space in All view) + habits rail */}
       <div className="body">
         <div className="main">
-          <div className="seclbl"><span className="lbl">Objectives{objCount ? ` · ${objCount}` : ''}</span><span className="rule" /></div>
-          {board.length === 0 ? (
-            <div className="empty">No objectives in scope. Try a different space or quarter.</div>
-          ) : spaceFilter === null ? (
-            orderedSpaces
-              .map(s => ({ s, items: board.filter(b => b.obj.space_id === s.id) }))
-              .filter(grp => grp.items.length > 0)
-              .map(({ s, items }) => (
-                <Fragment key={s.id}>
-                  <div className="spacehdr" style={{ ['--sc']: spaceDisplayColor(s) } as CSSProperties}>
-                    <span className="dot" /><span className="nm">{s.name}</span><span className="ct">{items.length}</span><span className="rule" />
-                  </div>
-                  <div className="board">{items.map(renderObjCard)}</div>
-                </Fragment>
-              ))
-          ) : (
-            <div className="board">{board.map(renderObjCard)}</div>
+          <button className="sec-hdr" onClick={() => setObjectivesOpen(v => !v)}>
+            <span className={`sec-chev${objectivesOpen ? ' open' : ''}`}>▸</span>
+            <span className="lbl">Objectives{objCount ? ` · ${objCount}` : ''}</span>
+            <span className="rule" />
+          </button>
+          {objectivesOpen && (
+            board.length === 0 ? (
+              <div className="empty">No objectives in scope. Try a different space or quarter.</div>
+            ) : spaceFilter === null ? (
+              orderedSpaces
+                .map(s => ({ s, items: board.filter(b => b.obj.space_id === s.id) }))
+                .filter(grp => grp.items.length > 0)
+                .map(({ s, items }) => (
+                  <Fragment key={s.id}>
+                    <div className="spacehdr" style={{ ['--sc']: spaceDisplayColor(s) } as CSSProperties}>
+                      <span className="dot" /><span className="nm">{s.name}</span><span className="ct">{items.length}</span><span className="rule" />
+                    </div>
+                    <div className="board">{items.map(renderObjCard)}</div>
+                  </Fragment>
+                ))
+            ) : (
+              <div className="board">{board.map(renderObjCard)}</div>
+            )
           )}
 
           {/* close the week — bottom of main */}
@@ -1170,6 +1195,29 @@ export default function Home({
 
         .seclbl{display:flex;align-items:center;gap:10px;margin:0 0 11px;}
         .seclbl .rule{flex:1;height:1px;background:var(--line);}
+
+        /* Collapsible section headers */
+        .sec-hdr{
+          width:100%;display:flex;align-items:center;gap:10px;
+          background:none;border:none;cursor:pointer;
+          padding:7px 0;margin:0 0 4px;
+          text-align:left;font-family:inherit;
+          border-radius:6px;
+        }
+        .sec-hdr:hover .lbl{color:var(--accent);}
+        .sec-hdr:hover .sec-chev{color:var(--accent);}
+        .sec-chev{
+          font-size:10px;color:var(--navy-400);
+          transition:transform .18s;
+          display:inline-block;transform:rotate(0deg);
+          flex-shrink:0;
+        }
+        .sec-chev.open{transform:rotate(90deg);}
+        .sec-meta{
+          font-family:var(--font-mono);font-size:10px;
+          color:var(--navy-400);white-space:nowrap;flex-shrink:0;
+        }
+        .sec-body{margin-bottom:8px;}
 
         /* focus this week — consolidated weekly actions */
         .focusw{margin-bottom:26px;}
