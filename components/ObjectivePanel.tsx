@@ -1,6 +1,7 @@
 'use client'
 import React from 'react'
 import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, DriveFileIcon, LinkIcon } from './Icons'
+import { isTauri, pickFile, pickFolder } from '@/lib/tauri'
 /**
  * ObjectivePanel — the "back of card" for an annual objective.
  *
@@ -253,14 +254,43 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
                   style={{ ...formInputStyle, marginBottom: 6 }}
                 />
               )}
-              <input
-                value={newRefUrl}
-                onChange={e => setNewRefUrl(e.target.value)}
-                placeholder={meta.urlPlaceholder}
-                autoFocus={!needsName}
-                style={formInputStyle}
-                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveNewRef() } }}
-              />
+              {isTauri() && (creatingRef === 'file' || creatingRef === 'drive_folder') ? (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  <input
+                    value={newRefUrl}
+                    onChange={e => setNewRefUrl(e.target.value)}
+                    placeholder={newRefUrl ? '' : 'Pick a file or folder →'}
+                    style={{ ...formInputStyle, flex: 1 }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveNewRef() } }}
+                    readOnly
+                  />
+                  <button
+                    onClick={async () => {
+                      const picked = creatingRef === 'drive_folder'
+                        ? await pickFolder({ title: 'Select folder' })
+                        : await pickFile({ title: 'Select file' })
+                      if (picked) {
+                        setNewRefUrl(picked)
+                        if (!newRefName.trim()) {
+                          const parts = picked.replace(/\\/g, '/').split('/')
+                          setNewRefName(parts[parts.length - 1] ?? picked)
+                        }
+                      }
+                    }}
+                    style={{ ...btnSaveStyle, whiteSpace: 'nowrap', padding: '5px 12px' }}>
+                    Browse…
+                  </button>
+                </div>
+              ) : (
+                <input
+                  value={newRefUrl}
+                  onChange={e => setNewRefUrl(e.target.value)}
+                  placeholder={meta.urlPlaceholder}
+                  autoFocus={!needsName}
+                  style={formInputStyle}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); saveNewRef() } }}
+                />
+              )}
               <div style={{ display: 'flex', gap: 6, marginTop: 8, justifyContent: 'flex-end' }}>
                 <button onClick={cancelNewRef} style={btnCancelStyle}>Cancel</button>
                 <button onClick={saveNewRef} disabled={savingRef || !canSave}

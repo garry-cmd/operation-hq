@@ -1,5 +1,6 @@
 'use client'
 import { useState, useMemo, useEffect, Fragment } from 'react'
+import { shellOpen } from '@/lib/tauri'
 import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, DriveFileIcon, LinkIcon } from './Icons'
 import type { Dispatch, SetStateAction, ReactNode, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import type {
@@ -1583,7 +1584,7 @@ function ObjResources({
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
       {links.map(l => (
         <button key={l.id}
-          onClick={() => window.open(l.url, '_blank', 'noopener,noreferrer')}
+          onClick={() => shellOpen(l.url)}
           title={l.url}
           style={{
             display: 'flex', alignItems: 'center', gap: 5,

@@ -39,6 +39,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 import type { QuarterReview } from '@/lib/types'
+import { checkIsTauri, onTauriEvent } from '@/lib/tauri'
 
 type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'notes' | 'files' | 'tags' | 'settings'
 
@@ -456,6 +457,20 @@ export default function HQPage() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  // ── Tauri bridge ─────────────────────────────────────────────────────────
+  // Detect Tauri on mount (so isTauri() is ready synchronously for pickers),
+  // then listen for global-shortcut events from the Rust shell.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null
+    checkIsTauri().then(detected => {
+      if (!detected) return
+      onTauriEvent('hq:capture', () => {
+        setCaptureRequest({ type: 'note', key: Date.now() })
+      }).then(fn => { unlisten = fn })
+    })
+    return () => { unlisten?.() }
   }, [])
 
   function copyShareLink() {
