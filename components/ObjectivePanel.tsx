@@ -1,7 +1,8 @@
 'use client'
 import React from 'react'
 import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, DriveFileIcon, LinkIcon } from './Icons'
-import { isTauri, pickFile, pickFolder } from '@/lib/tauri'
+import { checkIsTauri, pickFile, pickFolder } from '@/lib/tauri'
+import { useEffect } from 'react'
 /**
  * ObjectivePanel — the "back of card" for an annual objective.
  *
@@ -71,6 +72,8 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
   const [newRefName, setNewRefName] = useState('')
   const [savingRef, setSavingRef] = useState(false)
   const [showKindPicker, setShowKindPicker] = useState(false)
+  const [isTauriApp, setIsTauriApp] = useState(false)
+  useEffect(() => { checkIsTauri().then(setIsTauriApp) }, [])
 
   // References (kind='link' | 'file'), most recent first.
   const objRefs = [...links].sort(
@@ -254,7 +257,7 @@ export default function ObjectivePanel({ objective, krs, links, logs, setLinks, 
                   style={{ ...formInputStyle, marginBottom: 6 }}
                 />
               )}
-              {isTauri() && (creatingRef === 'file' || creatingRef === 'drive_folder') ? (
+              {isTauriApp && (creatingRef === 'file' || creatingRef === 'drive_folder') ? (
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input
                     value={newRefUrl}
