@@ -58,7 +58,7 @@ export default function HQPage() {
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [captureRequest, setCaptureRequest] = useState<{ type: 'task' | 'note'; key: number } | null>(null)
+  const [captureRequest, setCaptureRequest] = useState<{ type: 'note'; key: number } | null>(null)
 
   // Mobile fallback (May 17): the NavRail collapses into a hamburger-triggered
   // slide-in drawer below 900px. Drawer state lives at the page level so the
@@ -438,7 +438,7 @@ export default function HQPage() {
       if (e.metaKey || e.ctrlKey) {
         if (e.altKey || e.shiftKey) return
         if (k === 'k') { e.preventDefault(); setPaletteOpen(true); return }
-        if (k === 't') { e.preventDefault(); setCaptureRequest({ type: 'task', key: Date.now() }); return }
+        if (k === 't') { e.preventDefault(); setCaptureRequest({ type: 'note', key: Date.now() }); return }
         if (k === 'n') { e.preventDefault(); setCaptureRequest({ type: 'note', key: Date.now() }); return }
         return
       }
