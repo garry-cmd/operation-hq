@@ -144,7 +144,7 @@ export default function QuarterCloseWizard({
       // Update local state to reflect the changes
       setRoadmapItems(prev => prev.map(kr => {
         const d = dispositions[kr.id]
-        if (!d || kr.health_status === 'done' || kr.health_status === 'abandoned') return kr
+        if (!d || kr.health_status === 'done' || kr.is_parked) return kr
         if (d === 'done') return { ...kr, health_status: 'done' as const }
         if (d === 'abandon') return { ...kr, is_parked: true, quarter: null as string | null, status: 'planned' as const }
         if (d === 'carry') return { ...kr, quarter: nextQuarterStr, status: 'planned' as const, health_status: 'not_started' as const }
