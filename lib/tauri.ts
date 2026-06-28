@@ -1,20 +1,23 @@
 /**
- * Tauri bridge — communicates with the Rust shell via a custom URI scheme.
- * The Tauri shell registers hq://localhost/<command> as a URI scheme handler.
- * fetch() calls to that scheme are intercepted by Rust, which opens native
- * dialogs and returns JSON. Degrades gracefully in a plain browser.
+ * Tauri bridge — communicates with the Rust shell via window.__TAURI__.core.invoke().
+ * The Tauri shell injects window.__HQ_TAURI__ via an initialization_script that runs
+ * before any page JS, so it's available on every navigation including hq.svirene.com.
+ * Degrades gracefully in a plain browser (all functions return null/no-op).
  */
 
-const BASE = 'hq://localhost'
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const bridge = (): any => (window as any).__HQ_TAURI__ ?? null
 
 let _isTauri: boolean | null = null
 
 /** Returns true if running inside the Tauri desktop shell. */
 export async function checkIsTauri(): Promise<boolean> {
   if (_isTauri !== null) return _isTauri
+  const b = bridge()
+  if (!b) { _isTauri = false; return false }
   try {
-    const res = await fetch(`${BASE}/ping`)
-    _isTauri = res.ok
+    await b.ping()
+    _isTauri = true
   } catch {
     _isTauri = false
   }
@@ -30,9 +33,7 @@ export function isTauri(): boolean {
 export async function pickFile(_opts?: { title?: string }): Promise<string | null> {
   if (!(await checkIsTauri())) return null
   try {
-    const res = await fetch(`${BASE}/pick-file`)
-    const data = await res.json()
-    return data.path ?? null
+    return await bridge().pickFile() ?? null
   } catch (e) {
     console.error('pickFile failed', e)
     return null
@@ -43,9 +44,7 @@ export async function pickFile(_opts?: { title?: string }): Promise<string | nul
 export async function pickFolder(_opts?: { title?: string }): Promise<string | null> {
   if (!(await checkIsTauri())) return null
   try {
-    const res = await fetch(`${BASE}/pick-folder`)
-    const data = await res.json()
-    return data.path ?? null
+    return await bridge().pickFolder() ?? null
   } catch (e) {
     console.error('pickFolder failed', e)
     return null
@@ -62,7 +61,7 @@ export async function shellOpen(pathOrUrl: string): Promise<void> {
     return
   }
   try {
-    await fetch(`${BASE}/shell-open?url=${encodeURIComponent(pathOrUrl)}`)
+    await bridge().shellOpen(pathOrUrl)
   } catch (e) {
     console.error('shellOpen failed', e)
     window.open(pathOrUrl, '_blank', 'noopener,noreferrer')
