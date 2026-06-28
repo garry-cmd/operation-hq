@@ -923,3 +923,4 @@ plus primitives `.label .mono .chip(.chip-ok/warn/alarm/standby) .card`. Identit
 directly: `--nw-label` (amber labels), `--nw-cream`, `--nw-hero-amber`,
 `--nw-alarm/caution/nominal/standby-text`. Cobalt `--accent` for all interactive elements.
 Per-space object colors: `#0ea5b8 #14b87f #c8a040 #d4885a #c44a7c #8b5cf6 #6b8caa #5b8def`.
+<!-- session: 2026-06-28T02:24:59Z -->
