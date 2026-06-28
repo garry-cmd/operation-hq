@@ -122,6 +122,7 @@ interface Props {
   initialKRId?: string | null
   onConsumeInitialKRId?: () => void
   onQuarterClose?: (quarter: string, spaceId: string | null) => void
+  quarterReviews?: import('@/lib/db/quarterReviews').QuarterReview[]
   toast: (m: string) => void
 }
 
@@ -131,7 +132,7 @@ export default function Home({
   reviews, weekForSpace, onCloseWeek, onLogMetric,
   setObjectives, setRoadmapItems, onOpenObjective,
   links,
-  logs, setLogs, initialKRId, onConsumeInitialKRId, onQuarterClose, toast,
+  logs, setLogs, initialKRId, onConsumeInitialKRId, onQuarterClose, quarterReviews = [], toast,
 }: Props) {
   const [weekMonday, setWeekMonday] = useState<string>(getMonday())
   const [spaceFilter, setSpaceFilter] = useState<string | null>(() => {
@@ -192,14 +193,18 @@ export default function Home({
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(weekMonday, i)), [weekMonday])
   const [quote] = useState(() => randomQuote())
 
-  // Show "Close Quarter" CTA in the last 3 weeks of the quarter (or after quarter end).
+  // Show "Close Quarter" CTA in the last 3 weeks of the quarter (or after quarter end),
+  // but only if the active quarter hasn't been sealed already.
   const showQuarterCloseCTA = useMemo(() => {
     const qb = quarterBounds(ACTIVE_Q)
     if (!qb) return false
     const today = parseDateLocal(todayStr)
     const daysLeft = (qb.end.getTime() - today.getTime()) / 864e5
-    return daysLeft <= 21  // within 3 weeks of end or past end
-  }, [todayStr])
+    if (daysLeft > 21) return false  // not close enough yet
+    // Hide if this quarter is already sealed (any space or null space)
+    const sealed = quarterReviews.some(qr => qr.quarter === ACTIVE_Q && qr.closed_at != null)
+    return !sealed
+  }, [todayStr, quarterReviews])
 
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])

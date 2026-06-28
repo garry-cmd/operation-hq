@@ -78,6 +78,20 @@ export default function Roadmap({
   const [draggingId, setDraggingId]   = useState<string | null>(null)
   const [dragOverCell, setDragOverCell] = useState<string | null>(null)
   const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({})
+  // planningQ: the quarter highlighted as "active" in the Roadmap view.
+  // Defaults to ACTIVE_Q. User can advance it to plan the next quarter without
+  // affecting Focus, Close Week, or any other screen.
+  const [planningQ, setPlanningQ]     = useState<string>(ACTIVE_Q)
+
+  // Compute next quarter string from any quarter string.
+  function nextQuarter(q: string): string {
+    const m = /^([1-4])Q(\d{4})$/.exec(q)
+    if (!m) return q
+    let n = +m[1], y = +m[2]
+    n++; if (n > 4) { n = 1; y++ }
+    return `${n}Q${y}`
+  }
+  const nextQ = nextQuarter(planningQ)
 
   useEffect(() => {
     if (!initialKRId) return
@@ -156,11 +170,11 @@ export default function Roadmap({
     return !!item && item.annual_objective_id === objId && item.quarter !== quarter
   }
 
-  // ── Capacity stats for the active quarter ──
-  const activeQItems = items.filter(i => i.quarter === ACTIVE_Q && !i.is_habit)
+  // ── Capacity stats for the planning quarter ──
+  const activeQItems = items.filter(i => i.quarter === planningQ && !i.is_habit)
   const activeQObjs  = activeObjs.filter(obj => {
     const inScope = scopedQuarters(obj)
-    return inScope.has(ACTIVE_Q) && activeQItems.some(i => i.annual_objective_id === obj.id)
+    return inScope.has(planningQ) && activeQItems.some(i => i.annual_objective_id === obj.id)
   })
   const totalActiveObjs = activeQObjs.length
   const totalActiveKRs  = activeQItems.length
@@ -216,7 +230,7 @@ export default function Roadmap({
 
           {/* KR counter */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>KRs · {formatQ(ACTIVE_Q)}</span>
+            <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>KRs · {formatQ(planningQ)}</span>
             <span style={{
               fontSize: 13, fontWeight: 700,
               color: totalActiveKRs > OBJ_WARN * KR_WARN ? 'var(--nw-alarm-text)' : totalActiveKRs > OBJ_WARN * 3 ? 'var(--nw-caution-text)' : 'var(--navy-100)',
@@ -228,7 +242,7 @@ export default function Roadmap({
           {/* Quarter load gauge */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 200 }}>
             <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', whiteSpace: 'nowrap' }}>
-              Load · {formatQ(ACTIVE_Q)}
+              Load · {formatQ(planningQ)}
             </span>
             {sizingCoverage === 0 ? (
               <span style={{ fontSize: 10, color: 'var(--navy-500)', fontStyle: 'italic' }}>
@@ -270,6 +284,33 @@ export default function Roadmap({
               </>
             )}
           </div>
+
+          <div style={{ width: 1, height: 18, background: 'var(--line-2)', flexShrink: 0 }} />
+
+          {/* Plan next / back to active */}
+          {planningQ === ACTIVE_Q ? (
+            <button
+              onClick={() => setPlanningQ(nextQ)}
+              style={{
+                flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
+                letterSpacing: '.06em', padding: '4px 10px', borderRadius: 7,
+                background: 'var(--accent-bg)', border: '1px solid var(--accent-line)',
+                color: 'var(--accent-2)', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>
+              Plan {formatQ(nextQ)} →
+            </button>
+          ) : (
+            <button
+              onClick={() => setPlanningQ(ACTIVE_Q)}
+              style={{
+                flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
+                letterSpacing: '.06em', padding: '4px 10px', borderRadius: 7,
+                background: 'var(--surface-2)', border: '1px solid var(--line-2)',
+                color: 'var(--navy-300)', cursor: 'pointer', whiteSpace: 'nowrap',
+              }}>
+              ← Back to {formatQ(ACTIVE_Q)}
+            </button>
+          )}
         </div>
       )}
 
@@ -290,11 +331,12 @@ export default function Roadmap({
                   fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
                   letterSpacing: '.08em', textAlign: 'center', padding: '7px 6px',
                   borderRadius: 8, lineHeight: 1.3,
-                  background: q === ACTIVE_Q ? 'var(--accent-bg)' : 'var(--surface-2)',
-                  color:      q === ACTIVE_Q ? 'var(--accent-2)'  : 'var(--navy-300)',
-                  border:     q === ACTIVE_Q ? '1px solid var(--accent-line)' : '1px solid var(--line-2)',
+                  background: q === planningQ ? 'var(--accent-bg)' : 'var(--surface-2)',
+                  color:      q === planningQ ? 'var(--accent-2)'  : 'var(--navy-300)',
+                  border:     q === planningQ ? '1px solid var(--accent-line)' : '1px solid var(--line-2)',
                 }}>
                   {formatQ(q)}{q === ACTIVE_Q && <><br/><span style={{ fontWeight: 400, fontSize: 9, letterSpacing: '.04em' }}>⚡ Active</span></>}
+                  {q === planningQ && q !== ACTIVE_Q && <><br/><span style={{ fontWeight: 400, fontSize: 9, letterSpacing: '.04em' }}>📋 Planning</span></>}
                 </div>
               ))}
             </div>
@@ -415,10 +457,10 @@ export default function Roadmap({
                             }}
                             style={{
                               minHeight: 68, borderRadius, padding: '5px 5px 3px',
-                              background: isDragOver ? hex2rgba(obj.color, 0.28) : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
+                              background: isDragOver ? hex2rgba(obj.color, 0.28) : q === planningQ ? hex2rgba(obj.color, 0.1) : 'transparent',
                               border: isDragOver
                                 ? `2px solid ${obj.color}`
-                                : q === ACTIVE_Q
+                                : q === planningQ
                                   ? `1px solid ${hex2rgba(obj.color, 0.35)}`
                                   : `1px solid ${hex2rgba(obj.color, 0.18)}`,
                               borderTop: 'none',
@@ -586,19 +628,20 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
         onClick={cycleEffort}
         onMouseDown={e => e.stopPropagation()}
         draggable={false}
-        title={effort ? `Effort: ${effort} (${EFFORT_WEEKS[effort]}wk) — click to change` : 'Set effort size (click to cycle S→M→L→XL)'}
+        title={effort ? `Effort: ${effort} (${EFFORT_WEEKS[effort]}wk) — click to change` : 'Set effort size — click to cycle S→M→L→XL'}
         style={{
-          flexShrink: 0, height: 18, minWidth: 22, padding: '0 5px',
-          borderRadius: 4, border: 'none', cursor: 'pointer',
+          flexShrink: 0, height: 18, minWidth: 24, padding: '0 5px',
+          borderRadius: 4, cursor: 'pointer',
           fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
           letterSpacing: '.04em',
-          background: effort ? EFFORT_BG[effort] : 'rgba(255,255,255,.05)',
-          color: effort ? EFFORT_COLOR[effort] : 'var(--navy-600)',
+          background: effort ? EFFORT_BG[effort] : 'transparent',
+          color: effort ? EFFORT_COLOR[effort] : 'var(--navy-500)',
+          border: effort ? 'none' : '1px dashed var(--navy-600)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          transition: 'background .12s, color .12s',
+          transition: 'background .12s, color .12s, border .12s',
           WebkitTapHighlightColor: 'transparent',
         }}>
-        {effort ?? '·'}
+        {effort ?? '—'}
       </button>
       <button
         onClick={onEdit}

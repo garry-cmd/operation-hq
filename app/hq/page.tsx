@@ -655,6 +655,7 @@ export default function HQPage() {
             initialKRId={initialKRId}
             onConsumeInitialKRId={() => setInitialKRId(null)}
             onQuarterClose={(quarter, spaceId) => setQuarterClose({ quarter, spaceId })}
+            quarterReviews={quarterReviews}
             toast={setToast}
           />
         </main>
