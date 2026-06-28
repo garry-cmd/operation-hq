@@ -752,7 +752,7 @@ export default function HQPage() {
               </div>
             )}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} planningOffset={roadmapPlanningOffset} onResetPlanningOffset={() => setRoadmapPlanningOffset(0)} />}
-            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} quarterReviews={quarterReviews} habitSnapshots={habitSnapshots} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
+            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} quarterReviews={quarterReviews} habitSnapshots={habitSnapshots} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} onQuarterClose={(quarter, spaceId) => setQuarterClose({ quarter, spaceId })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
@@ -823,6 +823,7 @@ export default function HQPage() {
             actions={actions.filter(a => csKRIds.has(a.roadmap_item_id))}
             setActions={setActions}
             habitCheckins={habitCheckins.filter(h => csKRIds.has(h.roadmap_item_id))}
+            setHabitCheckins={setHabitCheckins}
             metricCheckins={metricCheckins.filter(m => csKRIds.has(m.roadmap_item_id))}
             setMetricCheckins={setMetricCheckins}
             reviews={reviews.filter(r => r.space_id === cs)}

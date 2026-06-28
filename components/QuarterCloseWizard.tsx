@@ -78,6 +78,7 @@ interface Props {
 export default function QuarterCloseWizard({
   quarter,
   space,
+  spaces,
   objectives,
   roadmapItems,
   setRoadmapItems,
@@ -378,7 +379,30 @@ export default function QuarterCloseWizard({
             </p>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {activeObjs.map(obj => {
+              {(() => {
+                // Group objectives by space when in all-spaces mode
+                const spaceById = new Map(spaces.map(s => [s.id, s]))
+                const objsBySpace: Map<string | null, AnnualObjective[]> = new Map()
+                for (const obj of activeObjs) {
+                  const key = obj.space_id ?? null
+                  if (!objsBySpace.has(key)) objsBySpace.set(key, [])
+                  objsBySpace.get(key)!.push(obj)
+                }
+                const groups = Array.from(objsBySpace.entries())
+                return groups.map(([spaceId, spaceObjs]) => {
+                  const sp = spaceId ? spaceById.get(spaceId) : null
+                  const hasAnyKRs = spaceObjs.some(obj => objKRs(obj.id).filter(k => !k.is_habit).length > 0)
+                  if (!hasAnyKRs) return null
+                  return (
+                    <div key={spaceId ?? 'global'}>
+                      {!space && sp && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, marginTop: 6 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, flexShrink: 0, background: sp.color ?? 'var(--accent)', display: 'inline-block' }} />
+                          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--nw-label)' }}>{sp.name}</span>
+                          <div style={{ flex: 1, height: 1, background: 'var(--line-2)', marginLeft: 4 }} />
+                        </div>
+                      )}
+                      {spaceObjs.map(obj => {
                 const krs = objKRs(obj.id).filter(k => !k.is_habit)
                 if (!krs.length) return null
                 return (
@@ -478,6 +502,10 @@ export default function QuarterCloseWizard({
                   </div>
                 )
               })}
+              </div>
+            )
+            })
+          })()}
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 24 }}>

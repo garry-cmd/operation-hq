@@ -1044,6 +1044,26 @@ export default function Home({
       <div className="hd">
         <span className="hd-brand">Home</span>
         <span className="hd-qtr">{displayQ}</span>
+        {(() => {
+          const qb = quarterBounds(displayQ)
+          if (!qb) return null
+          const today = new Date(); today.setHours(0,0,0,0)
+          const daysLeft = Math.ceil((qb.end.getTime() - today.getTime()) / 864e5)
+          // ISO week number
+          const d = new Date(today); d.setHours(0,0,0,0)
+          d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7)
+          const week1 = new Date(d.getFullYear(), 0, 4)
+          const weekNum = 1 + Math.round(((d.getTime() - week1.getTime()) / 864e5 - 3 + (week1.getDay() + 6) % 7) / 7)
+          if (daysLeft < 0) return null
+          return (
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, color: 'var(--navy-400)', letterSpacing: '.06em', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span title="ISO week number">W{weekNum}</span>
+              <span style={{ color: daysLeft <= 14 ? 'var(--nw-caution-text)' : 'var(--navy-400)' }} title="Days left in quarter">
+                {daysLeft}d left
+              </span>
+            </span>
+          )
+        })()}
         <div className="hd-controls">
           <div className="wknav">
             <button onClick={() => setWeekMonday(addWeeks(weekMonday, -1))} title="Previous week">‹</button>

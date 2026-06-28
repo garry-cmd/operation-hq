@@ -67,8 +67,8 @@ function scopedQuarters(obj: AnnualObjective): Set<string> {
   }
   return out
 }
-function scopeSpan(inScope: Set<string>): { first: number; last: number } | null {
-  const indices = ROLLING.map((q, i) => inScope.has(q) ? i : -1).filter(i => i >= 0)
+function scopeSpan(inScope: Set<string>, rolling: string[]): { first: number; last: number } | null {
+  const indices = rolling.map((q, i) => inScope.has(q) ? i : -1).filter(i => i >= 0)
   if (!indices.length) return null
   return { first: indices[0], last: indices[indices.length - 1] }
 }
@@ -351,7 +351,7 @@ export default function Roadmap({
             {activeObjs.map((obj, objIdx) => {
               const objItems = items.filter(i => i.annual_objective_id === obj.id)
               const inScope  = scopedQuarters(obj)
-              const span     = scopeSpan(inScope)
+              const span     = scopeSpan(inScope, PLANNING_ROLLING)
               const isCol    = !!collapsed[obj.id]
 
               const hdrStart = span ? span.first + 1 : 1
@@ -477,7 +477,9 @@ export default function Roadmap({
                             {isDragOver && (
                               <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .85 }}>Drop here</div>
                             )}
-                            {objItems.filter(i => i.quarter === q).map(item => (
+                            {(() => {
+                              const quarterItems = objItems.filter(i => i.quarter === q).sort((a, b) => a.sort_order - b.sort_order)
+                              return quarterItems.map((item, idx) => (
                               <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
                                 dragging={draggingId === item.id}
                                 onDragStart={e => {
@@ -493,8 +495,29 @@ export default function Roadmap({
                                     setRoadmapItems(prev => prev.map(i => i.id === item.id ? updated : i))
                                   } catch { toast('Could not update effort') }
                                 }}
+                                onMoveUp={idx === 0 ? undefined : async () => {
+                                  const prev = quarterItems[idx - 1]
+                                  try {
+                                    const [a, b] = await Promise.all([
+                                      krsDb.update(item.id, { sort_order: prev.sort_order }),
+                                      krsDb.update(prev.id, { sort_order: item.sort_order }),
+                                    ])
+                                    setRoadmapItems(p => p.map(i => i.id === a.id ? a : i.id === b.id ? b : i))
+                                  } catch { toast('Could not reorder') }
+                                }}
+                                onMoveDown={idx === quarterItems.length - 1 ? undefined : async () => {
+                                  const next = quarterItems[idx + 1]
+                                  try {
+                                    const [a, b] = await Promise.all([
+                                      krsDb.update(item.id, { sort_order: next.sort_order }),
+                                      krsDb.update(next.id, { sort_order: item.sort_order }),
+                                    ])
+                                    setRoadmapItems(p => p.map(i => i.id === a.id ? a : i.id === b.id ? b : i))
+                                  } catch { toast('Could not reorder') }
+                                }}
                               />
-                            ))}
+                              ))
+                            })()}
                             <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
                           </div>
                         )
@@ -582,13 +605,15 @@ const EFFORT_BG: Record<string, string> = {
   XL: 'rgba(255,100,82,.1)',
 }
 
-function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd, onEffortChange }: {
+function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd, onEffortChange, onMoveUp, onMoveDown }: {
   item: RoadmapItem; objColor: string; quarter: string
   dragging: boolean
   onEdit: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
   onEffortChange: (size: 'S' | 'M' | 'L' | 'XL' | null) => void | Promise<void>
+  onMoveUp?: () => void | Promise<void>
+  onMoveDown?: () => void | Promise<void>
 }) {
   const isActive   = quarter === ACTIVE_Q
   const isDone     = item.health_status === 'done'
@@ -649,6 +674,37 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
         }}>
         {effort ?? '—'}
       </button>
+      {/* Reorder buttons — ▲▼ within the same quarter column */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
+        <button
+          onClick={e => { e.stopPropagation(); onMoveUp?.() }}
+          onMouseDown={e => e.stopPropagation()}
+          draggable={false}
+          disabled={!onMoveUp}
+          title="Move up"
+          style={{
+            width: 16, height: 14, padding: 0, border: 'none', borderRadius: 3, cursor: onMoveUp ? 'pointer' : 'default',
+            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: onMoveUp ? 'var(--navy-300)' : 'var(--navy-600)', opacity: onMoveUp ? 0.8 : 0.3,
+            WebkitTapHighlightColor: 'transparent',
+          }}>
+          <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M4 1L1 5h6L4 1z" fill="currentColor"/></svg>
+        </button>
+        <button
+          onClick={e => { e.stopPropagation(); onMoveDown?.() }}
+          onMouseDown={e => e.stopPropagation()}
+          draggable={false}
+          disabled={!onMoveDown}
+          title="Move down"
+          style={{
+            width: 16, height: 14, padding: 0, border: 'none', borderRadius: 3, cursor: onMoveDown ? 'pointer' : 'default',
+            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: onMoveDown ? 'var(--navy-300)' : 'var(--navy-600)', opacity: onMoveDown ? 0.8 : 0.3,
+            WebkitTapHighlightColor: 'transparent',
+          }}>
+          <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M4 5L7 1H1L4 5z" fill="currentColor"/></svg>
+        </button>
+      </div>
       <button
         onClick={onEdit}
         onMouseDown={e => e.stopPropagation()}

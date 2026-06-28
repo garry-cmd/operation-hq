@@ -40,6 +40,7 @@ type Props = {
   actions: WeeklyAction[]
   setActions: (fn: (p: WeeklyAction[]) => WeeklyAction[]) => void
   habitCheckins: HabitCheckin[]
+  setHabitCheckins: (fn: (p: HabitCheckin[]) => HabitCheckin[]) => void
   metricCheckins: MetricCheckin[]
   setMetricCheckins: (fn: (p: MetricCheckin[]) => MetricCheckin[]) => void
   reviews: WeeklyReview[]
@@ -73,7 +74,7 @@ const initialPersisted = (existing?: WeeklyReview): PersistedState => ({
 
 export default function CloseWeekWizard({
   closingWeek, objectives, roadmapItems, setRoadmapItems, actions, setActions,
-  habitCheckins, metricCheckins, setMetricCheckins,
+  habitCheckins, setHabitCheckins, metricCheckins, setMetricCheckins,
   reviews, setReviews, setWeekStart, activeSpaceId, logs, toast, onClose,
 }: Props) {
   // The week the new actions land in. If the user is closing a stale past week
@@ -506,6 +507,9 @@ export default function CloseWeekWizard({
             onLogMetric={logMetric}
             onContinue={continueToStep2}
             advancing={advancing}
+            habitCheckins={habitCheckins}
+            setHabitCheckins={setHabitCheckins}
+            toast={toast}
           />
         ) : (
           <Step2
@@ -607,7 +611,7 @@ function Step1({
   habitRecap, metricKRs, metricCheckins, outcomeKRs, objectives, closingWeek,
   weekLogs, rating, win, slipped, adjustNotes,
   onRating, onWin, onSlipped, onAdjust, onSetHealth, onSetProgress, onLogMetric,
-  onContinue, advancing,
+  onContinue, advancing, habitCheckins, setHabitCheckins, toast,
 }: {
   habitRecap: { kr: RoadmapItem; dots: string; label: string; labelColor: string }[]
   metricKRs: RoadmapItem[]
@@ -625,6 +629,9 @@ function Step1({
   onLogMetric: (kr: RoadmapItem, value: number) => Promise<void>
   onContinue: () => void
   advancing: boolean
+  habitCheckins: HabitCheckin[]
+  setHabitCheckins: (fn: (p: HabitCheckin[]) => HabitCheckin[]) => void
+  toast: (m: string) => void
 }) {
   return (
     <>
@@ -651,19 +658,77 @@ function Step1({
           </div>
         </Card>
       )}
-      {habitRecap.length > 0 && (
-        <Card title="Habits this week">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '8px 14px', alignItems: 'center', fontSize: 13 }}>
-            {habitRecap.map(({ kr, dots, label, labelColor }) => (
-              <RowGroup key={kr.id}>
-                <span style={{ color: 'var(--navy-50)' }}>{kr.title}</span>
-                <span style={{ fontFamily: 'var(--font-mono, ui-monospace, monospace)', color: 'var(--navy-400)', fontSize: 12, letterSpacing: 2 }}>{dots}</span>
-                <span style={{ color: labelColor, fontWeight: 600, fontSize: 12 }}>{label}</span>
-              </RowGroup>
-            ))}
-          </div>
-        </Card>
-      )}
+      {habitRecap.length > 0 && (() => {
+        // Build Mon–Sun dates for the closing week
+        const weekDates: string[] = []
+        const base = parseDateLocal(closingWeek)
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(base); d.setDate(base.getDate() + i)
+          weekDates.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`)
+        }
+        const today = new Date(); today.setHours(0,0,0,0)
+
+        async function toggleHabitDay(kr: RoadmapItem, date: string) {
+          const existing = habitCheckins.find(c => c.roadmap_item_id === kr.id && c.date === date)
+          try {
+            if (existing) {
+              await checkinsDb.habit.remove(existing.id)
+              setHabitCheckins(prev => prev.filter(c => c.id !== existing.id))
+            } else {
+              const created = await checkinsDb.habit.create(kr.id, date)
+              setHabitCheckins(prev => [...prev, created])
+            }
+          } catch { toast('Could not update habit') }
+        }
+
+        return (
+          <Card title="Habits this week">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {habitRecap.map(({ kr, label, labelColor }) => {
+                const krCheckins = habitCheckins.filter(c => c.roadmap_item_id === kr.id)
+                const checkinDates = new Set(krCheckins.map(c => c.date))
+                return (
+                  <div key={kr.id} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--navy-50)', fontSize: 13 }}>{kr.title}</span>
+                      <span style={{ color: labelColor, fontWeight: 600, fontSize: 12 }}>{label}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      {weekDates.map(date => {
+                        const dayD = parseDateLocal(date)
+                        const isFuture = dayD > today
+                        const checked = checkinDates.has(date)
+                        const dayLabel = ['M','T','W','T','F','S','S'][weekDates.indexOf(date)]
+                        return (
+                          <button
+                            key={date}
+                            onClick={() => !isFuture && toggleHabitDay(kr, date)}
+                            disabled={isFuture}
+                            title={date}
+                            style={{
+                              flex: 1, padding: '5px 0', borderRadius: 6, cursor: isFuture ? 'default' : 'pointer',
+                              background: checked ? 'var(--accent-bg)' : 'var(--surface-2)',
+                              border: checked ? '1.5px solid var(--accent-line)' : '1px solid var(--line-2)',
+                              color: checked ? 'var(--accent)' : isFuture ? 'var(--navy-600)' : 'var(--navy-300)',
+                              fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+                              opacity: isFuture ? 0.4 : 1,
+                              transition: 'background .12s, border-color .12s',
+                              WebkitTapHighlightColor: 'transparent',
+                            }}>
+                            <span>{dayLabel}</span>
+                            <span style={{ fontSize: 14 }}>{checked ? '●' : '○'}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        )
+      })()}
 
       {metricKRs.length > 0 && (
         <Card title="Metrics this week">

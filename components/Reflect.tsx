@@ -52,6 +52,7 @@ type Props = {
   spaces: Space[]
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
+  onQuarterClose?: (quarter: string, spaceId: string | null) => void
   roadmapItems: RoadmapItem[]
   metricCheckins: MetricCheckin[]
   habitCheckins: HabitCheckin[]
@@ -59,7 +60,7 @@ type Props = {
   toast: (m: string) => void
 }
 
-export default function Reflect({ reviews, setReviews, quarterReviews, habitSnapshots, spaces, weekForSpace, onCloseWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
+export default function Reflect({ reviews, setReviews, quarterReviews, habitSnapshots, spaces, weekForSpace, onCloseWeek, onQuarterClose, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
   const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
   const spaceById = new Map(spaces.map(s => [s.id, s]))
   const thisMonday = getMonday()
@@ -153,6 +154,28 @@ export default function Reflect({ reviews, setReviews, quarterReviews, habitSnap
           })}
         </div>
       </div>
+
+      {/* Quarter close launcher */}
+      {onQuarterClose && (() => {
+        const sealed = quarterReviews.some(qr => qr.quarter === ACTIVE_Q && qr.closed_at != null)
+        return (
+          <div style={{ background: 'var(--surface)', border: '1px solid var(--line)', borderRadius: 14, padding: '14px 16px', marginBottom: 22, boxShadow: 'var(--card-shadow)' }}>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 10 }}>Quarter</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+              <span style={{ flex: 1, fontSize: 14, color: 'var(--navy-100)' }}>{ACTIVE_Q}</span>
+              {sealed ? (
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--nw-nominal-text, #7fe27a)', padding: '5px 12px' }}>✓ sealed</span>
+              ) : (
+                <button
+                  onClick={() => onQuarterClose(ACTIVE_Q, null)}
+                  style={{ fontSize: 12, fontWeight: 600, padding: '6px 14px', borderRadius: 8, border: '1px solid var(--accent)', background: 'var(--accent-dim)', color: 'var(--navy-50)', cursor: 'pointer' }}>
+                  Close quarter →
+                </button>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── Weekly archive ── */}
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 10px 0' }}>Weekly</div>

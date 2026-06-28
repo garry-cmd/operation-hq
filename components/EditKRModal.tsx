@@ -43,8 +43,9 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
 
   // Metric fields. All stored as strings so inputs stay controlled even when
   // empty; parsed on save. A KR is either a metric, a habit, or neither —
-  // turning is_metric on forces is_habit off.
+  // turning is_metric on forces is_habit off, and vice versa.
   const [isMetric, setIsMetric] = useState(kr.is_metric)
+  const [isHabit, setIsHabit] = useState(kr.is_habit)
   const [metricUnit, setMetricUnit] = useState(kr.metric_unit ?? '')
   const [metricDirection, setMetricDirection] = useState<'up' | 'down'>(kr.metric_direction ?? 'up')
   const [startValue, setStartValue] = useState<string>(kr.start_value != null ? String(kr.start_value) : '')
@@ -90,7 +91,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
     // Non-habit KRs require both dates. The All Spaces dashboard relies on
     // every non-habit KR having a window; missing dates would make it
     // invisible there.
-    if (!kr.is_habit) {
+    if (!isHabit) {
       if (!startDate || !endDate) {
         toast('Start and end dates are required.')
         return
@@ -107,6 +108,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
         title: title.trim(),
         health_status: healthStatus,
         is_metric: isMetric,
+        is_habit: isHabit,
         // When metric is off, null out the metric-specific fields so stale
         // data doesn't resurface if the toggle gets flipped back on later.
         metric_unit:      isMetric ? metricUnit.trim() : null,
@@ -115,15 +117,17 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
         target_value:     isMetric ? Number(targetValue) : null,
         // Time window. Habits stay null (their fields aren't editable here);
         // every other KR gets the values from the inputs.
-        start_date: kr.is_habit ? null : (startDate || null),
-        end_date:   kr.is_habit ? null : (endDate || null),
+        start_date: isHabit ? null : (startDate || null),
+        end_date:   isHabit ? null : (endDate || null),
         // Chunk 4: explicit quarter-level goal flag.
-        is_quarter_bound: kr.is_habit ? false : isQuarterBound,
+        is_quarter_bound: isHabit ? false : isQuarterBound,
       }
-      // Metric and habit are mutually exclusive — if we're turning metric on,
-      // force is_habit off so the KR doesn't show up in Focus bubbles.
-      if (isMetric && kr.is_habit) {
+      // Metric and habit are mutually exclusive.
+      if (isMetric && isHabit) {
         updatedKR.is_habit = false
+      }
+      if (isHabit && isMetric) {
+        updatedKR.is_metric = false
       }
 
       // Roadmap context: persist the (possibly changed) quarter and derive the
@@ -145,7 +149,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
 
   // Show the quarter-bound checkbox only when the KR has a quarter to bind
   // to (and isn't a habit, which has no dates at all).
-  const showQuarterBoundToggle = !kr.is_habit && !!quarter
+  const showQuarterBoundToggle = !isHabit && !!quarter
 
   return (
     <Modal
@@ -245,7 +249,7 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
           fields; they're ongoing, not bounded by a window. The All Spaces
           dashboard buckets KRs by end_date, so missing dates = invisible.
           Disabled when isQuarterBound is on. */}
-      {!kr.is_habit && (
+      {!isHabit && (
         <div className="field" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           <div>
             <label style={{ display: 'block', marginBottom: 4 }}>Start date</label>
@@ -272,6 +276,25 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
         </div>
       )}
 
+      {/* Habit KR config — marks this KR as a recurring habit */}
+      <div className="field" style={{ borderTop: '1px solid var(--navy-600)', paddingTop: 14, marginTop: 6 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 4 }}>
+          <input
+            type="checkbox"
+            checked={isHabit}
+            onChange={e => {
+              setIsHabit(e.target.checked)
+              if (e.target.checked) setIsMetric(false) // mutually exclusive
+            }}
+            style={{ width: 16, height: 16 }}
+          />
+          <span style={{ fontWeight: 600, color: 'var(--navy-100)' }}>Track as a habit</span>
+        </label>
+        <div style={{ fontSize: 12, color: 'var(--navy-400)', marginLeft: 26 }}>
+          Recurring sessions (gym, meditation, etc.). Frequency in title, e.g. "Gym 3x/week".
+        </div>
+      </div>
+
       {/* Metric KR config — collapsed behind a toggle to keep the modal light
           for normal outcome KRs. Only shows the detail fields when on. */}
       <div className="field" style={{ borderTop: '1px solid var(--navy-600)', paddingTop: 14, marginTop: 6 }}>
@@ -279,7 +302,10 @@ export default function EditKRModal({ kr, onClose, onSave, onDelete, onPark, qua
           <input
             type="checkbox"
             checked={isMetric}
-            onChange={e => setIsMetric(e.target.checked)}
+            onChange={e => {
+              setIsMetric(e.target.checked)
+              if (e.target.checked) setIsHabit(false) // mutually exclusive
+            }}
             style={{ width: 16, height: 16 }}
           />
           <span style={{ fontWeight: 600, color: 'var(--navy-100)' }}>Track as a metric</span>
