@@ -1,7 +1,7 @@
 'use client'
 import { useState } from 'react'
 import * as reviewsDb from '@/lib/db/reviews'
-import type { QuarterReview } from '@/lib/db/quarterReviews'
+import type { QuarterReview, QuarterHabitSnapshot } from '@/lib/db/quarterReviews'
 import { WeeklyReview, ReviewRating, Space, RoadmapItem, MetricCheckin, HabitCheckin } from '@/lib/types'
 import { formatWeek, getMonday, ACTIVE_Q } from '@/lib/utils'
 import { spaceDisplayColor } from '@/lib/spaceColor'
@@ -48,6 +48,7 @@ type Props = {
   reviews: WeeklyReview[]   // all spaces — Reflect is the all-spaces ritual hub
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
   quarterReviews: QuarterReview[]
+  habitSnapshots: QuarterHabitSnapshot[]
   spaces: Space[]
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
@@ -58,7 +59,7 @@ type Props = {
   toast: (m: string) => void
 }
 
-export default function Reflect({ reviews, setReviews, quarterReviews, spaces, weekForSpace, onCloseWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
+export default function Reflect({ reviews, setReviews, quarterReviews, habitSnapshots, spaces, weekForSpace, onCloseWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
   const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
   const spaceById = new Map(spaces.map(s => [s.id, s]))
   const thisMonday = getMonday()
@@ -193,10 +194,13 @@ export default function Reflect({ reviews, setReviews, quarterReviews, spaces, w
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {quarterReviews.map(qr => {
             const sp = qr.space_id ? spaceById.get(qr.space_id) : null
+            const snaps = habitSnapshots.filter(s => s.quarter === qr.quarter &&
+              (qr.space_id ? s.space_id === qr.space_id : s.space_id === null))
             return (
               <QuarterReviewCard
                 key={qr.id}
                 review={qr}
+                habitSnapshots={snaps}
                 spaceName={sp?.name ?? null}
                 spaceColor={sp ? spaceDisplayColor(sp) : null}
               />
@@ -212,9 +216,10 @@ export default function Reflect({ reviews, setReviews, quarterReviews, spaces, w
 // Quarterly close card — collapsed summary, expand to read
 // ==========================================================================
 function QuarterReviewCard({
-  review, spaceName, spaceColor,
+  review, habitSnapshots, spaceName, spaceColor,
 }: {
   review: QuarterReview
+  habitSnapshots: QuarterHabitSnapshot[]
   spaceName: string | null
   spaceColor: string | null
 }) {
@@ -254,6 +259,36 @@ function QuarterReviewCard({
             {!has(review.proud_of) && !has(review.didnt_go) && !has(review.next_quarter) && !has(review.overall_note) && (
               <div style={{ fontSize: 12, color: 'var(--navy-400)', fontStyle: 'italic' }}>No notes recorded for this quarter.</div>
             )}
+
+            {/* Habit performance snapshot */}
+            {habitSnapshots.length > 0 && (
+              <div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em', marginBottom: 8 }}>
+                  Habits
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {habitSnapshots.map(s => {
+                    const tone = s.percent >= 80 ? 'nominal' : s.percent >= 50 ? 'caution' : 'alarm'
+                    const color = tone === 'nominal' ? 'var(--nw-nominal-text)' : tone === 'caution' ? 'var(--nw-caution-text)' : 'var(--nw-alarm-text)'
+                    const bg    = tone === 'nominal' ? 'rgba(127,226,122,.1)' : tone === 'caution' ? 'rgba(245,184,64,.1)' : 'rgba(255,100,82,.1)'
+                    return (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ flex: 1, fontSize: 12, color: 'var(--navy-200)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {s.kr_title}
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-400)', whiteSpace: 'nowrap' }}>
+                          {s.sessions}/{s.expected} sessions
+                        </div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 700, color, background: bg, padding: '2px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>
+                          {s.percent}%
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             {review.closed_at && (
               <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-500)', marginTop: 4 }}>
                 Sealed {new Date(review.closed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}

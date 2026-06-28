@@ -85,3 +85,47 @@ export async function closeKR(
 export async function seal(quarter: string, space_id: string | null): Promise<QuarterReview> {
   return upsert({ quarter, space_id, closed_at: new Date().toISOString() })
 }
+
+// ── Habit snapshots ───────────────────────────────────────────────────────────
+
+export interface QuarterHabitSnapshot {
+  id: string
+  quarter: string
+  space_id: string | null
+  kr_id: string
+  kr_title: string
+  sessions: number
+  expected: number
+  percent: number
+  created_at: string
+}
+
+/** Snapshot habit performance for a quarter. Idempotent — deletes prior snapshots for this quarter+space first. */
+export async function snapshotHabits(
+  quarter: string,
+  space_id: string | null,
+  snapshots: Array<{ kr_id: string; kr_title: string; sessions: number; expected: number; percent: number }>
+): Promise<void> {
+  // Delete any prior snapshots for this quarter+space (re-sealing after fix, etc.)
+  let del = supabase.from('quarter_habit_snapshots').delete().eq('quarter', quarter)
+  if (space_id) del = del.eq('space_id', space_id)
+  else del = del.is('space_id', null)
+  const { error: delErr } = await del
+  if (delErr) throw delErr
+
+  if (!snapshots.length) return
+
+  const rows = snapshots.map(s => ({ ...s, quarter, space_id: space_id ?? null }))
+  const { error } = await supabase.from('quarter_habit_snapshots').insert(rows)
+  if (error) throw error
+}
+
+/** Load habit snapshots for all sealed quarters. */
+export async function listAllHabitSnapshots(): Promise<QuarterHabitSnapshot[]> {
+  const { data, error } = await supabase
+    .from('quarter_habit_snapshots')
+    .select('*')
+    .order('quarter', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}

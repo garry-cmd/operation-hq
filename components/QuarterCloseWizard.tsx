@@ -11,10 +11,11 @@
  * Uses the same prop / callback pattern as CloseWeekWizard.
  */
 import { useState, useMemo, useCallback } from 'react'
-import type { AnnualObjective, RoadmapItem, Space } from '@/lib/types'
+import type { AnnualObjective, RoadmapItem, Space, HabitCheckin } from '@/lib/types'
 import * as qrDb from '@/lib/db/quarterReviews'
 import * as krsDb from '@/lib/db/krs'
 import { ACTIVE_Q, parseDateLocal } from '@/lib/utils'
+import { parseHabitPattern } from '@/lib/habitUtils'
 
 // ── Score tiers ──────────────────────────────────────────────────────────────
 type Tier = 'exceeded' | 'achieved' | 'partial' | 'missed'
@@ -67,6 +68,7 @@ interface Props {
   objectives: AnnualObjective[]       // for this space
   roadmapItems: RoadmapItem[]         // for this space, this quarter
   setRoadmapItems: React.Dispatch<React.SetStateAction<RoadmapItem[]>>
+  habitCheckins: HabitCheckin[]       // all habit checkins — for quarter snapshot
   toast: (msg: string) => void
   onClose: () => void
   onSeal?: () => void                  // optional: called after the quarter is sealed
@@ -79,6 +81,7 @@ export default function QuarterCloseWizard({
   objectives,
   roadmapItems,
   setRoadmapItems,
+  habitCheckins,
   toast,
   onClose,
   onSeal,
@@ -223,6 +226,51 @@ export default function QuarterCloseWizard({
   const seal = async () => {
     setSaving(true)
     try {
+      // 1. Snapshot habit performance for this quarter before resetting
+      const habitKRs = roadmapItems.filter(k => k.is_habit)
+      if (habitKRs.length > 0) {
+        // Quarter date bounds for counting checkins
+        const qm = quarter.match(/^([1-4])Q(\d{4})$/)
+        const snapshots = habitKRs.map(kr => {
+          let sessions = 0
+          let expected = 0
+          if (qm) {
+            const qn = +qm[1], y = +qm[2]
+            const qStart = new Date(y, (qn - 1) * 3, 1)
+            const qEnd   = new Date(y, qn * 3, 0, 23, 59, 59)
+            const krCheckins = habitCheckins.filter(c => {
+              const d = new Date(c.date)
+              return c.roadmap_item_id === kr.id && d >= qStart && d <= qEnd
+            })
+            sessions = krCheckins.length
+            // Weeks in the quarter (~13)
+            const weeks = Math.round((qEnd.getTime() - qStart.getTime()) / (7 * 24 * 3600 * 1000))
+            const pattern = parseHabitPattern(kr.title)
+            switch (pattern.mode) {
+              case 'daily':          expected = weeks * 7; break
+              case 'weekly_count':   expected = (pattern.target || 1) * weeks; break
+              case 'weekly_percentage': expected = Math.round(((pattern.target || 0) / 100) * 7 * weeks); break
+              case 'monthly_count':  expected = Math.round(((pattern.target || 0) * weeks) / 4.33); break
+            }
+          }
+          const percent = expected > 0 ? Math.round((sessions / expected) * 100) : 0
+          return { kr_id: kr.id, kr_title: kr.title, sessions, expected, percent }
+        })
+        await qrDb.snapshotHabits(quarter, space?.id ?? null, snapshots)
+      }
+
+      // 2. Reset habit KRs: health → not_started, progress → 0
+      //    They stay on the same quarter (habits are continuous, not moved)
+      if (habitKRs.length > 0) {
+        await Promise.all(habitKRs.map(kr =>
+          krsDb.update(kr.id, { health_status: 'not_started', progress: 0 })
+        ))
+        setRoadmapItems(prev => prev.map(kr =>
+          kr.is_habit ? { ...kr, health_status: 'not_started' as const, progress: 0 } : kr
+        ))
+      }
+
+      // 3. Seal the quarter record
       await qrDb.seal(quarter, space?.id ?? null)
       setSealed(true)
       onSeal?.()
