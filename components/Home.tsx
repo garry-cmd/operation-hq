@@ -193,6 +193,21 @@ export default function Home({
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => dateForDow(weekMonday, i)), [weekMonday])
   const [quote] = useState(() => randomQuote())
 
+  // When ACTIVE_Q is sealed, advance the display quarter so metrics/habits/header
+  // show the planning quarter rather than the closed one.
+  const activeQSealed = useMemo(() =>
+    quarterReviews.some(qr => qr.quarter === ACTIVE_Q && qr.closed_at != null),
+    [quarterReviews])
+
+  const displayQ = useMemo(() => {
+    if (!activeQSealed) return ACTIVE_Q
+    const m = ACTIVE_Q.match(/^([1-4])Q(\d{4})$/)
+    if (!m) return ACTIVE_Q
+    let q = +m[1], y = +m[2]
+    q++; if (q > 4) { q = 1; y++ }
+    return `${q}Q${y}`
+  }, [activeQSealed])
+
   // Show "Close Quarter" CTA in the last 3 weeks of the quarter (or after quarter end),
   // but only if the active quarter hasn't been sealed already.
   const showQuarterCloseCTA = useMemo(() => {
@@ -201,10 +216,8 @@ export default function Home({
     const today = parseDateLocal(todayStr)
     const daysLeft = (qb.end.getTime() - today.getTime()) / 864e5
     if (daysLeft > 21) return false  // not close enough yet
-    // Hide if this quarter is already sealed (any space or null space)
-    const sealed = quarterReviews.some(qr => qr.quarter === ACTIVE_Q && qr.closed_at != null)
-    return !sealed
-  }, [todayStr, quarterReviews])
+    return !activeQSealed
+  }, [todayStr, activeQSealed])
 
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])
@@ -244,15 +257,30 @@ export default function Home({
     return m
   }, [metricCheckins])
   const metricKRs = useMemo(
-    () => getMetricKRs(roadmapItems, ACTIVE_Q).filter(k => spaceFilter === null || k.space_id === spaceFilter),
+    () => getMetricKRs(roadmapItems, displayQ).filter(k => spaceFilter === null || k.space_id === spaceFilter),
     [roadmapItems, spaceFilter],
   )
 
   // ── habits: KR × this-week 7-day grid ──
   const habitKRs = useMemo(() =>
     roadmapItems.filter(k => k.is_habit && !k.is_parked && k.health_status !== 'done'
+      && k.quarter === displayQ
       && (spaceFilter === null || k.space_id === spaceFilter)),
-    [roadmapItems, spaceFilter])
+    [roadmapItems, spaceFilter, displayQ])
+
+  // When the active quarter is sealed, clamp habit checkins to the new quarter's
+  // start so the rolling aggregate shows 3Q progress only (not 2Q carryover).
+  const displayQStart = useMemo(() => {
+    const m = displayQ.match(/^([1-4])Q(\d{4})$/)
+    if (!m) return null
+    return new Date(+m[2], (+m[1] - 1) * 3, 1)
+  }, [displayQ])
+
+  const displayQHabitCheckins = useMemo(() => {
+    if (!activeQSealed || !displayQStart) return habitCheckins
+    const startStr = displayQStart.toISOString().slice(0, 10)
+    return habitCheckins.filter(c => c.date >= startStr)
+  }, [habitCheckins, activeQSealed, displayQStart])
   const checkinSet = useMemo(() => {
     const m = new Map<string, string>()
     for (const c of habitCheckins) m.set(`${c.roadmap_item_id}:${c.date}`, c.id)
@@ -327,7 +355,7 @@ export default function Home({
       .map(o => {
         const allKRs = roadmapItems
           .filter(k => k.annual_objective_id === o.id && !k.is_parked
-            && (quarterScope === 'all' || k.quarter === ACTIVE_Q))
+            && (quarterScope === 'all' || k.quarter === displayQ))
           .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
         const actsFor = (kr: RoadmapItem) => ({
           thisWeek: actions.filter(a => a.roadmap_item_id === kr.id && a.week_start === weekMonday),
@@ -687,9 +715,9 @@ export default function Home({
   // One habit KR as a flip card: front = 4-week % + trend; back = this week's
   // 7-day check-off (replaces the old far-right dot-rail). Reuses flippedM.
   function habitCard(kr: RoadmapItem) {
-    const agg = calculateRollingAggregate(kr, habitCheckins, 4)
+    const agg = calculateRollingAggregate(kr, displayQHabitCheckins, 4)
     const priorEnd = new Date(); priorEnd.setDate(priorEnd.getDate() - 28)
-    const prior = calculateRollingAggregate(kr, habitCheckins, 4, priorEnd)
+    const prior = calculateRollingAggregate(kr, displayQHabitCheckins, 4, priorEnd)
     const tone = agg.sessions === 0 ? 'standby'
       : agg.percent >= 80 ? 'nominal'
       : agg.percent >= 50 ? 'caution'
@@ -1015,7 +1043,7 @@ export default function Home({
       {/* header */}
       <div className="hd">
         <span className="hd-brand">Home</span>
-        <span className="hd-qtr">{ACTIVE_Q}</span>
+        <span className="hd-qtr">{displayQ}</span>
         <div className="hd-controls">
           <div className="wknav">
             <button onClick={() => setWeekMonday(addWeeks(weekMonday, -1))} title="Previous week">‹</button>
@@ -1061,7 +1089,7 @@ export default function Home({
             <div className="sec-body">
               {metricKRs.length > 0 && (
                 <div className="vrow">
-                  <div className="sublbl">Metrics · {ACTIVE_Q}</div>
+                  <div className="sublbl">Metrics · {displayQ}</div>
                   <div className="metrics">{metricKRs.map(metricCard)}</div>
                 </div>
               )}
