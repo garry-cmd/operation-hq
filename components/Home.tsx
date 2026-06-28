@@ -333,15 +333,17 @@ export default function Home({
         }
         // Deliverable KRs always show as full rows; habit/metric KRs only get a
         // full row when they carry scheduled work — otherwise a slim mini.
-        const fullKRs = allKRs.filter(k => (!k.is_habit && !k.is_metric) || hasWork(k))
-        const miniKRs = allKRs.filter(k => (k.is_habit || k.is_metric) && !hasWork(k))
-        // Objective-level action list (across all its KRs), tagged with the KR.
-        const krIds = new Set(allKRs.map(k => k.id))
+        // Done KRs are excluded from full rows (they've been completed).
+        const activeKRs = allKRs.filter(k => k.health_status !== 'done' && k.health_status !== 'failed')
+        const fullKRs = activeKRs.filter(k => (!k.is_habit && !k.is_metric) || hasWork(k))
+        const miniKRs = activeKRs.filter(k => (k.is_habit || k.is_metric) && !hasWork(k))
+        // Objective-level action list — only for active (non-done) KRs.
+        const activeKRIds = new Set(activeKRs.map(k => k.id))
         const tag = (a: WeeklyAction) => ({ a, kr: allKRs.find(k => k.id === a.roadmap_item_id) ?? null })
-        const actThisWeek = actions.filter(a => krIds.has(a.roadmap_item_id) && a.week_start === weekMonday).map(tag)
-        const actBacklog = actions.filter(a => krIds.has(a.roadmap_item_id) && a.week_start == null && !a.completed).map(tag)
+        const actThisWeek = actions.filter(a => activeKRIds.has(a.roadmap_item_id) && a.week_start === weekMonday).map(tag)
+        const actBacklog = actions.filter(a => activeKRIds.has(a.roadmap_item_id) && a.week_start == null && !a.completed).map(tag)
         const total = allKRs.length
-        const done = allKRs.filter(k => k.health_status === 'done').length
+        const done = allKRs.filter(k => k.health_status === 'done' || k.health_status === 'failed').length
         const onN = allKRs.filter(k => k.health_status === 'on_track').length
         const offN = allKRs.filter(k => k.health_status === 'off_track' || k.health_status === 'blocked').length
         const thisWkActs = actThisWeek.filter(x => !x.a.completed).length
@@ -459,7 +461,11 @@ export default function Home({
     } catch { toast('Failed to delete objective') }
   }
 
-  // ── render helpers ──
+  async function deleteAction(a: WeeklyAction) {
+    setActions(prev => prev.filter(x => x.id !== a.id))
+    try { await actionsDb.remove(a.id) }
+    catch { toast('Could not delete action'); setActions(prev => [...prev, a]) }
+  }
   function durBadge(a: WeeklyAction) {
     const open = durPickerAction === a.id
     return (
@@ -506,6 +512,7 @@ export default function Home({
             <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
               <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
             </button>
+            <button className="act-del" title="Delete action" onClick={() => deleteAction(a)}>×</button>
           </div>
         </div>
         {durPicker(a)}
@@ -549,6 +556,7 @@ export default function Home({
             <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
               <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
             </button>
+            <button className="act-del" title="Delete action" onClick={() => deleteAction(a)}>×</button>
           </div>
         </div>
         {open && (
@@ -1507,6 +1515,9 @@ export default function Home({
         .sched.back{color:var(--navy-400);background:var(--surface-2);border:1px solid var(--line-2);}
         .sched.back:hover{color:var(--accent);border-color:var(--accent);}
         .act-dur{font-family:var(--font-mono);font-size:8.5px;font-weight:600;padding:2px 6px;border-radius:5px;flex-shrink:0;cursor:pointer;border:1px solid var(--line-2);color:var(--navy-200);background:transparent;}
+        .act-del{font-family:var(--font-mono);font-size:13px;font-weight:400;line-height:1;padding:1px 4px;border-radius:5px;flex-shrink:0;cursor:pointer;border:none;color:var(--navy-600);background:transparent;opacity:0;}
+        .act:hover .act-del,.frow:hover .act-del{opacity:1;}
+        .act-del:hover{color:var(--nw-alarm-text);background:rgba(255,100,82,.1);}
         .act-dur:hover{border-color:var(--navy-400);}
         .act-dur:not(.set){color:var(--navy-500);border-style:dashed;}
         .act-dur.open{color:var(--accent);border-color:var(--accent);background:var(--accent-dim);}

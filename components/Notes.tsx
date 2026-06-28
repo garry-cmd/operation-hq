@@ -346,7 +346,7 @@ export default function Notes({
       display: isMobile ? 'flex' : 'grid',
       flexDirection: isMobile ? 'column' : undefined,
       gridTemplateColumns: isMobile ? undefined : fullscreen ? '0 0 1fr' : '240px 300px 1fr',
-      height: 'calc(100vh - 0px)', minHeight: 0,
+      height: isMobile ? 'calc(100vh - 48px - max(0px, env(safe-area-inset-top)))' : 'calc(100vh - 0px)', minHeight: 0,
       transition: 'grid-template-columns .2s ease',
       fontFamily: 'var(--font-body)',
     }}>

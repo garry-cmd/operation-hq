@@ -17,12 +17,13 @@ const PROGRESS_OPTIONS = [0, 25, 50, 75, 100]
 
 // Health status pills available in step 1.
 const HEALTH_OPTIONS: { value: HealthStatus; label: string; bg: string; fg: string }[] = [
-  { value: 'on_track',  label: 'on track',  bg: 'var(--teal-bg, #d4ecdf)',  fg: 'var(--teal-text, #2a6044)' },
-  { value: 'off_track', label: 'off track', bg: 'var(--red-bg, #f4dcd2)',   fg: 'var(--red-text, #7a3a28)' },
-  { value: 'waiting',   label: 'waiting',   bg: 'var(--indigo-bg, #e0d4f0)',fg: 'var(--indigo-text, #4a3070)' },
-  { value: 'blocked',   label: 'blocked',   bg: 'var(--amber-bg, #f4e4c2)', fg: 'var(--amber-text, #6a4a10)' },
-  { value: 'backlog',   label: 'backlog',   bg: 'var(--navy-600, #c0ccdc)', fg: 'var(--navy-100, #2a3a5a)' },
-  { value: 'done',      label: 'done',      bg: 'var(--navy-50)',           fg: 'var(--navy-900)' },
+  { value: 'on_track',  label: 'on track',  bg: 'rgba(127,226,122,.18)',  fg: 'var(--nw-nominal-text)' },
+  { value: 'off_track', label: 'off track', bg: 'rgba(255,100,82,.18)',   fg: 'var(--nw-alarm-text)' },
+  { value: 'waiting',   label: 'waiting',   bg: 'rgba(245,184,64,.18)',   fg: 'var(--nw-caution-text)' },
+  { value: 'blocked',   label: 'blocked',   bg: 'rgba(255,100,82,.14)',   fg: 'var(--nw-alarm-text)' },
+  { value: 'backlog',   label: 'backlog',   bg: 'var(--navy-600)',        fg: 'var(--navy-100)' },
+  { value: 'done',      label: 'done',      bg: 'rgba(127,226,122,.22)',  fg: 'var(--nw-nominal-text)' },
+  { value: 'failed',    label: 'failed',    bg: 'rgba(255,100,82,.1)',    fg: 'var(--navy-400)' },
 ]
 
 const RATINGS: { value: ReviewRating; label: string; color: string }[] = [
@@ -689,10 +690,13 @@ function Step1({
           {RATINGS.map(r => (
             <button key={r.value} onClick={() => onRating(r.value)}
               style={{
-                flex: 1, padding: '10px 12px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                flex: 1, padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
                 background: rating === r.value ? r.color : 'var(--navy-700)',
                 color: rating === r.value ? '#fff' : 'var(--navy-300)',
                 fontSize: 13, fontWeight: 600,
+                border: rating === r.value ? `2px solid ${r.color}` : '2px solid var(--navy-600)',
+                transition: 'background .12s, color .12s, border-color .12s',
+                boxShadow: rating === r.value ? `0 0 0 3px ${r.color}33` : 'none',
               }}>
               {r.label}
             </button>
@@ -731,13 +735,15 @@ function Step1({
                     {HEALTH_OPTIONS.map(opt => (
                       <button key={opt.value} onClick={() => onSetHealth(kr, opt.value)}
                         style={{
-                          fontSize: 11, padding: '4px 10px', borderRadius: 99, border: 'none', cursor: 'pointer',
+                          fontSize: 11, padding: '4px 10px', borderRadius: 99, cursor: 'pointer',
                           background: kr.health_status === opt.value ? opt.bg : 'var(--navy-700)',
-                          color: kr.health_status === opt.value ? opt.fg : 'var(--navy-300)',
+                          color: kr.health_status === opt.value ? opt.fg : 'var(--navy-400)',
                           fontWeight: 600,
                           whiteSpace: 'nowrap',
+                          border: kr.health_status === opt.value ? `1.5px solid ${opt.fg}` : '1.5px solid var(--navy-600)',
+                          transition: 'background .12s, color .12s, border-color .12s',
                         }}>
-                        ● {opt.label}
+                        {opt.label}
                       </button>
                     ))}
                   </div>

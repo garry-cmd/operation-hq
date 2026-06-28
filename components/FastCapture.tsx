@@ -54,6 +54,7 @@ export default function FastCapture({
   const [noteBody, setNoteBody] = useState('')
   const [dueChoice, setDueChoice] = useState<'none' | 'today' | 'tomorrow'>('none')
   const [krSearch, setKrSearch] = useState('')
+  const [actionSpaceFilter, setActionSpaceFilter] = useState<string>('')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const orderedSpaces = useMemo(() => [...spaces].sort((a, b) => a.sort_order - b.sort_order), [spaces])
@@ -62,8 +63,11 @@ export default function FastCapture({
 
   useEffect(() => {
     if (!active) return
-    if (active === 'action')    setSecondVal(activeKRs[0]?.id ?? '')
-    else if (active === 'keyresult') setSecondVal(activeObjs[0]?.id ?? '')
+    if (active === 'action') {
+      setActionSpaceFilter(activeSpaceId)
+      const spaceKRs = activeKRs.filter(k => k.space_id === activeSpaceId)
+      setSecondVal(spaceKRs[0]?.id ?? activeKRs[0]?.id ?? '')
+    } else if (active === 'keyresult') setSecondVal(activeObjs[0]?.id ?? '')
     else                        setSecondVal(activeSpaceId) // note / parking / objective default to active space
     setNoteBody(''); setDueChoice('none'); setKrSearch('')
     setTimeout(() => inputRef.current?.focus(), 50)
@@ -77,7 +81,7 @@ export default function FastCapture({
     if (openRequest) openType(openRequest.type)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest?.key])
-  function close() { setActive(null); setDialOpen(false); setTitle(''); setSecondVal(''); setNoteBody(''); setDueChoice('none'); setKrSearch('') }
+  function close() { setActive(null); setDialOpen(false); setTitle(''); setSecondVal(''); setNoteBody(''); setDueChoice('none'); setKrSearch(''); setActionSpaceFilter('') }
 
   async function save(e: React.FormEvent) {
     e.preventDefault()
@@ -136,10 +140,15 @@ export default function FastCapture({
 
   // Entity picker options (action → KRs, keyresult → objectives), color-coded by space.
   const entityOptions = useMemo(() => {
-    if (active === 'action')    return activeKRs.map(k => ({ id: k.id, label: k.title, spaceId: k.space_id }))
+    if (active === 'action') {
+      const filtered = actionSpaceFilter
+        ? activeKRs.filter(k => k.space_id === actionSpaceFilter)
+        : activeKRs
+      return filtered.map(k => ({ id: k.id, label: k.title, spaceId: k.space_id }))
+    }
     if (active === 'keyresult') return activeObjs.map(o => ({ id: o.id, label: o.name, spaceId: o.space_id }))
     return []
-  }, [active, activeKRs, activeObjs])
+  }, [active, activeKRs, activeObjs, actionSpaceFilter])
 
   const filteredOptions = useMemo(() => {
     const q = krSearch.trim().toLowerCase()
@@ -218,32 +227,62 @@ export default function FastCapture({
 
             {/* ENTITY picker — action (KRs) / keyresult (objectives), searchable + color-coded */}
             {(active === 'action' || active === 'keyresult') && (
-              entityOptions.length === 0 ? (
+              entityOptions.length === 0 && !actionSpaceFilter ? (
                 <div style={{ fontSize: 12, color: 'var(--amber-text)', background: 'var(--amber-bg)', borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
                   {active === 'keyresult' ? 'Add an objective first.' : 'Add key results first on the Roadmap.'}
                 </div>
               ) : (
                 <div style={{ marginBottom: 14 }}>
                   <div className="fc-lbl">{active === 'action' ? 'Which key result?' : 'For which objective?'}</div>
-                  {entityOptions.length > 6 && (
-                    <input value={krSearch} onChange={e => setKrSearch(e.target.value)} placeholder="Filter…"
-                      style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 10, padding: '9px 12px', fontSize: 13, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 8, outline: 'none', boxSizing: 'border-box' }} />
+                  {/* Space filter for action picker */}
+                  {active === 'action' && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                      {orderedSpaces.map(sp => {
+                        const hasKRs = activeKRs.some(k => k.space_id === sp.id)
+                        if (!hasKRs) return null
+                        return (
+                          <button type="button" key={sp.id}
+                            onClick={() => {
+                              setActionSpaceFilter(sp.id)
+                              const spKRs = activeKRs.filter(k => k.space_id === sp.id)
+                              setSecondVal(spKRs[0]?.id ?? '')
+                              setKrSearch('')
+                            }}
+                            className={`fc-chip${actionSpaceFilter === sp.id ? ' on' : ''}`}
+                            style={{ fontSize: 11 }}>
+                            <span className="fc-dot" style={{ background: spaceDisplayColorById(sp.id, spaces) }} />
+                            {sp.name}
+                          </button>
+                        )
+                      })}
+                    </div>
                   )}
-                  <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
-                    {filteredOptions.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--navy-400)', padding: '8px 4px' }}>No matches.</div>}
-                    {filteredOptions.map(o => {
-                      const on = secondVal === o.id
-                      return (
-                        <button type="button" key={o.id} onClick={() => setSecondVal(o.id)}
-                          style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', background: on ? 'var(--accent-dim)' : 'var(--navy-800)', border: `1px solid ${on ? 'var(--accent)' : 'var(--navy-600)'}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
-                          <span className="fc-dot" style={{ background: spaceDisplayColorById(o.spaceId, spaces), flexShrink: 0 }} />
-                          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: on ? 'var(--navy-50)' : 'var(--navy-100)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
-                          <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: 'var(--navy-400)', flexShrink: 0, textTransform: 'uppercase', letterSpacing: '.04em' }}>{spaceName(o.spaceId)}</span>
-                          {on && <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}><path d="M2 7l3 3 6-6" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                        </button>
-                      )
-                    })}
-                  </div>
+                  {entityOptions.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--amber-text)', background: 'var(--amber-bg)', borderRadius: 10, padding: '10px 12px' }}>
+                      No active key results in this space.
+                    </div>
+                  ) : (
+                    <>
+                      {entityOptions.length > 5 && (
+                        <input value={krSearch} onChange={e => setKrSearch(e.target.value)} placeholder="Filter…"
+                          style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 10, padding: '9px 12px', fontSize: 13, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 8, outline: 'none', boxSizing: 'border-box' }} />
+                      )}
+                      <div style={{ maxHeight: 240, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 5 }}>
+                        {filteredOptions.length === 0 && <div style={{ fontSize: 12.5, color: 'var(--navy-400)', padding: '8px 4px' }}>No matches.</div>}
+                        {filteredOptions.map(o => {
+                          const on = secondVal === o.id
+                          return (
+                            <button type="button" key={o.id} onClick={() => setSecondVal(o.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, textAlign: 'left', width: '100%', background: on ? 'var(--accent-dim)' : 'var(--navy-800)', border: `1px solid ${on ? 'var(--accent)' : 'var(--navy-600)'}`, borderRadius: 10, padding: '10px 12px', cursor: 'pointer', fontFamily: 'inherit' }}>
+                              <span className="fc-dot" style={{ background: spaceDisplayColorById(o.spaceId, spaces), flexShrink: 0 }} />
+                              <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: on ? 'var(--navy-50)' : 'var(--navy-100)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</span>
+                              {on && <svg width="13" height="13" viewBox="0 0 13 13" fill="none" style={{ flexShrink: 0 }}><path d="M2 7l3 3 6-6" stroke="var(--accent)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </>
+                  )}
                 </div>
               )
             )}
