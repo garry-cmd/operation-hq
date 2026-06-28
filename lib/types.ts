@@ -111,6 +111,8 @@ export interface RoadmapItem {
   // Quarter-close fields. Set during the quarter-end ritual.
   close_score: number | null   // 0.0–1.0 grade assigned at close time
   close_note: string | null    // reflection written during close ceremony
+  // Effort size for capacity planning. S=~0.5wk, M=~1wk, L=~2wk, XL=~4wk.
+  effort_size: 'S' | 'M' | 'L' | 'XL' | null
   created_at: string
 }
 

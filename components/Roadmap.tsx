@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
@@ -29,43 +29,41 @@ type ModalState =
 
 const ROLLING = getRollingQuarters()
 
+// Effort size → weeks of work (solo operator calibration)
+const EFFORT_WEEKS: Record<string, number> = { S: 0.5, M: 1, L: 2, XL: 4 }
+const EFFORT_LABELS: Record<string, string> = { S: 'S', M: 'M', L: 'L', XL: 'XL' }
+// Realistic productive weeks per quarter for a solo operator
+const CAPACITY_WEEKS = 8
+
+// Thresholds for overcommitment warnings
+const OBJ_WARN = 5   // amber at > this many objectives
+const KR_WARN  = 5   // amber at > this many KRs per objective
+
 function hex2rgba(hex: string, a: number) {
   const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16)
   return `rgba(${r},${g},${b},${a})`
 }
-
 function ymd(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-
-// Returns the first and last day of a quarter as yyyy-mm-dd strings.
 function quarterBounds(q: string): { start: string; end: string } | null {
   const m = /^([1-4])Q(\d{4})$/.exec(q)
   if (!m) return null
   const n = +m[1], y = +m[2]
-  return {
-    start: ymd(new Date(y, (n - 1) * 3, 1)),
-    end:   ymd(new Date(y, n * 3, 0)),
-  }
+  return { start: ymd(new Date(y, (n - 1) * 3, 1)), end: ymd(new Date(y, n * 3, 0)) }
 }
-
-// Given an objective's start/end, compute which ROLLING quarters are in-scope.
-// Dateless objectives → all quarters in scope.
 function scopedQuarters(obj: AnnualObjective): Set<string> {
   if (!obj.start_date && !obj.end_date) return new Set(ROLLING)
   const out = new Set<string>()
   for (const q of ROLLING) {
     const b = quarterBounds(q)
     if (!b) continue
-    // Quarter overlaps window if qStart <= obj.end AND qEnd >= obj.start
     if (obj.end_date && b.start > obj.end_date) continue
     if (obj.start_date && b.end < obj.start_date) continue
     out.add(q)
   }
   return out
 }
-
-// Given the in-scope set, find the first and last indices in ROLLING.
 function scopeSpan(inScope: Set<string>): { first: number; last: number } | null {
   const indices = ROLLING.map((q, i) => inScope.has(q) ? i : -1).filter(i => i >= 0)
   if (!indices.length) return null
@@ -88,7 +86,7 @@ export default function Roadmap({
   }, [initialKRId])
 
   const activeObjs = objectives.filter(o => o.status !== 'abandoned')
-  const items = roadmapItems.filter(i => !i.is_parked)
+  const items      = roadmapItems.filter(i => !i.is_parked)
 
   function toggleCollapse(id: string) {
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
@@ -100,14 +98,11 @@ export default function Roadmap({
       const updated = await krsDb.update(itemId, { quarter, status: newStatus })
       setRoadmapItems(prev => prev.map(i => i.id === itemId ? updated : i))
       toast(`Moved to ${formatQ(quarter)}`)
-
-      // Auto-expand the objective's window if the target quarter is outside it.
       const b = quarterBounds(quarter)
       if (!b) return
       let newStart = obj.start_date ?? null
       let newEnd   = obj.end_date   ?? null
       let changed  = false
-      // Only auto-expand if the objective has a window set (dateless = all quarters, nothing to expand)
       if (newStart || newEnd) {
         if (!newStart || b.start < newStart) { newStart = b.start; changed = true }
         if (!newEnd   || b.end   > newEnd)   { newEnd   = b.end;   changed = true }
@@ -117,9 +112,7 @@ export default function Roadmap({
           toast(`${formatQ(quarter)} — objective window extended`)
         }
       }
-    } catch (err) {
-      console.error('moveKR failed:', err)
-    }
+    } catch (err) { console.error('moveKR failed:', err) }
   }
 
   async function parkKR(item: RoadmapItem) {
@@ -127,9 +120,7 @@ export default function Roadmap({
       const updated = await krsDb.update(item.id, { is_parked: true, quarter: null, status: 'planned' })
       setRoadmapItems(prev => prev.map(i => i.id === item.id ? updated : i))
       toast('Moved to Parking Lot')
-    } catch (err) {
-      console.error('parkKR failed:', err)
-    }
+    } catch (err) { console.error('parkKR failed:', err) }
   }
 
   async function deleteKR(id: string) {
@@ -137,9 +128,7 @@ export default function Roadmap({
       await krsDb.remove(id)
       setRoadmapItems(prev => prev.filter(i => i.id !== id))
       setModal(null); toast('Key result deleted.')
-    } catch (err) {
-      console.error('deleteKR failed:', err)
-    }
+    } catch (err) { console.error('deleteKR failed:', err) }
   }
 
   async function deleteObjective(obj: AnnualObjective) {
@@ -149,20 +138,14 @@ export default function Roadmap({
       await objectivesDb.remove(obj.id)
       setRoadmapItems(prev => prev.filter(i => i.annual_objective_id !== obj.id))
       setObjectives(prev => prev.filter(o => o.id !== obj.id))
-      setModal(null)
-      toast('Objective deleted.')
-    } catch (err) {
-      console.error('deleteObjective failed:', err)
-      toast('Failed to delete objective.')
-    }
+      setModal(null); toast('Objective deleted.')
+    } catch (err) { console.error('deleteObjective failed:', err); toast('Failed to delete objective.') }
   }
 
   function attemptMove(itemId: string, obj: AnnualObjective, quarter: string) {
     const item = items.find(i => i.id === itemId)
     if (!item) return
-    if (item.annual_objective_id !== obj.id) {
-      toast('KRs can only move within the same objective'); return
-    }
+    if (item.annual_objective_id !== obj.id) { toast('KRs can only move within the same objective'); return }
     if (item.quarter === quarter) return
     moveKR(itemId, quarter, obj)
   }
@@ -173,15 +156,30 @@ export default function Roadmap({
     return !!item && item.annual_objective_id === objId && item.quarter !== quarter
   }
 
-  // ── Grid layout constants ──
-  // One shared grid so all objectives' columns align with the quarter headers.
+  // ── Capacity stats for the active quarter ──
+  const activeQItems = items.filter(i => i.quarter === ACTIVE_Q && !i.is_habit)
+  const activeQObjs  = activeObjs.filter(obj => {
+    const inScope = scopedQuarters(obj)
+    return inScope.has(ACTIVE_Q) && activeQItems.some(i => i.annual_objective_id === obj.id)
+  })
+  const totalActiveObjs = activeQObjs.length
+  const totalActiveKRs  = activeQItems.length
+  // Sum effort weeks for sized KRs in the active quarter
+  const committedWeeks = activeQItems.reduce((sum, kr) => {
+    return sum + (kr.effort_size ? (EFFORT_WEEKS[kr.effort_size] ?? 0) : 0)
+  }, 0)
+  const sizingCoverage = activeQItems.length > 0
+    ? activeQItems.filter(k => k.effort_size).length / activeQItems.length
+    : 0
+  const loadPct = Math.round((committedWeeks / CAPACITY_WEEKS) * 100)
+  const loadCls = loadPct > 100 ? 'over' : loadPct > 80 ? 'warn' : 'ok'
+
   const COLS = 'repeat(4, minmax(0, 1fr))'
   const MIN_W = 480
-  // Column index (1-based) for each quarter in ROLLING
-  const qCol: Record<string, number> = Object.fromEntries(ROLLING.map((q, i) => [q, i + 1]))
 
   return (
     <div>
+      {/* ── Page header ── */}
       <div style={{ marginBottom: 18 }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', marginBottom: 6 }}>
           Strategic · Roadmap
@@ -191,6 +189,89 @@ export default function Roadmap({
           {draggingId ? '⊕ Drop in a quarter cell — same objective only' : 'Drag a KR between quarters · click objective header to collapse'}
         </p>
       </div>
+
+      {/* ── Quarter load summary bar ── */}
+      {activeObjs.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap',
+          background: 'var(--surface-2)', border: '1px solid var(--line-2)', borderRadius: 12,
+          padding: '11px 16px', marginBottom: 16,
+          fontFamily: 'var(--font-mono)',
+        }}>
+          {/* Objective counter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>Objectives</span>
+            <span style={{
+              fontSize: 13, fontWeight: 700,
+              color: totalActiveObjs > OBJ_WARN ? 'var(--nw-caution-text)' : 'var(--navy-100)',
+            }}>{totalActiveObjs}</span>
+            {totalActiveObjs > OBJ_WARN && (
+              <span style={{ fontSize: 9, color: 'var(--nw-caution-text)', background: 'rgba(245,184,64,.1)', border: '1px solid rgba(245,184,64,.25)', borderRadius: 5, padding: '1px 6px' }}>
+                high
+              </span>
+            )}
+          </div>
+
+          <div style={{ width: 1, height: 18, background: 'var(--line-2)' }} />
+
+          {/* KR counter */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)' }}>KRs · {formatQ(ACTIVE_Q)}</span>
+            <span style={{
+              fontSize: 13, fontWeight: 700,
+              color: totalActiveKRs > OBJ_WARN * KR_WARN ? 'var(--nw-alarm-text)' : totalActiveKRs > OBJ_WARN * 3 ? 'var(--nw-caution-text)' : 'var(--navy-100)',
+            }}>{totalActiveKRs}</span>
+          </div>
+
+          <div style={{ width: 1, height: 18, background: 'var(--line-2)' }} />
+
+          {/* Quarter load gauge */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 200 }}>
+            <span style={{ fontSize: 9.5, fontWeight: 600, letterSpacing: '.1em', textTransform: 'uppercase', color: 'var(--nw-label-dim)', whiteSpace: 'nowrap' }}>
+              Load · {formatQ(ACTIVE_Q)}
+            </span>
+            {sizingCoverage === 0 ? (
+              <span style={{ fontSize: 10, color: 'var(--navy-500)', fontStyle: 'italic' }}>
+                set effort sizes on KRs to see load
+              </span>
+            ) : (
+              <>
+                {/* Bar */}
+                <div style={{ flex: 1, height: 6, background: 'var(--navy-600)', borderRadius: 3, overflow: 'hidden', position: 'relative', minWidth: 80 }}>
+                  <div style={{
+                    position: 'absolute', left: 0, top: 0, height: '100%',
+                    width: `${Math.min(loadPct, 100)}%`,
+                    background: loadCls === 'over' ? 'var(--nw-alarm-text)' : loadCls === 'warn' ? 'var(--nw-caution-text)' : 'var(--nw-nominal-text)',
+                    borderRadius: 3, transition: 'width .3s',
+                  }} />
+                  {loadPct > 100 && (
+                    <div style={{ position: 'absolute', right: 0, top: 0, height: '100%', width: `${Math.min(loadPct - 100, 30)}%`, background: 'rgba(255,100,82,.4)', borderRadius: 3 }} />
+                  )}
+                </div>
+                <span style={{
+                  fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap',
+                  color: loadCls === 'over' ? 'var(--nw-alarm-text)' : loadCls === 'warn' ? 'var(--nw-caution-text)' : 'var(--nw-nominal-text)',
+                }}>
+                  {committedWeeks.toFixed(1)} / {CAPACITY_WEEKS} wk
+                </span>
+                <span style={{
+                  fontSize: 9, fontWeight: 700, padding: '1px 6px', borderRadius: 5,
+                  background: loadCls === 'over' ? 'rgba(255,100,82,.12)' : loadCls === 'warn' ? 'rgba(245,184,64,.1)' : 'rgba(127,226,122,.1)',
+                  color: loadCls === 'over' ? 'var(--nw-alarm-text)' : loadCls === 'warn' ? 'var(--nw-caution-text)' : 'var(--nw-nominal-text)',
+                  border: `1px solid ${loadCls === 'over' ? 'rgba(255,100,82,.25)' : loadCls === 'warn' ? 'rgba(245,184,64,.22)' : 'rgba(127,226,122,.2)'}`,
+                }}>
+                  {loadPct}%
+                </span>
+                {sizingCoverage < 1 && (
+                  <span style={{ fontSize: 9, color: 'var(--navy-500)', whiteSpace: 'nowrap' }}>
+                    ({Math.round(sizingCoverage * 100)}% sized)
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {activeObjs.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--navy-400)', fontSize: 14, lineHeight: 1.7 }}>
@@ -218,33 +299,31 @@ export default function Roadmap({
               ))}
             </div>
 
-            {/* ── Objective rows — all in one shared grid ── */}
+            {/* ── Objective rows ── */}
             {activeObjs.map((obj, objIdx) => {
               const objItems = items.filter(i => i.annual_objective_id === obj.id)
               const inScope  = scopedQuarters(obj)
               const span     = scopeSpan(inScope)
               const isCol    = !!collapsed[obj.id]
 
-              // grid-column for header: first in-scope col through last in-scope col.
-              // Dateless (all 4) or if span is null → full width.
               const hdrStart = span ? span.first + 1 : 1
-              const hdrEnd   = span ? span.last  + 2 : 5  // CSS grid end is exclusive
+              const hdrEnd   = span ? span.last  + 2 : 5
 
               const today = new Date(); today.setHours(0,0,0,0)
-              const overdue = !!(obj.end_date && parseDateLocal(obj.end_date) < today)
+              const overdue  = !!(obj.end_date && parseDateLocal(obj.end_date) < today)
               const dateText = formatDateRange(obj.start_date, obj.end_date)
+
+              // Per-objective KR count warning
+              const objKRCount = objItems.length
+              const objKRWarn  = objKRCount > KR_WARN
 
               return (
                 <div key={obj.id} style={{ display: 'contents' }}>
 
-                  {/* ── Objective header row ── */}
+                  {/* Objective header row */}
                   <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: isCol ? 8 : 0 }}>
-                    {/* Empty cells before the header */}
-                    {Array.from({ length: hdrStart - 1 }).map((_, i) => (
-                      <div key={`pre-${i}`} />
-                    ))}
+                    {Array.from({ length: hdrStart - 1 }).map((_, i) => <div key={`pre-${i}`} />)}
 
-                    {/* Header itself — spans in-scope columns */}
                     <div
                       onClick={() => toggleCollapse(obj.id)}
                       style={{
@@ -254,14 +333,12 @@ export default function Roadmap({
                         border: `1px solid ${hex2rgba(obj.color, 0.32)}`,
                         borderRadius: isCol ? 10 : '10px 10px 0 0',
                         display: 'flex', alignItems: 'center', gap: 8,
-                        cursor: 'pointer',
+                        cursor: 'pointer', userSelect: 'none',
                         transition: 'background .12s',
-                        userSelect: 'none',
                       }}
                       onMouseEnter={e => (e.currentTarget.style.background = hex2rgba(obj.color, 0.22))}
                       onMouseLeave={e => (e.currentTarget.style.background = hex2rgba(obj.color, 0.16))}
                     >
-                      {/* Collapse chevron */}
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
                         style={{ flexShrink: 0, transition: 'transform .18s', transform: isCol ? 'rotate(-90deg)' : 'rotate(0deg)', color: hex2rgba(obj.color, 0.7) }}>
                         <path d="M2 4l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
@@ -275,12 +352,16 @@ export default function Roadmap({
                           {dateText}{overdue && ' · overdue'}
                         </div>
                       )}
-                      {/* KR count when collapsed */}
-                      {isCol && (
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, color: hex2rgba(obj.color, 0.6), flexShrink: 0 }}>
-                          {objItems.length} KR{objItems.length !== 1 ? 's' : ''}
-                        </span>
-                      )}
+                      {/* KR count badge */}
+                      <span style={{
+                        fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
+                        padding: '1px 6px', borderRadius: 5, flexShrink: 0,
+                        background: objKRWarn ? 'rgba(245,184,64,.12)' : hex2rgba(obj.color, 0.14),
+                        color: objKRWarn ? 'var(--nw-caution-text)' : hex2rgba(obj.color, 0.8),
+                        border: objKRWarn ? '1px solid rgba(245,184,64,.25)' : `1px solid ${hex2rgba(obj.color, 0.2)}`,
+                      }}>
+                        {objKRCount} KR{objKRCount !== 1 ? 's' : ''}{objKRWarn ? ' ⚠' : ''}
+                      </span>
                       <button
                         onClick={e => { e.stopPropagation(); setModal({ type: 'edit_obj', obj }) }}
                         style={{ fontSize: 11, fontWeight: 600, color: hex2rgba(obj.color, 0.7), background: 'none', border: 'none', cursor: 'pointer', padding: '2px 7px', borderRadius: 6, flexShrink: 0, fontFamily: 'inherit' }}
@@ -291,27 +372,20 @@ export default function Roadmap({
                       </button>
                     </div>
 
-                    {/* Empty cells after the header */}
-                    {Array.from({ length: 4 - (hdrEnd - 1) }).map((_, i) => (
-                      <div key={`post-${i}`} />
-                    ))}
+                    {Array.from({ length: 4 - (hdrEnd - 1) }).map((_, i) => <div key={`post-${i}`} />)}
                   </div>
 
-                  {/* ── KR cells row (hidden when collapsed) ── */}
+                  {/* KR cells row */}
                   {!isCol && (
                     <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: objIdx < activeObjs.length - 1 ? 12 : 0 }}>
                       {ROLLING.map((q, qi) => {
-                        const cellKey = `${obj.id}:${q}`
-                        const isInScope = inScope.has(q)
+                        const cellKey    = `${obj.id}:${q}`
+                        const isInScope  = inScope.has(q)
                         const acceptsDrag = cellAcceptsDrag(obj.id, q)
                         const isDragOver  = dragOverCell === cellKey && acceptsDrag
 
-                        // Out-of-scope: transparent spacer — no border, no +KR
-                        if (!isInScope) {
-                          return <div key={q} />
-                        }
+                        if (!isInScope) return <div key={q} />
 
-                        // Is this cell on the leftmost / rightmost in-scope position?
                         const isFirst = span ? qi === span.first : qi === 0
                         const isLast  = span ? qi === span.last  : qi === 3
                         const borderRadius = isFirst && isLast ? '0 0 10px 10px'
@@ -323,8 +397,7 @@ export default function Roadmap({
                           <div key={q}
                             onDragOver={e => {
                               if (acceptsDrag) {
-                                e.preventDefault()
-                                e.dataTransfer.dropEffect = 'move'
+                                e.preventDefault(); e.dataTransfer.dropEffect = 'move'
                                 if (dragOverCell !== cellKey) setDragOverCell(cellKey)
                               }
                             }}
@@ -338,16 +411,11 @@ export default function Roadmap({
                               e.preventDefault()
                               const id = e.dataTransfer.getData('text/plain') || draggingId
                               if (id) attemptMove(id, obj, q)
-                              setDragOverCell(null)
-                              setDraggingId(null)
+                              setDragOverCell(null); setDraggingId(null)
                             }}
                             style={{
-                              minHeight: 68,
-                              borderRadius,
-                              padding: '5px 5px 3px',
-                              background: isDragOver
-                                ? hex2rgba(obj.color, 0.28)
-                                : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
+                              minHeight: 68, borderRadius, padding: '5px 5px 3px',
+                              background: isDragOver ? hex2rgba(obj.color, 0.28) : q === ACTIVE_Q ? hex2rgba(obj.color, 0.1) : 'transparent',
                               border: isDragOver
                                 ? `2px solid ${obj.color}`
                                 : q === ACTIVE_Q
@@ -359,9 +427,7 @@ export default function Roadmap({
                               transition: 'background .12s, border .12s',
                             }}>
                             {isDragOver && (
-                              <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .85 }}>
-                                Drop here
-                              </div>
+                              <div style={{ textAlign: 'center', fontSize: 10, color: obj.color, fontWeight: 700, padding: '4px 0 2px', opacity: .85 }}>Drop here</div>
                             )}
                             {objItems.filter(i => i.quarter === q).map(item => (
                               <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
@@ -372,7 +438,14 @@ export default function Roadmap({
                                   setDraggingId(item.id)
                                 }}
                                 onDragEnd={_e => { setDraggingId(null); setDragOverCell(null) }}
-                                onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }) }} />
+                                onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }) }}
+                                onEffortChange={async (size) => {
+                                  try {
+                                    const updated = await krsDb.update(item.id, { effort_size: size })
+                                    setRoadmapItems(prev => prev.map(i => i.id === item.id ? updated : i))
+                                  } catch { toast('Could not update effort') }
+                                }}
+                              />
                             ))}
                             <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
                           </div>
@@ -434,8 +507,7 @@ export default function Roadmap({
             try {
               const updated = await krsDb.update(modal.item.id, patch)
               setRoadmapItems(prev => prev.map(x => x.id === updated.id ? updated : x))
-              setModal(null)
-              toast('Key result updated.')
+              setModal(null); toast('Key result updated.')
             } catch (err) { console.error('updateKR error:', err); toast('Failed to update KR') }
           }}
           onDelete={() => deleteKR(modal.item.id)}
@@ -448,16 +520,40 @@ export default function Roadmap({
 }
 
 /* ── KR chip ── */
-function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd }: {
+const EFFORT_CYCLE: Array<'S' | 'M' | 'L' | 'XL' | null> = ['S', 'M', 'L', 'XL', null]
+const EFFORT_COLOR: Record<string, string> = {
+  S:  'var(--nw-nominal-text)',
+  M:  'var(--nw-standby-text)',
+  L:  'var(--nw-caution-text)',
+  XL: 'var(--nw-alarm-text)',
+}
+const EFFORT_BG: Record<string, string> = {
+  S:  'rgba(127,226,122,.1)',
+  M:  'rgba(142,150,168,.1)',
+  L:  'rgba(245,184,64,.1)',
+  XL: 'rgba(255,100,82,.1)',
+}
+
+function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd, onEffortChange }: {
   item: RoadmapItem; objColor: string; quarter: string
   dragging: boolean
   onEdit: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
+  onEffortChange: (size: 'S' | 'M' | 'L' | 'XL' | null) => void | Promise<void>
 }) {
-  const isActive = quarter === ACTIVE_Q
-  const isDone   = item.health_status === 'done'
+  const isActive   = quarter === ACTIVE_Q
+  const isDone     = item.health_status === 'done'
   const krDateText = formatDateRange(item.start_date, item.end_date)
+  const effort     = item.effort_size as ('S' | 'M' | 'L' | 'XL' | null)
+
+  function cycleEffort(e: React.MouseEvent) {
+    e.stopPropagation()
+    const cur = EFFORT_CYCLE.indexOf(effort)
+    const next = EFFORT_CYCLE[(cur + 1) % EFFORT_CYCLE.length]
+    onEffortChange(next)
+  }
+
   return (
     <div
       data-kr-id={item.id}
@@ -485,8 +581,36 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
           </span>
         )}
       </div>
-      <button onClick={onEdit} onMouseDown={e => e.stopPropagation()} draggable={false}
-        style={{ flexShrink: 0, width: 22, height: 22, padding: 0, borderRadius: 4, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: isActive ? 'var(--navy-200)' : 'var(--navy-300)', opacity: 0.55, WebkitTapHighlightColor: 'transparent' }}>
+      {/* Effort size chip — click to cycle S→M→L→XL→unset */}
+      <button
+        onClick={cycleEffort}
+        onMouseDown={e => e.stopPropagation()}
+        draggable={false}
+        title={effort ? `Effort: ${effort} (${EFFORT_WEEKS[effort]}wk) — click to change` : 'Set effort size (click to cycle S→M→L→XL)'}
+        style={{
+          flexShrink: 0, height: 18, minWidth: 22, padding: '0 5px',
+          borderRadius: 4, border: 'none', cursor: 'pointer',
+          fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
+          letterSpacing: '.04em',
+          background: effort ? EFFORT_BG[effort] : 'rgba(255,255,255,.05)',
+          color: effort ? EFFORT_COLOR[effort] : 'var(--navy-600)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'background .12s, color .12s',
+          WebkitTapHighlightColor: 'transparent',
+        }}>
+        {effort ?? '·'}
+      </button>
+      <button
+        onClick={onEdit}
+        onMouseDown={e => e.stopPropagation()}
+        draggable={false}
+        style={{
+          flexShrink: 0, width: 22, height: 22, padding: 0, borderRadius: 4,
+          background: 'transparent', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: isActive ? 'var(--navy-200)' : 'var(--navy-300)', opacity: 0.55,
+          WebkitTapHighlightColor: 'transparent',
+        }}>
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
           <path d="M8.5 1.5l2 2-7 7H1.5v-2l7-7z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round"/>
         </svg>
@@ -506,7 +630,7 @@ function AddKRBtn({ onClick, color }: { onClick: (e: React.MouseEvent) => void; 
   )
 }
 
-/* ── Objective modal (create + edit + delete) ── */
+/* ── Objective modal ── */
 function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon, onDelete }: {
   obj?: AnnualObjective; objectives: AnnualObjective[]
   activeSpaceId: string
@@ -519,7 +643,6 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon, 
   const [startDate, setStartDate] = useState<string>(obj?.start_date ?? '')
   const [endDate,   setEndDate]   = useState<string>(obj?.end_date   ?? '')
   const [saving,    setSaving]    = useState(false)
-
   const dateError = !!(startDate && endDate && endDate < startDate)
 
   async function save() {
@@ -584,15 +707,12 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon, 
         </div>
         {dateError && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--nw-alarm-text)' }}>End date can't be before start date.</div>}
         {!dateError && (startDate || endDate) && (() => {
-          // Compute which quarters are covered so the user gets instant feedback
           const mockObj = { start_date: startDate || null, end_date: endDate || null } as AnnualObjective
           const covered = ROLLING.filter(q => scopedQuarters(mockObj).has(q))
           if (!covered.length) return null
           return (
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '.08em', color: 'var(--accent-2)' }}>
-                ✓
-              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600, color: 'var(--accent-2)' }}>✓</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-300)' }}>
                 spans {covered.map(formatQ).join(' · ')}
               </span>
@@ -604,7 +724,7 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon, 
   )
 }
 
-/* ── KR modal (add only — edit goes through EditKRModal) ── */
+/* ── KR modal (add only) ── */
 function KRModal({ objId, defaultQuarter, objectives, quarters, onClose, onSave }: {
   objId: string; defaultQuarter: string | null
   objectives: AnnualObjective[]; quarters: string[]
