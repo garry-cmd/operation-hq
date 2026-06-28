@@ -550,6 +550,19 @@ export default function HQPage() {
         onSpaceSelect={switchSpace}
         onSpaceCreated={space => setSpaces(prev => [...prev, space])}
         onSpaceUpdated={space => setSpaces(prev => prev.map(s => s.id === space.id ? space : s))}
+        onSpaceDeleted={spaceId => {
+          // Collect KR ids in this space before wiping them, so actions can be purged too
+          const deletedKRIds = new Set(roadmapItems.filter(i => i.space_id === spaceId).map(i => i.id))
+          setSpaces(prev => {
+            const remaining = prev.filter(s => s.id !== spaceId)
+            if (activeSpaceId === spaceId && remaining.length > 0) switchSpace(remaining[0].id)
+            return remaining
+          })
+          setObjectives(prev => prev.filter(o => o.space_id !== spaceId))
+          setRoadmapItems(prev => prev.filter(i => i.space_id !== spaceId))
+          setActions(prev => prev.filter(a => !deletedKRIds.has(a.roadmap_item_id)))
+          setReviews(prev => prev.filter(r => r.space_id !== spaceId))
+        }}
 
         parkedCount={parkedCount}
         reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}

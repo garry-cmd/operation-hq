@@ -31,6 +31,7 @@ interface Props {
   onSpaceSelect: (id: string) => void
   onSpaceCreated: (s: Space) => void
   onSpaceUpdated: (s: Space) => void
+  onSpaceDeleted: (spaceId: string) => void
 
   // Badges on nav rows. All optional / zero-friendly.
   homeAttentionCount?: number
@@ -160,6 +161,7 @@ export default function NavRail(props: Props) {
               onSelect={props.onSpaceSelect}
               onSpaceCreated={props.onSpaceCreated}
               onSpaceUpdated={props.onSpaceUpdated}
+              onSpaceDeleted={props.onSpaceDeleted}
             />
           </div>
         )}
