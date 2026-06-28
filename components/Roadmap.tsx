@@ -371,7 +371,7 @@ export default function Roadmap({
                                   e.dataTransfer.effectAllowed = 'move'
                                   setDraggingId(item.id)
                                 }}
-                                onDragEnd={() => { setDraggingId(null); setDragOverCell(null) }}
+                                onDragEnd={_e => { setDraggingId(null); setDragOverCell(null) }}
                                 onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }) }} />
                             ))}
                             <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
@@ -573,14 +573,32 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon, 
         <div style={{ display: 'flex', gap: 10 }}>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'var(--nw-label-dim)' }}>Start</label>
-            <input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input className="input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+              style={{ borderColor: startDate ? 'var(--accent)' : undefined, background: startDate ? 'rgba(74,143,255,.07)' : undefined }} />
           </div>
           <div style={{ flex: 1 }}>
             <label style={{ display: 'block', marginBottom: 4, fontSize: 11, color: 'var(--nw-label-dim)' }}>End</label>
-            <input className="input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            <input className="input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+              style={{ borderColor: endDate ? 'var(--accent)' : undefined, background: endDate ? 'rgba(74,143,255,.07)' : undefined }} />
           </div>
         </div>
         {dateError && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--nw-alarm-text)' }}>End date can't be before start date.</div>}
+        {!dateError && (startDate || endDate) && (() => {
+          // Compute which quarters are covered so the user gets instant feedback
+          const mockObj = { start_date: startDate || null, end_date: endDate || null } as AnnualObjective
+          const covered = ROLLING.filter(q => scopedQuarters(mockObj).has(q))
+          if (!covered.length) return null
+          return (
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600, letterSpacing: '.08em', color: 'var(--accent-2)' }}>
+                ✓
+              </span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-300)' }}>
+                spans {covered.map(formatQ).join(' · ')}
+              </span>
+            </div>
+          )
+        })()}
       </div>
     </Modal>
   )
