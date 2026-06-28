@@ -3,7 +3,7 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 26, 2026**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 28, 2026**.
 
 ---
 
@@ -50,6 +50,71 @@ running deployment can't see it.
 ---
 
 ## Current state — shipped
+
+### Jun 28 — Quarter close, habit snapshots, roadmap roll, Home displayQ
+
+**Manual quarter roll (2Q→3Q).**
+- 27 open KRs moved from `2Q2026` → `3Q2026` (`status='planned'`, `health_status='not_started'`) via SQL. Done/failed KRs left on 2Q as historical record.
+- `roadmapPlanningOffset` bootstrapped to `1` in `page.tsx` so the Roadmap opens on 3Q immediately (to be reset to `0` after July 1 when `ACTIVE_Q` auto-flips).
+
+**`ACTIVE_Q` is now date-derived.**
+- `lib/utils.ts`: `deriveActiveQuarter()` computes current quarter from today's date — no more hardcode. Flips to 3Q automatically on July 1 2026.
+
+**Roadmap waterfall Gantt view.** Full rewrite of `components/Roadmap.tsx`:
+- Single shared 4-column CSS grid; objective headers span only their date-scoped quarters.
+- Collapse toggle per objective (chevron + KR count badge when collapsed).
+- Delete objective button.
+- Auto-expand quarter column when a KR is dragged into it.
+- Date input fields turn accent blue when filled; live `✓ spans 2Q 2026 · 3Q 2026` quarter preview below.
+
+**Roadmap capacity planning.**
+- T-shirt sizing: S=0.5wk, M=1wk, L=2wk, XL=4wk. 8-week capacity baseline.
+- KR chips: effort button cycles S→M→L→XL→unset, saves to DB immediately.
+- Summary bar: Objectives count (amber >5), KRs count, load gauge (green/amber/red).
+- DB: `effort_size text CHECK (effort_size IN ('S','M','L','XL'))` added to `roadmap_items`.
+
+**Quarter close wizard — KR disposition step.**
+- Step 3 "Wrap Up KRs" inserted (wizard is now 5 steps).
+- Non-done, non-parked KRs each get a mandatory decision: Done / Carry to next quarter / Abandon.
+- Carry: `quarter = nextQuarterStr`, `status='planned'`, `health_status='not_started'`.
+- Abandon: `is_parked=true`, `quarter=null`, `status='planned'`.
+
+**Quarter close wizard — habit snapshot + reset on seal.**
+- New table `quarter_habit_snapshots` (`quarter`, `space_id`, `kr_id`, `kr_title`, `sessions`, `expected`, `percent`). Idempotent — deletes + re-inserts on re-seal. RLS enabled.
+- At seal: counts habit checkins within the quarter's date range, computes sessions/expected/percent using `parseHabitPattern`, writes snapshot, resets habit KRs to `health_status='not_started'` / `progress=0`.
+- `lib/db/quarterReviews.ts`: `snapshotHabits()`, `listAllHabitSnapshots()`, `QuarterHabitSnapshot` interface.
+- `app/hq/page.tsx`: `habitSnapshots` state, loaded in `loadAll`, refreshed on seal, passed to Reflect and QuarterCloseWizard.
+- **2Q2026 backfill (manual):** Babel 15/91 (16%), Cardio 10/39 (26%), Gym 14/39 (36%), No Booze 24/52 (46%), Walk 12/91 (13%). Inserted directly via SQL.
+
+**Quarterly close history in Reflect.**
+- `lib/db/quarterReviews.ts`: `listAll()` (sealed only, newest first).
+- `components/Reflect.tsx`: `QuarterReviewCard` shows PROUD OF / DIDN'T GO / NEXT QUARTER / NOTES fields + a HABITS section with per-habit sessions/expected/% bars (green ≥80%, amber ≥50%, red <50%).
+
+**Home `displayQ` — sealed quarter advance.**
+- When `ACTIVE_Q` is sealed, `displayQ` advances to the next quarter.
+- All downstream Home surfaces use `displayQ`: header label, metric KR filter (`getMetricKRs`), habit KR filter (by quarter), focus KR quarter scope, metrics sublabel.
+- `displayQHabitCheckins`: when sealed, clamps habit checkins to `displayQ` start date so rolling aggregates show 3Q progress only (not 2Q carryover). Habits show 0% until new 3Q checkins exist.
+- `activeQSealed` memoized from `quarterReviews`.
+- Close CTA hides once `ACTIVE_Q` is sealed.
+- `planningOffset` auto-increments on seal so Roadmap advances to planning view.
+
+**Space edit/delete.**
+- `SpaceSwitcher.tsx`: pencil on all spaces, edit form with Cancel/Save/Delete + content count confirm.
+- `lib/db/spaces.ts`: `remove(id)`.
+- `app/hq/page.tsx`: `onSpaceDeleted` handler cascades state.
+
+**Bug fixes (from Todoist backlog).**
+- Home delete action button (hover-visible ×).
+- Done/failed KRs filtered from board/weekly/backlog views.
+- Mobile Notes height: `calc(100vh - 48px - max(0px, env(safe-area-inset-top)))`.
+- CloseWeekWizard: health pill borders + transitions; `failed` added to `HEALTH_OPTIONS`; rating buttons get glow ring.
+- FastCapture: space-first KR filter with activeSpace default.
+
+**DB state (post-session).**
+- `roadmap_items`: 27 ex-2Q KRs on 3Q2026/planned/not_started; 5 habit KRs on 3Q2026/not_started/progress=0; metric KRs on 3Q2026.
+- `quarter_habit_snapshots`: 5 rows for 2Q2026 (backfilled).
+- `quarter_reviews`: 2Q2026 sealed record exists.
+- `roadmap_items.effort_size`: column exists, all NULL — Garry needs to populate via Roadmap.
 
 ### Jun 27 — Tauri desktop app shipped + autonomous deploy workflow
 
@@ -650,6 +715,7 @@ redirect URIs for prod + `localhost:3000`.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **`roadmapPlanningOffset` hardcoded to `1`** — after July 1 when `ACTIVE_Q` auto-flips to `3Q2026`, reset `useState(1)` back to `useState(0)` in `app/hq/page.tsx`. One-line change.
 - **Evernote `--repair` re-import** — run `node evernote-migrate.mjs ~/Desktop/ --repair` once to restore the 194 table-containing notes with proper TipTap table JSON. Script is on Desktop. The 194 placeholder notes were already deleted from DB this session; only the re-import remains.
 - **Issue 2 Phase B — weekly-update ritual (deferred).** Phase A gave actions an inline update thread; Phase B makes "weekly update" first-class: a `＋ this week's update` prompt stamped to the current week (per objective/KR), logs **grouped/badged by week**, and a tie-in to **Close Week** so the weekly reflection is part of the ritual. Build when Garry's tested Phase A.
 - **Action update thread only on the Focus band.** The `▸ note` thread lives on `.focusw` rows but not yet on the per-objective `.act-col` rows (`colActionRow`). Mirror it there if the dual surface is wanted — same `logsByAction`/`submitActLog`.
@@ -708,7 +774,7 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-0. **Tauri desktop app — SHIPPED (Jun 27).** Native file/folder picker working on objective resource links; shellOpen opens files/folders in Finder/default app; ⌘T/⌘N global shortcuts; tray icon. Architecture: shell at `tauri://localhost` (dist/index.html) wraps `hq.svirene.com` in a fullscreen iframe; postMessage IPC between iframe and shell; shell calls Rust invoke(). Repo: `garry-cmd/operation-hq-desktop`. Key lessons: WKWebView blocks fetch() and invoke() from remote HTTPS URLs — only `tauri://localhost` is a trusted origin. Detection via `HQ_TAURI_READY` postMessage on iframe load (not a ping). normalizeUrl must pass local paths (starting with /) through unchanged.
+0. **Tauri desktop app — SHIPPED (Jun 27).**  Native file/folder picker working on objective resource links; shellOpen opens files/folders in Finder/default app; ⌘T/⌘N global shortcuts; tray icon. Architecture: shell at `tauri://localhost` (dist/index.html) wraps `hq.svirene.com` in a fullscreen iframe; postMessage IPC between iframe and shell; shell calls Rust invoke(). Repo: `garry-cmd/operation-hq-desktop`. Key lessons: WKWebView blocks fetch() and invoke() from remote HTTPS URLs — only `tauri://localhost` is a trusted origin. Detection via `HQ_TAURI_READY` postMessage on iframe load (not a ping). normalizeUrl must pass local paths (starting with /) through unchanged.
 1. **Files / Drive — SHIPPED** (see top entry). Residual follow-ups:
    - **Native "double-click → open in Excel/Acrobat"** — what Garry actually wants for files; the browser
      can't launch local apps. Needs a thin **Tauri** capture/companion shell exposing `openLocalFile(path)`
@@ -726,6 +792,7 @@ redirect URIs for prod + `localhost:3000`.
 2. **Re-plan button decision** — currently opens legacy `PlanWeek` modal. Likely just delete it +
    `PlanWeek` (~10min). Confirm Re-plan is unused first.
 3. **Subtasks UI polish** — `parent_task_id` shipped on Tasks; confirm parity on Calendar surfaces.
+4. **Scout agent `read_note` server-side tool** — top next-agent-session candidate. Lets the agent read a note's TipTap body from the DB and surface it in context.
 4. **Agent — postponed mutation tools (conscious opt-in).** Destructive `delete_task`/`delete_note`/
    `delete_kr`; calendar event **edit/delete** (two systems: `calendar_blocks` row + Google event);
    note pin/move-to-notebook + task move-to-list (need notebook/list ids exposed in context);
