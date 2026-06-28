@@ -51,6 +51,26 @@ running deployment can't see it.
 
 ## Current state — shipped
 
+### Jun 27 — Tauri desktop app shipped + autonomous deploy workflow
+
+**Autonomous deploy workflow established.** Claude now pushes directly to GitHub via a session-scoped PAT; Vercel auto-deploys; Claude polls via Vercel MCP until READY. No bash blocks for Garry to run. Desktop repo created: `garry-cmd/operation-hq-desktop`.
+
+**Tauri Phase 2 SHIPPED — native picker + shellOpen working.**
+
+- **Architecture (final):** Tauri shell loads `tauri://localhost` (local `dist/index.html`), which renders `hq.svirene.com` in a fullscreen iframe. Shell is the trusted Tauri origin; iframe communicates via `postMessage`.
+- **`dist/index.html` (shell):** listens for `HQ_PING`, `HQ_PICK_FILE`, `HQ_PICK_FOLDER`, `HQ_SHELL_OPEN` from the iframe; calls `window.__TAURI__.core.invoke()`; posts `HQ_REPLY` back. Also forwards `hq:capture` Tauri events into the iframe as `HQ_EVENT` messages. Sends `HQ_TAURI_READY` on iframe load.
+- **`lib/tauri.ts` (web app):** sets `_isTauri = true` synchronously when `HQ_TAURI_READY` is received (no async ping). All picker/shellOpen calls go via `window.parent.postMessage('*', ...)`. `onTauriEvent` listens for forwarded `HQ_EVENT` messages.
+- **`normalizeUrl` fix:** local paths starting with `/` now pass through unchanged. One corrupted `https:///Users/...` row cleaned in DB.
+- **`ObjectivePanel` fix:** link chip clicks now use `shellOpen()` instead of `window.open()`.
+
+**Hard-won lessons (record for future sessions):**
+- WKWebView blocks `fetch()` and `invoke()` from remote HTTPS pages regardless of capability config — OS-level WebKit constraint, not fixable in Tauri config.
+- Custom URI scheme handlers (`hq://`) are also blocked from HTTPS origins. Same root cause.
+- `initialization_script` still doesn't help — IPC ACL gates on window origin.
+- **Only working pattern:** shell serves from `tauri://localhost`, app in iframe, postMessage IPC.
+- Tauri detection: listen for `HQ_TAURI_READY` on module load (before any component mounts). Async ping has a race condition — the READY message may arrive before the listener is attached.
+- `postMessage` to `tauri://localhost` parent must use `'*'` as target origin — browsers reject custom scheme origins. Shell validates `event.origin === 'https://hq.svirene.com'` on its side.
+
 ### Jun 26 (session 2) — Notes, Home, and Modal UI refresh
 
 **Notes module — major UI pass:**
@@ -805,33 +825,33 @@ no-dep date math.
 
 ---
 
-## Deploy workflow (macOS / zsh)
+## Deploy workflow (autonomous — Jun 27+)
 
-Garry deploys from `~/Downloads` (files arrive flat). Claude stages to
-`/mnt/user-data/outputs/<proj>-<change>/` with **distinct flat filenames** (multiple `route.ts`
-collide in Downloads → stage as `commit-route.ts`, `block-route.ts`, …), surfaces with
-`present_files`, then gives ONE fenced bash block:
+Claude pushes directly to GitHub; Vercel auto-deploys on push to `main`; Claude polls `Vercel:list_deployments` until `READY`. Garry's role: verify features work.
 
-```bash
-cd ~/operation-hq
-git pull origin main
-# mkdir -p ~/operation-hq/<new/dir> for any NEW directories first
-cp ~/Downloads/<File> ~/operation-hq/<path>/<File>   # one explicit cp per changed file
-npm run build
-git add -A
-git commit -m "<message>"
-git push origin HEAD:main
+**Session start:** paste the GitHub PAT (session-scoped, not persisted):
+```
+PAT: github_pat_XXXX...
 ```
 
-**Rules:** one explicit `cp` per file (never shell vars for paths, never directory-level
-`cp -R`, never paste code in chat as a substitute). Single block, copy-paste order, no
-inter-command prompts. Push only if build is green. Staging-first deploys end the first block
-with a staging push + "test, then run:" + a separate block for main.
+**Claude's deploy loop:**
+1. Clone/sync repo fresh: `git clone --depth 1 https://garry-cmd:<PAT>@github.com/garry-cmd/operation-hq /tmp/operation-hq`
+2. Make changes in sandbox (`str_replace`, `bash_tool`, etc.)
+3. Verify: `npx tsc --noEmit 2>&1 | grep -v "validator.ts\|next/server\|Cannot find module\|@types/node"`
+4. Commit + push: `git add -A && git commit -m "..." && git push origin HEAD:main`
+5. Poll `Vercel:list_deployments` (projectId `prj_rgWkigVjdCzawkB3g00GqTIMFTEC`, teamId `team_FD2H6R0bDq59mIOZWsPE8YLg`) until `READY`; if `ERROR`, pull build logs and fix immediately
+6. Garry verifies the feature in the live app
 
-**Sandbox verify before staging:** `npx tsc --noEmit 2>&1 | grep -v validator.ts`, then a full
-`npm run build`. **Note:** since `layout.tsx` uses `next/font/google`, the sandbox build now fails
-fetching Google Fonts — use the stub-layout technique in **Convention 16** to verify the pipeline
-compiles (tsc + no-font stub build; the env-less `/hq` prerender error is the known false-positive).
+**Desktop repo:** `garry-cmd/operation-hq-desktop` — Rust/Tauri changes require `cargo tauri build` on Garry's Mac after `git pull`. Claude pushes source; Garry rebuilds the binary.
+
+**Sandbox build note:** `npm run build` fails in sandbox (egress blocks `fonts.gstatic.com`). Use `npx tsc --noEmit` to catch type errors. The env-less `/hq` prerender error (`supabaseUrl is required`) is a known false positive — ignore it.
+
+**Staging-first rule:** push to a staging branch for schema migrations, payment flows, auth flows, or irreversible data writes. Everything else goes straight to `main`.
+
+**Re-sync within session:** `git fetch --depth 1 origin main && git reset --hard origin/main` before re-patching files already touched this session — main moves fast.
+
+*Legacy workflow (no PAT):* Claude stages files to `/mnt/user-data/outputs/`, presents with `present_files`, gives a single fenced bash block with explicit `cp` commands. Used only when PAT not available.
+
 When re-patching files already touched this session, re-sync first
 (`git fetch --depth 1 origin main && git reset --hard origin/main`) — main moves fast.
 
@@ -923,4 +943,3 @@ plus primitives `.label .mono .chip(.chip-ok/warn/alarm/standby) .card`. Identit
 directly: `--nw-label` (amber labels), `--nw-cream`, `--nw-hero-amber`,
 `--nw-alarm/caution/nominal/standby-text`. Cobalt `--accent` for all interactive elements.
 Per-space object colors: `#0ea5b8 #14b87f #c8a040 #d4885a #c44a7c #8b5cf6 #6b8caa #5b8def`.
-<!-- session: 2026-06-28T02:24:59Z -->
