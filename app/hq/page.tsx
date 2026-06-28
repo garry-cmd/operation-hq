@@ -15,6 +15,8 @@ import * as notebooksDb from '@/lib/db/notebooks'
 import * as notesDb from '@/lib/db/notes'
 import * as googleTokensDb from '@/lib/db/googleTokens'
 import * as trackedFilesDb from '@/lib/db/trackedFiles'
+import * as qrDb from '@/lib/db/quarterReviews'
+import type { QuarterReview as QRType } from '@/lib/db/quarterReviews'
 import { extractNoteText } from '@/lib/noteText'
 import Roadmap from '@/components/Roadmap'
 import ObjectivePanel from '@/components/ObjectivePanel'
@@ -83,6 +85,7 @@ export default function HQPage() {
   const [habitCheckins, setHabitCheckins] = useState<HabitCheckin[]>([])
   const [metricCheckins, setMetricCheckins] = useState<MetricCheckin[]>([])
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
+  const [quarterReviews, setQuarterReviews] = useState<QRType[]>([])
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
@@ -250,7 +253,7 @@ export default function HQPage() {
       console.error(`loadAll: ${label} failed:`, err)
       return value
     }
-    const [o, r, a, ci, hc, mc, rv, lk, lg, sp, st, nb, nt, gstat, tf, fv] = await Promise.all([
+    const [o, r, a, ci, hc, mc, rv, qr, lk, lg, sp, st, nb, nt, gstat, tf, fv] = await Promise.all([
       objectivesDb.listAll().catch(fallback('objectives', [] as AnnualObjective[])),
       krsDb.listAll().catch(fallback('roadmap_items', [] as RoadmapItem[])),
       actionsDb.listAll().catch(fallback('weekly_actions', [] as WeeklyAction[])),
@@ -258,6 +261,7 @@ export default function HQPage() {
       checkinsDb.habit.listAll().catch(fallback('habit_checkins', [] as HabitCheckin[])),
       checkinsDb.metric.listAll().catch(fallback('metric_checkins', [] as MetricCheckin[])),
       reviewsDb.listAll().catch(fallback('weekly_reviews', [] as WeeklyReview[])),
+      qrDb.listAll().catch(fallback('quarter_reviews', [] as QRType[])),
       extrasDb.links.listAll().catch(fallback('objective_links', [] as ObjectiveLink[])),
       extrasDb.logs.listAll().catch(fallback('objective_logs', [] as ObjectiveLog[])),
       spacesDb.listAll().catch(fallback('spaces', [] as Space[])),
@@ -275,7 +279,7 @@ export default function HQPage() {
     setHabitCheckins(hc)
     setMetricCheckins(mc)
     setReviews(rv)
-    setLinks(lk)
+    setQuarterReviews(qr)
     setLogs(lg)
     setSpaces(sp)
     if (st) setShareToken(st.token)
@@ -742,7 +746,7 @@ export default function HQPage() {
               </div>
             )}
             {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} />}
-            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
+            {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} quarterReviews={quarterReviews} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
         )}
@@ -850,6 +854,13 @@ export default function HQPage() {
             setRoadmapItems={setRoadmapItems}
             toast={setToast}
             onClose={() => setQuarterClose(null)}
+            onSeal={async () => {
+              // Refresh the quarter reviews list so Reflect shows the new entry immediately.
+              try {
+                const fresh = await qrDb.listAll()
+                setQuarterReviews(fresh)
+              } catch { /* non-fatal */ }
+            }}
             onPlanNextQuarter={() => setScreen('roadmap')}
           />
         )

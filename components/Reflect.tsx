@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import * as reviewsDb from '@/lib/db/reviews'
+import type { QuarterReview } from '@/lib/db/quarterReviews'
 import { WeeklyReview, ReviewRating, Space, RoadmapItem, MetricCheckin, HabitCheckin } from '@/lib/types'
 import { formatWeek, getMonday, ACTIVE_Q } from '@/lib/utils'
 import { spaceDisplayColor } from '@/lib/spaceColor'
@@ -46,6 +47,7 @@ const ratingMeta = (r: ReviewRating) => RATINGS.find(x => x.value === r) ?? RATI
 type Props = {
   reviews: WeeklyReview[]   // all spaces — Reflect is the all-spaces ritual hub
   setReviews: (fn: (p: WeeklyReview[]) => WeeklyReview[]) => void
+  quarterReviews: QuarterReview[]
   spaces: Space[]
   weekForSpace: (spaceId: string) => string
   onCloseWeek: (spaceId: string, week: string) => void
@@ -56,7 +58,7 @@ type Props = {
   toast: (m: string) => void
 }
 
-export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onCloseWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
+export default function Reflect({ reviews, setReviews, quarterReviews, spaces, weekForSpace, onCloseWeek, roadmapItems, metricCheckins, habitCheckins, onLogMetric, toast }: Props) {
   const orderedSpaces = [...spaces].sort((a, b) => a.sort_order - b.sort_order)
   const spaceById = new Map(spaces.map(s => [s.id, s]))
   const thisMonday = getMonday()
@@ -151,15 +153,17 @@ export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onC
         </div>
       </div>
 
+      {/* ── Weekly archive ── */}
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 10px 0' }}>Weekly</div>
       {sorted.length === 0 ? (
-        <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '40px 24px', textAlign: 'center', color: 'var(--navy-300)' }}>
+        <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '40px 24px', textAlign: 'center', color: 'var(--navy-300)', marginBottom: 24 }}>
           <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--navy-100)', marginBottom: 6 }}>No weeks closed yet</div>
           <div style={{ fontSize: 12, lineHeight: 1.6 }}>
             Use <strong style={{ color: 'var(--accent)' }}>Close week →</strong> above to record your first reflection.
           </div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 28 }}>
           {sorted.map(review => {
             const sp = spaceById.get(review.space_id)
             return (
@@ -175,6 +179,98 @@ export default function Reflect({ reviews, setReviews, spaces, weekForSpace, onC
           })}
         </div>
       )}
+
+      {/* ── Quarterly close archive ── */}
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '.18em', textTransform: 'uppercase', color: 'var(--nw-label)', margin: '0 0 10px 0' }}>Quarterly</div>
+      {quarterReviews.length === 0 ? (
+        <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 14, padding: '40px 24px', textAlign: 'center', color: 'var(--navy-300)' }}>
+          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--navy-100)', marginBottom: 6 }}>No quarters closed yet</div>
+          <div style={{ fontSize: 12, lineHeight: 1.6 }}>
+            Use <strong style={{ color: 'var(--accent)' }}>Close {ACTIVE_Q} →</strong> on the Home tab to seal a quarter.
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {quarterReviews.map(qr => {
+            const sp = qr.space_id ? spaceById.get(qr.space_id) : null
+            return (
+              <QuarterReviewCard
+                key={qr.id}
+                review={qr}
+                spaceName={sp?.name ?? null}
+                spaceColor={sp ? spaceDisplayColor(sp) : null}
+              />
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ==========================================================================
+// Quarterly close card — collapsed summary, expand to read
+// ==========================================================================
+function QuarterReviewCard({
+  review, spaceName, spaceColor,
+}: {
+  review: QuarterReview
+  spaceName: string | null
+  spaceColor: string | null
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const has = (s: string | null | undefined) => s && s.trim().length > 0
+
+  return (
+    <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, overflow: 'hidden' }}>
+      <button onClick={() => setExpanded(v => !v)}
+        style={{ width: '100%', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+        {spaceColor && <span style={{ width: 9, height: 9, borderRadius: '50%', background: spaceColor, flexShrink: 0 }} />}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--navy-50)' }}>
+            {review.quarter.replace(/^(\d)Q/, 'Q$1 ')}
+          </div>
+          {spaceName && <div style={{ fontSize: 11, color: 'var(--navy-400)', marginTop: 2 }}>{spaceName}</div>}
+        </div>
+        <span style={{
+          fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 700,
+          padding: '2px 9px', borderRadius: 99,
+          background: 'rgba(127,226,122,.1)', color: 'var(--nw-nominal-text)',
+          border: '1px solid rgba(127,226,122,.2)', flexShrink: 0,
+        }}>✓ SEALED</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"
+          style={{ flexShrink: 0, transform: expanded ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform .15s' }}>
+          <path d="M3 4.5L6 7.5L9 4.5" stroke="var(--navy-400)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {expanded && (
+        <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--navy-700)' }}>
+          <div style={{ paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {has(review.proud_of) && <QReadField label="Proud of" value={review.proud_of!} />}
+            {has(review.didnt_go) && <QReadField label="Didn't go as planned" value={review.didnt_go!} />}
+            {has(review.next_quarter) && <QReadField label="Next quarter focus" value={review.next_quarter!} />}
+            {has(review.overall_note) && <QReadField label="Overall note" value={review.overall_note!} />}
+            {!has(review.proud_of) && !has(review.didnt_go) && !has(review.next_quarter) && !has(review.overall_note) && (
+              <div style={{ fontSize: 12, color: 'var(--navy-400)', fontStyle: 'italic' }}>No notes recorded for this quarter.</div>
+            )}
+            {review.closed_at && (
+              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-500)', marginTop: 4 }}>
+                Sealed {new Date(review.closed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function QReadField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, color: 'var(--nw-label)', textTransform: 'uppercase', letterSpacing: '.18em', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 13, color: 'var(--navy-100)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{value}</div>
     </div>
   )
 }

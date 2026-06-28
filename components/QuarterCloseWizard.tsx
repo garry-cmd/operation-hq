@@ -68,6 +68,7 @@ interface Props {
   setRoadmapItems: React.Dispatch<React.SetStateAction<RoadmapItem[]>>
   toast: (msg: string) => void
   onClose: () => void
+  onSeal?: () => void                  // optional: called after the quarter is sealed
   onPlanNextQuarter?: () => void      // optional: navigate to Roadmap filtered to next Q
 }
 
@@ -79,6 +80,7 @@ export default function QuarterCloseWizard({
   setRoadmapItems,
   toast,
   onClose,
+  onSeal,
   onPlanNextQuarter,
 }: Props) {
   const [step, setStep] = useState(1)
@@ -176,6 +178,7 @@ export default function QuarterCloseWizard({
     try {
       await qrDb.seal(quarter, space?.id ?? null)
       setSealed(true)
+      onSeal?.()
     } catch {
       toast('Could not seal the quarter')
     } finally {

@@ -29,6 +29,17 @@ export type QuarterReviewUpsertInput = {
   closed_at?: string | null
 }
 
+/** List all sealed quarter reviews, newest first. */
+export async function listAll(): Promise<QuarterReview[]> {
+  const { data, error } = await supabase
+    .from('quarter_reviews')
+    .select('*')
+    .not('closed_at', 'is', null)
+    .order('quarter', { ascending: false })
+  if (error) throw error
+  return data ?? []
+}
+
 /** Fetch the review for a given quarter + space (null = all-spaces). Returns null if not started. */
 export async function get(quarter: string, space_id: string | null): Promise<QuarterReview | null> {
   let q = supabase.from('quarter_reviews').select('*').eq('quarter', quarter)

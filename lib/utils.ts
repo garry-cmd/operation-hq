@@ -13,7 +13,14 @@ export const COLORS = [
   '#5b8def',  // azure (sister to accent — picked last)
 ]
 
-export const ACTIVE_Q = '2Q2026'
+// Derive the active quarter from today's date so the app advances automatically
+// when the calendar rolls over. Jan–Mar = Q1, Apr–Jun = Q2, Jul–Sep = Q3, Oct–Dec = Q4.
+function deriveActiveQuarter(): string {
+  const now = new Date()
+  const q = Math.floor(now.getMonth() / 3) + 1
+  return `${q}Q${now.getFullYear()}`
+}
+export const ACTIVE_Q = deriveActiveQuarter()
 
 export function getRollingQuarters(): string[] {
   const m = ACTIVE_Q.match(/(\d)Q(\d{4})/)
