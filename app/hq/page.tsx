@@ -87,7 +87,7 @@ export default function HQPage() {
   const [reviews, setReviews] = useState<WeeklyReview[]>([])
   const [quarterReviews, setQuarterReviews] = useState<QRType[]>([])
   // 0 = show ACTIVE_Q window, 1 = show one quarter ahead (for post-close planning)
-  const [roadmapPlanningOffset, setRoadmapPlanningOffset] = useState(0)
+  const [roadmapPlanningOffset, setRoadmapPlanningOffset] = useState(1)
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
