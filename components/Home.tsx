@@ -147,7 +147,7 @@ export default function Home({
   const toggleCollapse = (id: string) => setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
   const [durPickerAction, setDurPickerAction] = useState<string | null>(null)
   // Section collapse — all start collapsed so everything fits on one page
-  const [vitalsOpen, setVitalsOpen] = useState(false)
+  const [vitalsOpen, setVitalsOpen] = useState<boolean>(() => loadLS<boolean>('hq-home-vitals-open', true))
   const [focusOpen, setFocusOpen] = useState(false)
   const [objectivesOpen, setObjectivesOpen] = useState(false)
 
@@ -221,6 +221,7 @@ export default function Home({
 
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])
+  useEffect(() => { try { window.localStorage.setItem('hq-home-vitals-open', JSON.stringify(vitalsOpen)) } catch {} }, [vitalsOpen])
   useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
   useEffect(() => { try { window.localStorage.setItem('hq-home-obj-collapsed', JSON.stringify(collapsed)) } catch {} }, [collapsed])
 
