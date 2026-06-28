@@ -688,7 +688,7 @@ redirect URIs for prod + `localhost:3000`.
 ## Backlog / roadmap
 
 ### 🔴 Next-session candidates
-0. **Tauri desktop app** — next session start. Unlocks: native file/folder picker for objective resource links, `shell.open()` for Finder/app launches, system-wide ⌘T/⌘N capture hotkeys, "open in Excel/Acrobat" for tracked files. Closes multiple backlog items at once. Plan before building (thin companion shell, not a full port).
+0. **Tauri desktop app — SHIPPED (Jun 27).** Native file/folder picker working on objective resource links; shellOpen opens files/folders in Finder/default app; ⌘T/⌘N global shortcuts; tray icon. Architecture: shell at `tauri://localhost` (dist/index.html) wraps `hq.svirene.com` in a fullscreen iframe; postMessage IPC between iframe and shell; shell calls Rust invoke(). Repo: `garry-cmd/operation-hq-desktop`. Key lessons: WKWebView blocks fetch() and invoke() from remote HTTPS URLs — only `tauri://localhost` is a trusted origin. Detection via `HQ_TAURI_READY` postMessage on iframe load (not a ping). normalizeUrl must pass local paths (starting with /) through unchanged.
 1. **Files / Drive — SHIPPED** (see top entry). Residual follow-ups:
    - **Native "double-click → open in Excel/Acrobat"** — what Garry actually wants for files; the browser
      can't launch local apps. Needs a thin **Tauri** capture/companion shell exposing `openLocalFile(path)`
