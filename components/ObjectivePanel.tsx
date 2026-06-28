@@ -648,6 +648,8 @@ function hostFromUrl(u: string): string {
 
 function normalizeUrl(u: string): string {
   if (!u) return ''
+  // Local filesystem paths — leave as-is
+  if (u.startsWith('/') || u.startsWith('~/')) return u
   return u.startsWith('http') ? u : 'https://' + u
 }
 
