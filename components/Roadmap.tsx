@@ -18,6 +18,9 @@ type Props = {
   toast: (m: string) => void
   initialKRId?: string | null
   onConsumeInitialKRId?: () => void
+  // 0 = show ACTIVE_Q window, 1 = shifted one quarter forward (post-close planning)
+  planningOffset?: number
+  onResetPlanningOffset?: () => void
 }
 
 type ModalState =
@@ -73,24 +76,26 @@ function scopeSpan(inScope: Set<string>): { first: number; last: number } | null
 export default function Roadmap({
   objectives, roadmapItems, setObjectives, setRoadmapItems,
   activeSpaceId, toast, initialKRId, onConsumeInitialKRId,
+  planningOffset = 0, onResetPlanningOffset,
 }: Props) {
   const [modal, setModal]             = useState<ModalState>(null)
   const [draggingId, setDraggingId]   = useState<string | null>(null)
   const [dragOverCell, setDragOverCell] = useState<string | null>(null)
   const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({})
-  // planningQ: the quarter highlighted as "active" in the Roadmap view.
-  // Defaults to ACTIVE_Q. User can advance it to plan the next quarter without
-  // affecting Focus, Close Week, or any other screen.
-  const [planningQ, setPlanningQ]     = useState<string>(ACTIVE_Q)
 
-  // Compute next quarter string from any quarter string.
-  function nextQuarter(q: string): string {
-    const m = /^([1-4])Q(\d{4})$/.exec(q)
+  // Compute rolling quarters shifted by offset so planning can look one quarter ahead.
+  function shiftQuarter(q: string, n: number): string {
+    let m = /^([1-4])Q(\d{4})$/.exec(q)
     if (!m) return q
-    let n = +m[1], y = +m[2]
-    n++; if (n > 4) { n = 1; y++ }
-    return `${n}Q${y}`
+    let qn = +m[1], y = +m[2]
+    for (let i = 0; i < n; i++) { qn++; if (qn > 4) { qn = 1; y++ } }
+    return `${qn}Q${y}`
   }
+  const planningQ  = shiftQuarter(ACTIVE_Q, planningOffset)
+  // Shift the entire 4-quarter rolling window forward by the offset
+  const PLANNING_ROLLING = ROLLING.map(q => shiftQuarter(q, planningOffset))
+
+  function nextQuarter(q: string): string { return shiftQuarter(q, 1) }
   const nextQ = nextQuarter(planningQ)
 
   useEffect(() => {
@@ -287,30 +292,31 @@ export default function Roadmap({
 
           <div style={{ width: 1, height: 18, background: 'var(--line-2)', flexShrink: 0 }} />
 
-          {/* Plan next / back to active */}
-          {planningQ === ACTIVE_Q ? (
-            <button
-              onClick={() => setPlanningQ(nextQ)}
-              style={{
-                flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
-                letterSpacing: '.06em', padding: '4px 10px', borderRadius: 7,
+          {/* Planning mode indicator / reset */}
+          {planningOffset > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+              <span style={{
+                fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 700,
+                letterSpacing: '.06em', padding: '3px 8px', borderRadius: 6,
                 background: 'var(--accent-bg)', border: '1px solid var(--accent-line)',
-                color: 'var(--accent-2)', cursor: 'pointer', whiteSpace: 'nowrap',
+                color: 'var(--accent-2)', whiteSpace: 'nowrap',
               }}>
-              Plan {formatQ(nextQ)} →
-            </button>
-          ) : (
-            <button
-              onClick={() => setPlanningQ(ACTIVE_Q)}
-              style={{
-                flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
-                letterSpacing: '.06em', padding: '4px 10px', borderRadius: 7,
-                background: 'var(--surface-2)', border: '1px solid var(--line-2)',
-                color: 'var(--navy-300)', cursor: 'pointer', whiteSpace: 'nowrap',
-              }}>
-              ← Back to {formatQ(ACTIVE_Q)}
-            </button>
-          )}
+                📋 Planning {formatQ(planningQ)}
+              </span>
+              {onResetPlanningOffset && (
+                <button
+                  onClick={onResetPlanningOffset}
+                  style={{
+                    flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
+                    letterSpacing: '.04em', padding: '3px 8px', borderRadius: 6,
+                    background: 'var(--surface-2)', border: '1px solid var(--line-2)',
+                    color: 'var(--navy-400)', cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>
+                  ← Back to {formatQ(ACTIVE_Q)}
+                </button>
+              )}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -326,7 +332,7 @@ export default function Roadmap({
 
             {/* ── Quarter column headers ── */}
             <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 10 }}>
-              {ROLLING.map(q => (
+              {PLANNING_ROLLING.map(q => (
                 <div key={q} style={{
                   fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
                   letterSpacing: '.08em', textAlign: 'center', padding: '7px 6px',
@@ -420,7 +426,7 @@ export default function Roadmap({
                   {/* KR cells row */}
                   {!isCol && (
                     <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: objIdx < activeObjs.length - 1 ? 12 : 0 }}>
-                      {ROLLING.map((q, qi) => {
+                      {PLANNING_ROLLING.map((q, qi) => {
                         const cellKey    = `${obj.id}:${q}`
                         const isInScope  = inScope.has(q)
                         const acceptsDrag = cellAcceptsDrag(obj.id, q)
@@ -534,7 +540,7 @@ export default function Roadmap({
           objId={modal.objId}
           defaultQuarter={modal.quarter}
           objectives={objectives}
-          quarters={ROLLING}
+          quarters={PLANNING_ROLLING}
           onClose={() => setModal(null)}
           onSave={item => { setRoadmapItems(prev => [...prev, item]); setModal(null); toast('Key result added!') }}
         />
@@ -543,7 +549,7 @@ export default function Roadmap({
       {modal?.type === 'edit_kr' && modal.item.annual_objective_id && (
         <EditKRModal
           kr={modal.item}
-          quarters={ROLLING}
+          quarters={PLANNING_ROLLING}
           onClose={() => setModal(null)}
           onSave={async (patch) => {
             try {

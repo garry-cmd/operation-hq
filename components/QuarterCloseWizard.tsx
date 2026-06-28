@@ -13,6 +13,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import type { AnnualObjective, RoadmapItem, Space } from '@/lib/types'
 import * as qrDb from '@/lib/db/quarterReviews'
+import * as krsDb from '@/lib/db/krs'
 import { ACTIVE_Q, parseDateLocal } from '@/lib/utils'
 
 // ── Score tiers ──────────────────────────────────────────────────────────────
@@ -109,7 +110,55 @@ export default function QuarterCloseWizard({
   const [objGrades, setObjGrades] = useState<Record<string, ObjGrade>>({})
   const [objReflections, setObjReflections] = useState<Record<string, string>>({})
 
-  // Step 3 state: quarter retrospective
+  // Step 3 state: KR disposition — what happens to incomplete KRs
+  type Disposition = 'done' | 'abandon' | 'carry'
+  const [dispositions, setDispositions] = useState<Record<string, Disposition>>(() => {
+    const init: Record<string, Disposition> = {}
+    for (const kr of roadmapItems) {
+      // Pre-fill: already done KRs → done, scored 1.0 → done, else no default
+      if (kr.health_status === 'done') init[kr.id] = 'done'
+    }
+    return init
+  })
+  // KRs that need disposition = not already closed (done/failed) and not parked
+  const krsNeedingDisposition = useMemo(() =>
+    roadmapItems.filter(kr => kr.health_status !== 'done' && kr.health_status !== 'failed' && !kr.is_parked),
+    [roadmapItems])
+  const dispositionComplete = krsNeedingDisposition.every(kr => dispositions[kr.id] != null)
+
+  // Apply dispositions: called when advancing from step 3 → 4
+  const applyDispositions = async () => {
+    setSaving(true)
+    try {
+      await Promise.all(krsNeedingDisposition.map(async kr => {
+        const d = dispositions[kr.id]
+        if (!d) return
+        if (d === 'done') {
+          await krsDb.update(kr.id, { health_status: 'done' })
+        } else if (d === 'abandon') {
+          await krsDb.update(kr.id, { is_parked: true, quarter: null, status: 'planned' })
+        } else if (d === 'carry') {
+          await krsDb.update(kr.id, { quarter: nextQuarterStr, status: 'planned', health_status: 'not_started' })
+        }
+      }))
+      // Update local state to reflect the changes
+      setRoadmapItems(prev => prev.map(kr => {
+        const d = dispositions[kr.id]
+        if (!d || kr.health_status === 'done' || kr.health_status === 'abandoned') return kr
+        if (d === 'done') return { ...kr, health_status: 'done' as const }
+        if (d === 'abandon') return { ...kr, is_parked: true, quarter: null as string | null, status: 'planned' as const }
+        if (d === 'carry') return { ...kr, quarter: nextQuarterStr, status: 'planned' as const, health_status: 'not_started' as const }
+        return kr
+      }))
+      setStep(4)
+    } catch {
+      toast('Could not apply KR dispositions')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Step 4 state: quarter retrospective
   const [proudOf, setProudOf] = useState('')
   const [didntGo, setDidntGo] = useState('')
   const [nextQ, setNextQ] = useState('')
@@ -164,9 +213,7 @@ export default function QuarterCloseWizard({
         didnt_go: didntGo || null,
         next_quarter: nextQ || null,
       })
-      setStep(4)
-    } catch {
-      toast('Could not save retrospective')
+      setStep(5)
     } finally {
       setSaving(false)
     }
@@ -239,16 +286,17 @@ export default function QuarterCloseWizard({
           }}>
             {step === 1 && 'Score Key Results'}
             {step === 2 && 'Grade Objectives'}
-            {step === 3 && 'Retrospective'}
-            {step === 4 && (sealed ? 'Quarter Sealed' : 'Review & Seal')}
+            {step === 3 && 'Wrap Up KRs'}
+            {step === 4 && 'Retrospective'}
+            {step === 5 && (sealed ? 'Quarter Sealed' : 'Review & Seal')}
           </div>
         </div>
 
         {/* Step indicator */}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {[1,2,3,4].map(s => (
+          {[1,2,3,4,5].map(s => (
             <div key={s} style={{
-              width: s < step ? 28 : s === step ? 28 : 22, height: 4, borderRadius: 2,
+              width: s < step ? 24 : s === step ? 24 : 18, height: 4, borderRadius: 2,
               background: s < step ? 'var(--nw-nominal-text)' : s === step ? 'var(--accent)' : 'var(--line)',
               transition: 'all .2s',
             }} />
@@ -256,7 +304,7 @@ export default function QuarterCloseWizard({
           <span style={{
             fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--navy-400)',
             marginLeft: 6,
-          }}>{step}/4</span>
+          }}>{step}/5</span>
         </div>
 
         <button onClick={onClose} style={{
@@ -515,8 +563,113 @@ export default function QuarterCloseWizard({
           </div>
         )}
 
-        {/* ── STEP 3: Retrospective ── */}
+        {/* ── STEP 3: KR Disposition ── */}
         {step === 3 && (
+          <div>
+            <p style={{
+              fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--navy-300)',
+              marginBottom: 24, lineHeight: 1.6,
+            }}>
+              {krsNeedingDisposition.length === 0
+                ? `All KRs are already closed. Move on to your retrospective.`
+                : `Every open KR needs a decision before you can seal the quarter. For each one: mark it done, abandon it, or carry it into ${nextQuarterStr}.`}
+            </p>
+
+            {krsNeedingDisposition.length === 0 ? (
+              <div style={{
+                background: 'var(--surface)', border: '1px solid var(--line)',
+                borderRadius: 12, padding: '20px 22px', marginBottom: 24,
+                textAlign: 'center', color: 'var(--nw-nominal-text)',
+                fontFamily: 'var(--font-mono)', fontSize: 12,
+              }}>
+                ✓ All KRs are closed — nothing to decide.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
+                {krsNeedingDisposition.map(kr => {
+                  const score = krScores[kr.id] ?? 0
+                  const tier = scoreTier(score)
+                  const d = dispositions[kr.id]
+                  return (
+                    <div key={kr.id} style={{
+                      background: 'var(--surface)', border: '1px solid var(--line)',
+                      borderRadius: 12, padding: '14px 16px',
+                      borderLeft: d ? '3px solid var(--nw-nominal-text)' : '3px solid var(--line)',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--nw-cream)', lineHeight: 1.35, marginBottom: 4 }}>
+                            {kr.title}
+                          </div>
+                          <span style={{
+                            fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700,
+                            letterSpacing: '.06em', textTransform: 'uppercase',
+                            color: TIER_COLOR[tier], background: TIER_BG[tier],
+                            padding: '2px 7px', borderRadius: 5,
+                          }}>{score.toFixed(1)} · {TIER_LABEL[tier]}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 7 }}>
+                        {([
+                          { key: 'done',    label: '✓ Done',         hint: 'Close it out' },
+                          { key: 'carry',   label: `→ Carry to ${nextQuarterStr.replace(/(\d)Q/,'Q$1 ')}`, hint: 'Reset & continue' },
+                          { key: 'abandon', label: '× Abandon',       hint: 'Drop it' },
+                        ] as const).map(opt => (
+                          <button
+                            key={opt.key}
+                            onClick={() => setDispositions(prev => ({ ...prev, [kr.id]: opt.key }))}
+                            title={opt.hint}
+                            style={{
+                              flex: 1, padding: '7px 6px', borderRadius: 8, cursor: 'pointer',
+                              fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
+                              letterSpacing: '.04em',
+                              border: d === opt.key ? 'none' : '1px solid var(--line-2)',
+                              background: d === opt.key
+                                ? opt.key === 'done'    ? 'rgba(127,226,122,.18)'
+                                : opt.key === 'carry'  ? 'var(--accent-bg)'
+                                :                        'rgba(255,100,82,.12)'
+                                : 'var(--surface-2)',
+                              color: d === opt.key
+                                ? opt.key === 'done'    ? 'var(--nw-nominal-text)'
+                                : opt.key === 'carry'  ? 'var(--accent-2)'
+                                :                        'var(--nw-alarm-text)'
+                                : 'var(--navy-400)',
+                              transition: 'all .12s',
+                            }}>
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {!dispositionComplete && (
+              <div style={{
+                fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--nw-caution-text)',
+                marginBottom: 16, padding: '8px 12px', background: 'rgba(245,184,64,.08)',
+                border: '1px solid rgba(245,184,64,.2)', borderRadius: 8,
+              }}>
+                ⚠ {krsNeedingDisposition.filter(kr => !dispositions[kr.id]).length} KR{krsNeedingDisposition.filter(kr => !dispositions[kr.id]).length !== 1 ? 's' : ''} still need a decision
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8 }}>
+              <button onClick={() => setStep(2)} style={secondaryBtn}>← Back</button>
+              <button
+                onClick={krsNeedingDisposition.length === 0 ? () => setStep(4) : applyDispositions}
+                disabled={saving || !dispositionComplete}
+                style={{ ...primaryBtn, opacity: (saving || !dispositionComplete) ? .5 : 1 }}>
+                {saving ? 'Applying…' : 'Apply & Continue →'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 4: Retrospective ── */}
+        {step === 4 && (
           <div>
             <p style={{
               fontFamily: 'var(--font-body)', fontSize: 13.5, color: 'var(--navy-300)',
@@ -551,7 +704,7 @@ export default function QuarterCloseWizard({
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 32 }}>
-              <button onClick={() => setStep(2)} style={secondaryBtn}>← Back</button>
+              <button onClick={() => setStep(3)} style={secondaryBtn}>← Back</button>
               <button onClick={saveRetro} disabled={saving} style={{ ...primaryBtn, opacity: saving ? .6 : 1 }}>
                 {saving ? 'Saving…' : 'Save & Continue →'}
               </button>
@@ -559,8 +712,8 @@ export default function QuarterCloseWizard({
           </div>
         )}
 
-        {/* ── STEP 4: Seal & Archive ── */}
-        {step === 4 && (
+        {/* ── STEP 5: Seal & Archive ── */}
+        {step === 5 && (
           <div>
             {!sealed ? (
               <>
@@ -677,7 +830,7 @@ export default function QuarterCloseWizard({
                 )}
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <button onClick={() => setStep(3)} style={secondaryBtn}>← Back</button>
+                  <button onClick={() => setStep(4)} style={secondaryBtn}>← Back</button>
                   <button onClick={seal} disabled={saving} style={{
                     fontFamily: 'var(--font-body)', fontWeight: 700, fontSize: 14,
                     color: '#fff',
