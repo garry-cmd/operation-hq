@@ -1,7 +1,7 @@
 'use client'
 import React from 'react'
 import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, DriveFileIcon, LinkIcon } from './Icons'
-import { checkIsTauri, pickFile, pickFolder } from '@/lib/tauri'
+import { checkIsTauri, pickFile, pickFolder, shellOpen } from '@/lib/tauri'
 import { useEffect } from 'react'
 /**
  * ObjectivePanel — the "back of card" for an annual objective.
@@ -404,7 +404,7 @@ function RefRow({ link, onDelete }: { link: ObjectiveLink; onDelete: () => void 
         transition: 'border-color .12s',
         borderColor: hover ? 'var(--navy-500)' : 'var(--navy-600)',
       }}
-      onClick={() => window.open(link.url, '_blank', 'noopener,noreferrer')}
+      onClick={() => shellOpen(link.url)}
     >
       <span style={{ display:'inline-flex', alignItems:'center', flexShrink: 0 }}>{meta.icon}</span>
       <div style={{ flex: 1, minWidth: 0 }}>
