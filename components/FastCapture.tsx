@@ -7,7 +7,7 @@ import * as actionsDb from '@/lib/db/actions'
 import * as notesDb from '@/lib/db/notes'
 import { AnnualObjective, RoadmapItem, WeeklyAction, Space, Note } from '@/lib/types'
 import { ACTIVE_Q, COLORS } from '@/lib/utils'
-import { getCurrentQuarterKRs } from '@/lib/krFilters'
+import { getActiveKRs } from '@/lib/krFilters'
 import { spaceDisplayColorById } from '@/lib/spaceColor'
 import { textToTipTapDoc } from '@/lib/notes/textToDoc'
 
@@ -58,7 +58,7 @@ export default function FastCapture({
   const inputRef = useRef<HTMLInputElement>(null)
 
   const orderedSpaces = useMemo(() => [...spaces].sort((a, b) => a.sort_order - b.sort_order), [spaces])
-  const activeKRs = useMemo(() => getCurrentQuarterKRs(roadmapItems, ACTIVE_Q), [roadmapItems])
+  const activeKRs = useMemo(() => getActiveKRs(roadmapItems).filter(k => !k.is_habit), [roadmapItems])
   const activeObjs = useMemo(() => objectives.filter(o => o.status === 'active'), [objectives])
 
   useEffect(() => {
