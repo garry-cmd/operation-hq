@@ -73,6 +73,23 @@ export async function update(
   return data
 }
 
+/**
+ * Move an action to the backlog by explicitly NULLing week_start.
+ * update() with { week_start: null } works in Supabase JS v2 — PostgREST
+ * does send null keys in the PATCH — but we keep this as a named function
+ * so the intent is clear and it's easy to patch if behaviour changes.
+ */
+export async function unschedule(id: string): Promise<WeeklyAction> {
+  const { data, error } = await supabase
+    .from('weekly_actions')
+    .update({ week_start: null })
+    .eq('id', id)
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function remove(id: string): Promise<void> {
   const { error } = await supabase
     .from('weekly_actions')

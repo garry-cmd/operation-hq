@@ -419,7 +419,13 @@ export default function Home({
   }
   async function scheduleAction(a: WeeklyAction, week: string | null) {
     setActions(prev => prev.map(x => x.id === a.id ? { ...x, week_start: week } : x))
-    try { await actionsDb.update(a.id, { week_start: week }) }
+    try {
+      if (week === null) {
+        await actionsDb.unschedule(a.id)
+      } else {
+        await actionsDb.update(a.id, { week_start: week })
+      }
+    }
     catch { toast('Could not reschedule'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
   }
   async function setActionDuration(a: WeeklyAction, mins: number | null) {
@@ -1334,9 +1340,12 @@ export default function Home({
           .fcb{margin-top:2px;}
           .ftitle{flex:1 1 0;min-width:0;white-space:normal;}
           .fcarried{order:1;}
-          .frow-actions{display:flex;align-items:center;gap:8px;flex:0 0 100%;margin-left:22px;box-sizing:border-box;}
-          .fkrtag{max-width:none;flex:1 1 0;min-width:0;overflow:hidden;text-overflow:ellipsis;}
-          .frow .sched,.frow .flogchip{flex-shrink:0;}
+          .frow-actions{display:flex;align-items:center;gap:6px;flex:0 0 100%;margin-left:22px;box-sizing:border-box;flex-wrap:wrap;}
+          .fkrtag{max-width:140px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+          .frow .sched,.frow .flogchip,.frow .act-del{flex-shrink:0;}
+          .act{flex-wrap:wrap;row-gap:3px;}
+          .ameta{flex:0 0 100%;margin-left:22px;flex-wrap:wrap;gap:5px;}
+          .krtag{max-width:140px;}
         }
 
         /* key metric flip cards */
