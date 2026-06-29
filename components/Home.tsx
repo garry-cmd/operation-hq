@@ -843,8 +843,8 @@ export default function Home({
       <div key={obj.id} className="ocard" style={{ ['--oc']: oc } as CSSProperties}>
         <div className="exp">
           <div className="rail">
-            <div className="rail-top">
-              <span className="chev" onClick={() => toggleCollapse(obj.id)} title="Collapse">▾</span>
+            <div className="rail-top" onClick={() => toggleCollapse(obj.id)} title="Collapse">
+              <span className="chev">▾</span>
               <h3>{obj.name}</h3>
             </div>
             <div className="prog">
@@ -1516,7 +1516,8 @@ export default function Home({
         /* expanded: rail | KRs | actions */
         .exp{display:flex;}
         .rail{flex:0 0 220px;padding:15px 16px;border-left:3px solid var(--oc,var(--navy-500));border-right:1px solid var(--line);}
-        .rail-top{display:flex;align-items:flex-start;gap:8px;}
+        .rail-top{display:flex;align-items:flex-start;gap:8px;cursor:pointer;user-select:none;}
+        .rail-top:hover .chev{color:var(--navy-200);}
         .rail-top .chev{margin-top:5px;}
         .rail h3{margin:0;font-family:var(--font-display);font-weight:600;font-size:15px;color:var(--nw-cream);letter-spacing:-.01em;line-height:1.25;}
         .prog{margin:12px 0 0;}
@@ -1661,11 +1662,16 @@ export default function Home({
           .habits-cards{grid-template-columns:1fr;}
           .hcard{height:116px;}
           .vrow + .vrow{margin-top:12px;}
+          .exp{flex-direction:column;}
+          .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);border-left-width:4px;}
+          .act-col{flex:1 1 auto;border-left:none;border-top:1px solid var(--line);}
+          .col-name{max-width:200px;}
+          .col-row{padding:12px 14px;min-height:48px;}
+          .ohb{padding:6px 10px;font-size:15px;}
+          .addact{padding:10px 12px;font-size:13px;}
+          .rail-top{padding-bottom:4px;}
         }
         @media (max-width:760px){
-          .exp{flex-direction:column;}
-          .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);}
-          .act-col{flex:1 1 auto;border-left:none;border-top:1px solid var(--line);}
           .col-name{max-width:150px;}
         }
       `}</style>
