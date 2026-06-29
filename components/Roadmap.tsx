@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useEffect } from 'react'
+import { useIsMobile } from '@/lib/useIsMobile'
 import * as krsDb from '@/lib/db/krs'
 import * as objectivesDb from '@/lib/db/objectives'
 import { AnnualObjective, RoadmapItem } from '@/lib/types'
@@ -219,8 +220,12 @@ export default function Roadmap({
   const loadPct = Math.round((committedWeeks / CAPACITY_WEEKS) * 100)
   const loadCls = loadPct > 100 ? 'over' : loadPct > 80 ? 'warn' : 'ok'
 
-  const COLS = 'repeat(4, minmax(0, 1fr))'
-  const MIN_W = 480
+  const isMobile = useIsMobile()
+
+  const COLS = isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))'
+  const MIN_W = isMobile ? 0 : 480
+  // On mobile show only the single planning quarter; on desktop show all 4.
+  const VISIBLE_QUARTERS = isMobile ? [planningQ] : PLANNING_ROLLING
 
   return (
     <div>
@@ -362,12 +367,12 @@ export default function Roadmap({
           <span style={{ fontSize: 13 }}>Tap the + button to add your first objective.</span>
         </div>
       ) : (
-        <div style={{ overflowX: 'auto', paddingBottom: 8 }}>
-          <div style={{ minWidth: MIN_W }}>
+        <div style={{ overflowX: isMobile ? 'visible' : 'auto', paddingBottom: 8 }}>
+          <div style={{ minWidth: MIN_W || undefined }}>
 
             {/* ── Quarter column headers ── */}
             <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: 10 }}>
-              {PLANNING_ROLLING.map(q => (
+              {VISIBLE_QUARTERS.map(q => (
                 <div key={q} style={{
                   fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600,
                   letterSpacing: '.08em', textAlign: 'center', padding: '7px 6px',
@@ -389,8 +394,8 @@ export default function Roadmap({
               const span     = scopeSpan(inScope, PLANNING_ROLLING)
               const isCol    = !!collapsed[obj.id]
 
-              const hdrStart = span ? span.first + 1 : 1
-              const hdrEnd   = span ? span.last  + 2 : 5
+              const hdrStart = isMobile ? 1 : (span ? span.first + 1 : 1)
+              const hdrEnd   = isMobile ? 2 : (span ? span.last  + 2 : 5)
 
               const today = new Date(); today.setHours(0,0,0,0)
               const overdue  = !!(obj.end_date && parseDateLocal(obj.end_date) < today)
@@ -405,7 +410,7 @@ export default function Roadmap({
 
                   {/* Objective header row */}
                   <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: isCol ? 8 : 0 }}>
-                    {Array.from({ length: hdrStart - 1 }).map((_, i) => <div key={`pre-${i}`} />)}
+                    {!isMobile && Array.from({ length: hdrStart - 1 }).map((_, i) => <div key={`pre-${i}`} />)}
 
                     <div
                       onClick={() => toggleCollapse(obj.id)}
@@ -455,13 +460,13 @@ export default function Roadmap({
                       </button>
                     </div>
 
-                    {Array.from({ length: 4 - (hdrEnd - 1) }).map((_, i) => <div key={`post-${i}`} />)}
+                    {!isMobile && Array.from({ length: 4 - (hdrEnd - 1) }).map((_, i) => <div key={`post-${i}`} />)}
                   </div>
 
                   {/* KR cells row */}
                   {!isCol && (
                     <div style={{ display: 'grid', gridTemplateColumns: COLS, gap: 6, marginBottom: objIdx < activeObjs.length - 1 ? 12 : 0 }}>
-                      {PLANNING_ROLLING.map((q, qi) => {
+                      {VISIBLE_QUARTERS.map((q, qi) => {
                         const cellKey    = `${obj.id}:${q}`
                         const isInScope  = inScope.has(q)
                         const acceptsDrag = cellAcceptsDrag(obj.id, q)
