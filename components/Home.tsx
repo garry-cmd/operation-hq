@@ -412,10 +412,9 @@ export default function Home({
 
   // ── mutations ──
   async function toggleAction(a: WeeklyAction) {
-    try {
-      const updated = await actionsDb.update(a.id, { completed: !a.completed })
-      setActions(prev => prev.map(x => x.id === a.id ? updated : x))
-    } catch { toast('Could not update action') }
+    setActions(prev => prev.map(x => x.id === a.id ? { ...x, completed: !a.completed } : x))
+    try { await actionsDb.update(a.id, { completed: !a.completed }) }
+    catch { toast('Could not update action'); setActions(prev => prev.map(x => x.id === a.id ? a : x)) }
   }
   async function scheduleAction(a: WeeklyAction, week: string | null) {
     setActions(prev => prev.map(x => x.id === a.id ? { ...x, week_start: week } : x))
@@ -444,15 +443,18 @@ export default function Home({
   }
   async function toggleHabit(krId: string, date: string) {
     const existing = checkinSet.get(`${krId}:${date}`)
-    try {
-      if (existing) {
-        await checkinsDb.habit.remove(existing)
-        setHabitCheckins(prev => prev.filter(c => c.id !== existing))
-      } else {
+    if (existing) {
+      setHabitCheckins(prev => prev.filter(c => c.id !== existing))
+      try { await checkinsDb.habit.remove(existing) }
+      catch { toast('Could not update habit'); setHabitCheckins(prev => [...prev, { id: existing, roadmap_item_id: krId, date, completed: true, created_at: '' }]) }
+    } else {
+      const tempId = `temp-${krId}-${date}`
+      setHabitCheckins(prev => [...prev, { id: tempId, roadmap_item_id: krId, date, completed: true, created_at: '' }])
+      try {
         const created = await checkinsDb.habit.create(krId, date)
-        setHabitCheckins(prev => [...prev, created])
-      }
-    } catch { toast('Could not update habit') }
+        setHabitCheckins(prev => prev.map(c => c.id === tempId ? created : c))
+      } catch { toast('Could not update habit'); setHabitCheckins(prev => prev.filter(c => c.id !== tempId)) }
+    }
   }
   async function toggleKRDone(kr: RoadmapItem) {
     const next = kr.health_status === 'done' ? 'on_track' : 'done'
@@ -1337,7 +1339,8 @@ export default function Home({
           .focus-head .rule{display:none;}
           .dtoggle{order:4;margin-left:auto;}
           .frow{flex-wrap:wrap;row-gap:3px;align-items:flex-start;padding:8px 4px;}
-          .fcb{margin-top:2px;}
+          .fcb{margin-top:2px;min-width:36px;min-height:36px;}
+          .cb-sm{min-width:32px;min-height:32px;}
           .ftitle{flex:1 1 0;min-width:0;white-space:normal;}
           .fcarried{order:1;}
           .frow-actions{display:flex;align-items:center;gap:6px;flex:0 0 100%;margin-left:22px;box-sizing:border-box;flex-wrap:wrap;}
