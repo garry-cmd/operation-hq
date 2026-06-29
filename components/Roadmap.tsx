@@ -81,6 +81,9 @@ export default function Roadmap({
   const [modal, setModal]             = useState<ModalState>(null)
   const [draggingId, setDraggingId]   = useState<string | null>(null)
   const [dragOverCell, setDragOverCell] = useState<string | null>(null)
+  // null = no intra-column drag; string = chip id we're hovering over (insert before it)
+  // '__end__' = hovering past the last chip (insert at end)
+  const [dragOverChip, setDragOverChip] = useState<string | null>(null)
   const [collapsed, setCollapsed]     = useState<Record<string, boolean>>({})
 
   // Compute rolling quarters shifted by offset so planning can look one quarter ahead.
@@ -109,6 +112,29 @@ export default function Roadmap({
 
   function toggleCollapse(id: string) {
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }))
+  }
+
+  async function reorderKR(draggedId: string, targetId: string | '__end__', quarterItems: RoadmapItem[]) {
+    const draggedIdx = quarterItems.findIndex(i => i.id === draggedId)
+    const targetIdx  = targetId === '__end__' ? quarterItems.length : quarterItems.findIndex(i => i.id === targetId)
+    if (draggedIdx === -1 || draggedIdx === targetIdx || draggedIdx === targetIdx - 1) return
+
+    // Build new order: remove dragged, insert before target
+    const reordered = [...quarterItems]
+    const [dragged] = reordered.splice(draggedIdx, 1)
+    const insertAt  = targetId === '__end__' ? reordered.length : reordered.findIndex(i => i.id === targetId)
+    reordered.splice(insertAt, 0, dragged)
+
+    // Assign clean sequential sort_orders
+    const updates = reordered.map((item, idx) => ({ id: item.id, sort_order: idx * 10 }))
+    // Optimistic update
+    setRoadmapItems(prev => prev.map(i => {
+      const u = updates.find(u => u.id === i.id)
+      return u ? { ...i, sort_order: u.sort_order } : i
+    }))
+    try {
+      await Promise.all(updates.map(u => krsDb.update(u.id, { sort_order: u.sort_order })))
+    } catch { toast('Could not reorder') }
   }
 
   async function moveKR(itemId: string, quarter: string, obj: AnnualObjective) {
@@ -205,7 +231,7 @@ export default function Roadmap({
         </div>
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 26, fontWeight: 600, color: 'var(--navy-50)', margin: '0 0 4px 0', letterSpacing: '-.02em' }}>Roadmap</h1>
         <p style={{ fontSize: 12, color: 'var(--navy-400)', margin: 0 }}>
-          {draggingId ? '⊕ Drop in a quarter cell — same objective only' : 'Drag a KR between quarters · click objective header to collapse'}
+          {draggingId ? '⊕ Drop in a quarter cell to move · drop on a KR to reorder' : 'Drag a KR to reorder within a quarter or move between quarters'}
         </p>
       </div>
 
@@ -488,44 +514,72 @@ export default function Roadmap({
                             )}
                             {(() => {
                               const quarterItems = objItems.filter(i => i.quarter === q).sort((a, b) => a.sort_order - b.sort_order)
-                              return quarterItems.map((item, idx) => (
-                              <KRChip key={item.id} item={item} objColor={obj.color} quarter={q}
-                                dragging={draggingId === item.id}
-                                onDragStart={e => {
-                                  e.dataTransfer.setData('text/plain', item.id)
-                                  e.dataTransfer.effectAllowed = 'move'
-                                  setDraggingId(item.id)
-                                }}
-                                onDragEnd={_e => { setDraggingId(null); setDragOverCell(null) }}
-                                onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }) }}
-                                onEffortChange={async (size) => {
-                                  try {
-                                    const updated = await krsDb.update(item.id, { effort_size: size })
-                                    setRoadmapItems(prev => prev.map(i => i.id === item.id ? updated : i))
-                                  } catch { toast('Could not update effort') }
-                                }}
-                                onMoveUp={idx === 0 ? undefined : async () => {
-                                  const prev = quarterItems[idx - 1]
-                                  try {
-                                    const [a, b] = await Promise.all([
-                                      krsDb.update(item.id, { sort_order: prev.sort_order }),
-                                      krsDb.update(prev.id, { sort_order: item.sort_order }),
-                                    ])
-                                    setRoadmapItems(p => p.map(i => i.id === a.id ? a : i.id === b.id ? b : i))
-                                  } catch { toast('Could not reorder') }
-                                }}
-                                onMoveDown={idx === quarterItems.length - 1 ? undefined : async () => {
-                                  const next = quarterItems[idx + 1]
-                                  try {
-                                    const [a, b] = await Promise.all([
-                                      krsDb.update(item.id, { sort_order: next.sort_order }),
-                                      krsDb.update(next.id, { sort_order: item.sort_order }),
-                                    ])
-                                    setRoadmapItems(p => p.map(i => i.id === a.id ? a : i.id === b.id ? b : i))
-                                  } catch { toast('Could not reorder') }
-                                }}
-                              />
-                              ))
+                              return (<>
+                                {quarterItems.map((item) => {
+                                  const isSameQuarterDrag = draggingId !== null && draggingId !== item.id
+                                    && items.find(i => i.id === draggingId)?.quarter === q
+                                    && items.find(i => i.id === draggingId)?.annual_objective_id === obj.id
+                                  const showInsertBefore = isSameQuarterDrag && dragOverChip === item.id
+                                  return (
+                                    <div key={item.id}
+                                      onDragOver={e => {
+                                        if (draggingId && draggingId !== item.id) {
+                                          const draggedItem = items.find(i => i.id === draggingId)
+                                          if (draggedItem?.quarter === q && draggedItem?.annual_objective_id === obj.id) {
+                                            e.preventDefault(); e.stopPropagation()
+                                            e.dataTransfer.dropEffect = 'move'
+                                            if (dragOverChip !== item.id) setDragOverChip(item.id)
+                                          }
+                                        }
+                                      }}
+                                      onDragLeave={e => {
+                                        if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                                          if (dragOverChip === item.id) setDragOverChip(null)
+                                        }
+                                      }}
+                                      onDrop={e => {
+                                        const draggedItem = draggingId ? items.find(i => i.id === draggingId) : null
+                                        if (draggedItem?.quarter === q && draggedItem?.annual_objective_id === obj.id) {
+                                          e.preventDefault(); e.stopPropagation()
+                                          reorderKR(draggingId!, item.id, quarterItems)
+                                          setDragOverChip(null); setDraggingId(null)
+                                        }
+                                      }}
+                                      style={{ position: 'relative' }}>
+                                      {showInsertBefore && (
+                                        <div style={{ height: 2, background: 'var(--accent)', borderRadius: 2, margin: '2px 4px', opacity: 0.85 }} />
+                                      )}
+                                      <KRChip item={item} objColor={obj.color} quarter={q}
+                                        dragging={draggingId === item.id}
+                                        onDragStart={e => {
+                                          e.dataTransfer.setData('text/plain', item.id)
+                                          e.dataTransfer.effectAllowed = 'move'
+                                          setDraggingId(item.id)
+                                        }}
+                                        onDragEnd={_e => { setDraggingId(null); setDragOverCell(null); setDragOverChip(null) }}
+                                        onEdit={e => { e.stopPropagation(); setModal({ type: 'edit_kr', item }) }}
+                                        onEffortChange={async (size) => {
+                                          try {
+                                            const updated = await krsDb.update(item.id, { effort_size: size })
+                                            setRoadmapItems(prev => prev.map(i => i.id === item.id ? updated : i))
+                                          } catch { toast('Could not update effort') }
+                                        }}
+                                      />
+                                    </div>
+                                  )
+                                })}
+                                {/* Drop zone at end of list for appending */}
+                                {draggingId && items.find(i => i.id === draggingId)?.quarter === q
+                                  && items.find(i => i.id === draggingId)?.annual_objective_id === obj.id && (
+                                  <div
+                                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (dragOverChip !== '__end__') setDragOverChip('__end__') }}
+                                    onDragLeave={() => { if (dragOverChip === '__end__') setDragOverChip(null) }}
+                                    onDrop={e => { e.preventDefault(); e.stopPropagation(); reorderKR(draggingId!, '__end__', quarterItems); setDragOverChip(null); setDraggingId(null) }}
+                                    style={{ height: 20, display: 'flex', alignItems: 'center', padding: '0 4px' }}>
+                                    {dragOverChip === '__end__' && <div style={{ height: 2, background: 'var(--accent)', borderRadius: 2, width: '100%', opacity: 0.85 }} />}
+                                  </div>
+                                )}
+                              </>)
                             })()}
                             <AddKRBtn onClick={e => { e.stopPropagation(); setModal({ type: 'add_kr', objId: obj.id, quarter: q }) }} color={obj.color} />
                           </div>
@@ -614,15 +668,13 @@ const EFFORT_BG: Record<string, string> = {
   XL: 'rgba(255,100,82,.1)',
 }
 
-function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd, onEffortChange, onMoveUp, onMoveDown }: {
+function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDragEnd, onEffortChange }: {
   item: RoadmapItem; objColor: string; quarter: string
   dragging: boolean
   onEdit: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
   onEffortChange: (size: 'S' | 'M' | 'L' | 'XL' | null) => void | Promise<void>
-  onMoveUp?: () => void | Promise<void>
-  onMoveDown?: () => void | Promise<void>
 }) {
   const isActive   = quarter === ACTIVE_Q
   const isDone     = item.health_status === 'done'
@@ -683,37 +735,6 @@ function KRChip({ item, objColor, quarter, dragging, onEdit, onDragStart, onDrag
         }}>
         {effort ?? '—'}
       </button>
-      {/* Reorder buttons — ▲▼ within the same quarter column */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flexShrink: 0 }}>
-        <button
-          onClick={e => { e.stopPropagation(); onMoveUp?.() }}
-          onMouseDown={e => e.stopPropagation()}
-          draggable={false}
-          disabled={!onMoveUp}
-          title="Move up"
-          style={{
-            width: 16, height: 14, padding: 0, border: 'none', borderRadius: 3, cursor: onMoveUp ? 'pointer' : 'default',
-            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: onMoveUp ? 'var(--navy-300)' : 'var(--navy-600)', opacity: onMoveUp ? 0.8 : 0.3,
-            WebkitTapHighlightColor: 'transparent',
-          }}>
-          <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M4 1L1 5h6L4 1z" fill="currentColor"/></svg>
-        </button>
-        <button
-          onClick={e => { e.stopPropagation(); onMoveDown?.() }}
-          onMouseDown={e => e.stopPropagation()}
-          draggable={false}
-          disabled={!onMoveDown}
-          title="Move down"
-          style={{
-            width: 16, height: 14, padding: 0, border: 'none', borderRadius: 3, cursor: onMoveDown ? 'pointer' : 'default',
-            background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: onMoveDown ? 'var(--navy-300)' : 'var(--navy-600)', opacity: onMoveDown ? 0.8 : 0.3,
-            WebkitTapHighlightColor: 'transparent',
-          }}>
-          <svg width="8" height="6" viewBox="0 0 8 6" fill="none"><path d="M4 5L7 1H1L4 5z" fill="currentColor"/></svg>
-        </button>
-      </div>
       <button
         onClick={onEdit}
         onMouseDown={e => e.stopPropagation()}
