@@ -55,10 +55,10 @@ function quarterBounds(q: string): { start: string; end: string } | null {
   const n = +m[1], y = +m[2]
   return { start: ymd(new Date(y, (n - 1) * 3, 1)), end: ymd(new Date(y, n * 3, 0)) }
 }
-function scopedQuarters(obj: AnnualObjective): Set<string> {
-  if (!obj.start_date && !obj.end_date) return new Set(ROLLING)
+function scopedQuarters(obj: AnnualObjective, rolling: string[]): Set<string> {
+  if (!obj.start_date && !obj.end_date) return new Set(rolling)
   const out = new Set<string>()
-  for (const q of ROLLING) {
+  for (const q of rolling) {
     const b = quarterBounds(q)
     if (!b) continue
     if (obj.end_date && b.start > obj.end_date) continue
@@ -204,7 +204,7 @@ export default function Roadmap({
   // ── Capacity stats for the planning quarter ──
   const activeQItems = items.filter(i => i.quarter === planningQ && !i.is_habit)
   const activeQObjs  = activeObjs.filter(obj => {
-    const inScope = scopedQuarters(obj)
+    const inScope = scopedQuarters(obj, PLANNING_ROLLING)
     return inScope.has(planningQ) && activeQItems.some(i => i.annual_objective_id === obj.id)
   })
   const totalActiveObjs = activeQObjs.length
@@ -385,7 +385,7 @@ export default function Roadmap({
             {/* ── Objective rows ── */}
             {activeObjs.map((obj, objIdx) => {
               const objItems = items.filter(i => i.annual_objective_id === obj.id)
-              const inScope  = scopedQuarters(obj)
+              const inScope  = scopedQuarters(obj, PLANNING_ROLLING)
               const span     = scopeSpan(inScope, PLANNING_ROLLING)
               const isCol    = !!collapsed[obj.id]
 
@@ -843,7 +843,7 @@ function ObjModal({ obj, objectives, activeSpaceId, onClose, onSave, onAbandon, 
         {dateError && <div style={{ marginTop: 6, fontSize: 11, color: 'var(--nw-alarm-text)' }}>End date can't be before start date.</div>}
         {!dateError && (startDate || endDate) && (() => {
           const mockObj = { start_date: startDate || null, end_date: endDate || null } as AnnualObjective
-          const covered = ROLLING.filter(q => scopedQuarters(mockObj).has(q))
+          const covered = ROLLING.filter(q => scopedQuarters(mockObj, ROLLING).has(q))
           if (!covered.length) return null
           return (
             <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
