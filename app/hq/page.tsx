@@ -88,7 +88,10 @@ export default function HQPage() {
   const [quarterReviews, setQuarterReviews] = useState<QRType[]>([])
   const [habitSnapshots, setHabitSnapshots] = useState<import('@/lib/db/quarterReviews').QuarterHabitSnapshot[]>([])
   // 0 = show ACTIVE_Q window, 1 = show one quarter ahead (for post-close planning)
-  const [roadmapPlanningOffset, setRoadmapPlanningOffset] = useState(1)
+  const [roadmapPlanningOffset, setRoadmapPlanningOffset] = useState<number>(() => {
+    try { const v = window.localStorage.getItem('hq-roadmap-offset'); return v !== null ? Number(v) : 0 } catch { return 0 }
+  })
+  useEffect(() => { try { window.localStorage.setItem('hq-roadmap-offset', String(roadmapPlanningOffset)) } catch {} }, [roadmapPlanningOffset])
   const [links, setLinks] = useState<ObjectiveLink[]>([])
   const [logs, setLogs] = useState<ObjectiveLog[]>([])
   const [googleConnected, setGoogleConnected] = useState(false)
@@ -751,7 +754,7 @@ export default function HQPage() {
                 </button>
               </div>
             )}
-            {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} planningOffset={roadmapPlanningOffset} onResetPlanningOffset={() => setRoadmapPlanningOffset(0)} />}
+            {screen === 'roadmap' && <Roadmap objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} setObjectives={setObjectives} setRoadmapItems={setRoadmapItems} activeSpaceId={activeSpaceId} toast={setToast} initialKRId={initialKRId} onConsumeInitialKRId={() => setInitialKRId(null)} planningOffset={roadmapPlanningOffset} onSetPlanningOffset={setRoadmapPlanningOffset} />}
             {screen === 'reflect' && <Reflect reviews={reviews} setReviews={setReviews} quarterReviews={quarterReviews} habitSnapshots={habitSnapshots} spaces={spaces} weekForSpace={weekForSpace} onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })} onQuarterClose={(quarter, spaceId) => setQuarterClose({ quarter, spaceId })} roadmapItems={roadmapItems} metricCheckins={metricCheckins} habitCheckins={habitCheckins} onLogMetric={krId => setLoggingMetricKRId(krId)} toast={setToast} />}
             {screen === 'park'    && <ParkingLot objectives={spaceObjectives} roadmapItems={spaceRoadmapItems} activeSpaceId={activeSpaceId} setRoadmapItems={setRoadmapItems} toast={setToast} />}
           </>
@@ -863,8 +866,6 @@ export default function HQPage() {
             toast={setToast}
             onClose={() => setQuarterClose(null)}
             onSeal={async () => {
-              // Advance the roadmap planning window automatically after sealing.
-              setRoadmapPlanningOffset(prev => Math.min(prev + 1, 1))
               // Refresh the quarter reviews list so Reflect shows the new entry immediately.
               try {
                 const [fresh, freshSnaps] = await Promise.all([

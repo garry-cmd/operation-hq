@@ -18,9 +18,9 @@ type Props = {
   toast: (m: string) => void
   initialKRId?: string | null
   onConsumeInitialKRId?: () => void
-  // 0 = show ACTIVE_Q window, 1 = shifted one quarter forward (post-close planning)
+  // 0 = show ACTIVE_Q window; negative = past quarters; positive = future quarters
   planningOffset?: number
-  onResetPlanningOffset?: () => void
+  onSetPlanningOffset?: (offset: number) => void
 }
 
 type ModalState =
@@ -76,7 +76,7 @@ function scopeSpan(inScope: Set<string>, rolling: string[]): { first: number; la
 export default function Roadmap({
   objectives, roadmapItems, setObjectives, setRoadmapItems,
   activeSpaceId, toast, initialKRId, onConsumeInitialKRId,
-  planningOffset = 0, onResetPlanningOffset,
+  planningOffset = 0, onSetPlanningOffset,
 }: Props) {
   const [modal, setModal]             = useState<ModalState>(null)
   const [draggingId, setDraggingId]   = useState<string | null>(null)
@@ -292,31 +292,40 @@ export default function Roadmap({
 
           <div style={{ width: 1, height: 18, background: 'var(--line-2)', flexShrink: 0 }} />
 
-          {/* Planning mode indicator / reset */}
-          {planningOffset > 0 ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-              <span style={{
-                fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 700,
-                letterSpacing: '.06em', padding: '3px 8px', borderRadius: 6,
-                background: 'var(--accent-bg)', border: '1px solid var(--accent-line)',
-                color: 'var(--accent-2)', whiteSpace: 'nowrap',
-              }}>
-                📋 Planning {formatQ(planningQ)}
-              </span>
-              {onResetPlanningOffset && (
+          {/* Quarter window nav — ◀ ▶ to scroll the 4-quarter view */}
+          {onSetPlanningOffset && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <button
+                onClick={() => onSetPlanningOffset(planningOffset - 1)}
+                title="Shift view back one quarter"
+                style={{
+                  width: 28, height: 28, borderRadius: 7, border: '1px solid var(--line-2)',
+                  background: 'var(--surface-2)', color: 'var(--navy-300)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                  flexShrink: 0,
+                }}>◀</button>
+              {planningOffset !== 0 && (
                 <button
-                  onClick={onResetPlanningOffset}
+                  onClick={() => onSetPlanningOffset(0)}
+                  title={`Jump back to ${formatQ(ACTIVE_Q)}`}
                   style={{
-                    flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
-                    letterSpacing: '.04em', padding: '3px 8px', borderRadius: 6,
-                    background: 'var(--surface-2)', border: '1px solid var(--line-2)',
-                    color: 'var(--navy-400)', cursor: 'pointer', whiteSpace: 'nowrap',
-                  }}>
-                  ← Back to {formatQ(ACTIVE_Q)}
-                </button>
+                    fontFamily: 'var(--font-mono)', fontSize: 9.5, fontWeight: 600,
+                    letterSpacing: '.04em', padding: '4px 9px', borderRadius: 7, cursor: 'pointer',
+                    background: 'var(--accent-bg)', border: '1px solid var(--accent-line)',
+                    color: 'var(--accent-2)', whiteSpace: 'nowrap',
+                  }}>⚡ {formatQ(ACTIVE_Q)}</button>
               )}
+              <button
+                onClick={() => onSetPlanningOffset(planningOffset + 1)}
+                title="Shift view forward one quarter"
+                style={{
+                  width: 28, height: 28, borderRadius: 7, border: '1px solid var(--line-2)',
+                  background: 'var(--surface-2)', color: 'var(--navy-300)', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+                  flexShrink: 0,
+                }}>▶</button>
             </div>
-          ) : null}
+          )}
         </div>
       )}
 
