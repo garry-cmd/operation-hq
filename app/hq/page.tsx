@@ -772,6 +772,7 @@ export default function HQPage() {
           tasks={tasks}
           setTasks={setTasks}
           tagsByTask={tagsByTask}
+          setTagsByTask={setTagsByTask}
           toast={setToast}
         />
       ) : screen === 'profile' && !loading ? (

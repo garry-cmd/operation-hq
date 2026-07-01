@@ -98,6 +98,17 @@ export async function remove(id: string): Promise<void> {
 
 // ── Tags ──────────────────────────────────────────────────────────────────
 
+export async function setTags(taskId: string, tags: string[]): Promise<void> {
+  const clean = Array.from(new Set(tags.map(t => t.trim().toLowerCase()).filter(Boolean)))
+  const { error: delErr } = await supabase.from('task_tags').delete().eq('task_id', taskId)
+  if (delErr) throw delErr
+  if (clean.length === 0) return
+  const { error: insErr } = await supabase
+    .from('task_tags')
+    .insert(clean.map(tag => ({ task_id: taskId, tag })))
+  if (insErr) throw insErr
+}
+
 export async function listTagsForTasks(taskIds: string[]): Promise<TaskTag[]> {
   if (!taskIds.length) return []
   const { data, error } = await supabase

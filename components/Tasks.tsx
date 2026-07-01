@@ -49,6 +49,7 @@ type Scope =
   | { kind: 'inbox' }
   | { kind: 'all' }
   | { kind: 'space'; spaceId: string }
+  | { kind: 'tag'; tag: string }
 
 interface Props {
   spaces: Space[]
@@ -57,6 +58,7 @@ interface Props {
   tasks: Task[]
   setTasks: React.Dispatch<React.SetStateAction<Task[]>>
   tagsByTask: Record<string, string[]>
+  setTagsByTask: React.Dispatch<React.SetStateAction<Record<string, string[]>>>
   toast: (m: string) => void
 }
 
@@ -220,16 +222,24 @@ function TaskRow({ task, tags, spaces, roadmapItems, onToggle, onOpen }: {
 
 // ── task detail sheet ─────────────────────────────────────────────────────
 
-function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose }: {
+function TaskDetailSheet({ task, tags: initialTags, spaces, roadmapItems, onSave, onDelete, onClose }: {
   task: Task
   spaces: Space[]
   roadmapItems: RoadmapItem[]
-  onSave: (patch: Partial<Task>) => void
+  tags: string[]
+  onSave: (patch: Partial<Task>, tags: string[]) => void
   onDelete: () => void
   onClose: () => void
 }) {
   const [title, setTitle] = useState(task.title)
   const [description, setDescription] = useState(task.description ?? '')
+  const [tags, setTags] = useState<string[]>(initialTags)
+  const [tagDraft, setTagDraft] = useState('')
+  const commitTagDraft = () => {
+    const t = tagDraft.trim().toLowerCase().replace(/^#/, '')
+    if (t && !tags.includes(t)) setTags(prev => [...prev, t])
+    setTagDraft('')
+  }
   const [dueDate, setDueDate] = useState<string | null>(task.due_date)
   const [priority, setPriority] = useState<Task['priority']>(task.priority)
   const [spaceId, setSpaceId] = useState<string | null>(task.space_id)
@@ -253,7 +263,7 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
       priority,
       space_id: spaceId,
       roadmap_item_id: krId,
-    })
+    }, tags)
   }
 
   const LBL: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 7 }
@@ -350,6 +360,43 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
           </div>
         </div>
 
+        {/* tags */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={LBL}>Tags</div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+            {tags.map(tag => (
+              <span key={tag} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                fontSize: 12.5, fontWeight: 500, color: 'var(--accent)',
+                background: 'var(--accent-dim, rgba(77,143,255,.12))',
+                border: '1px solid rgba(77,143,255,.3)',
+                borderRadius: 8, padding: '7px 11px',
+              }}>
+                #{tag}
+                <button onClick={() => setTags(prev => prev.filter(x => x !== tag))} aria-label={`Remove ${tag}`} style={{
+                  background: 'none', border: 'none', cursor: 'pointer', color: 'inherit',
+                  padding: 0, fontSize: 13, lineHeight: 1, fontFamily: 'inherit', opacity: .75,
+                }}>×</button>
+              </span>
+            ))}
+            <input
+              value={tagDraft}
+              onChange={e => setTagDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitTagDraft() }
+                if (e.key === 'Backspace' && !tagDraft && tags.length) setTags(prev => prev.slice(0, -1))
+              }}
+              onBlur={commitTagDraft}
+              placeholder={tags.length ? 'Add…' : 'Add tag…'}
+              style={{
+                flex: 1, minWidth: 90, background: 'var(--navy-900)',
+                border: '1px solid var(--navy-600)', borderRadius: 8, padding: '8px 11px',
+                fontSize: 13, color: 'var(--navy-100)', fontFamily: 'inherit', outline: 'none',
+              }}
+            />
+          </div>
+        </div>
+
         {/* space */}
         <div style={{ marginBottom: 18 }}>
           <div style={LBL}>Space</div>
@@ -434,7 +481,7 @@ function SectionHeader({ label, count, collapsed, onToggle }: {
 
 // ── main component ────────────────────────────────────────────────────────
 
-export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setTasks, tagsByTask, toast }: Props) {
+export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setTasks, tagsByTask, setTagsByTask, toast }: Props) {
   const [scope, setScope] = useState<Scope>({ kind: 'today' })
   const [creating, setCreating] = useState(false)
   const [doneCollapsed, setDoneCollapsed] = useState(true)
@@ -443,6 +490,15 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
   const todayStr = today()
 
   // ── filter by scope ──
+  const allTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of tasks) {
+      if (t.completed_at) continue
+      for (const tag of tagsByTask[t.id] ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    }
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([tag]) => tag)
+  }, [tasks, tagsByTask])
+
   const filtered = useMemo(() => {
     const open = tasks.filter(t => !t.completed_at)
     const done = tasks.filter(t => !!t.completed_at)
@@ -466,6 +522,16 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
       const inbox = open.filter(t => !t.space_id && !t.list_id)
       return { overdue: [], today: [], upcoming: inbox, none: [], done: done.filter(t => !t.space_id && !t.list_id).slice(0, 5) }
     }
+    if (scope.kind === 'tag') {
+      const tg = open.filter(t => (tagsByTask[t.id] ?? []).includes(scope.tag))
+      return {
+        overdue: tg.filter(t => t.due_date && t.due_date < todayStr),
+        today:   tg.filter(t => t.due_date === todayStr),
+        upcoming: tg.filter(t => t.due_date && t.due_date > todayStr),
+        none:    tg.filter(t => !t.due_date),
+        done:    done.filter(t => (tagsByTask[t.id] ?? []).includes(scope.tag)).slice(0, 5),
+      }
+    }
     if (scope.kind === 'space') {
       const sp = open.filter(t => t.space_id === scope.spaceId)
       return {
@@ -484,7 +550,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
       none:    open.filter(t => !t.due_date),
       done:    done.slice(0, 10),
     }
-  }, [tasks, scope, todayStr])
+  }, [tasks, scope, todayStr, tagsByTask])
 
   const overdueCount = tasks.filter(t => !t.completed_at && t.due_date && t.due_date < todayStr).length
   const todayCount   = tasks.filter(t => !t.completed_at && t.due_date === todayStr).length
@@ -523,15 +589,23 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
     }
   }
 
-  async function handleSavePatch(task: Task, patch: Partial<Task>) {
+  async function handleSavePatch(task: Task, patch: Partial<Task>, tags: string[]) {
+    const prevTags = tagsByTask[task.id] ?? []
+    const clean = Array.from(new Set(tags.map(t => t.trim().toLowerCase()).filter(Boolean)))
+    const tagsChanged = JSON.stringify(clean) !== JSON.stringify(prevTags)
     // Optimistic
     setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...patch } : t))
+    if (tagsChanged) setTagsByTask(prev => ({ ...prev, [task.id]: clean }))
     setDetailTaskId(null)
     try {
-      const updated = await tasksDb.update(task.id, patch)
+      const [updated] = await Promise.all([
+        tasksDb.update(task.id, patch),
+        tagsChanged ? tasksDb.setTags(task.id, clean) : Promise.resolve(),
+      ])
       setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
     } catch {
       setTasks(prev => prev.map(t => t.id === task.id ? task : t))
+      if (tagsChanged) setTagsByTask(prev => ({ ...prev, [task.id]: prevTags }))
       toast('Failed to save task')
     }
   }
@@ -596,6 +670,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
           { s: { kind: 'inbox' } as Scope,   label: 'Inbox' },
           { s: { kind: 'all' } as Scope,     label: 'All' },
           ...spaces.map(sp => ({ s: { kind: 'space', spaceId: sp.id } as Scope, label: sp.name })),
+          ...allTags.map(tag => ({ s: { kind: 'tag', tag } as Scope, label: `#${tag}` })),
         ]).map(({ s, label, urgent }) => {
           const isActive = JSON.stringify(scope) === JSON.stringify(s)
           return (
@@ -678,9 +753,10 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
         <TaskDetailSheet
           key={detailTask.id}
           task={detailTask}
+          tags={tagsByTask[detailTask.id] ?? []}
           spaces={spaces}
           roadmapItems={roadmapItems}
-          onSave={patch => handleSavePatch(detailTask, patch)}
+          onSave={(patch, tags) => handleSavePatch(detailTask, patch, tags)}
           onDelete={() => { handleDelete(detailTask); setDetailTaskId(null) }}
           onClose={() => setDetailTaskId(null)}
         />
