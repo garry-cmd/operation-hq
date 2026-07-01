@@ -106,20 +106,20 @@ function InlineCreate({ onSave, onCancel, spaceId }: {
 
 // ── task row ──────────────────────────────────────────────────────────────
 
-function TaskRow({ task, tags, roadmapItems, onToggle, onDelete }: {
+function TaskRow({ task, tags, roadmapItems, onToggle, onOpen }: {
   task: Task
   tags: string[]
   roadmapItems: RoadmapItem[]
   onToggle: () => void
-  onDelete: () => void
+  onOpen: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const bucket = dueBucket(task)
   const kr = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
   const isDone = !!task.completed_at
+  const recurring = !!(task.recurrence_rule || task.recurrence_text)
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--navy-700)', position: 'relative' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--navy-700)' }}>
       {/* priority bar */}
       <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: PRIORITY_COLOR[task.priority] ?? 'transparent', flexShrink: 0, minHeight: 20 }} />
 
@@ -127,7 +127,7 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onDelete }: {
       <button
         onClick={onToggle}
         style={{
-          width: 20, height: 20, borderRadius: 5, flexShrink: 0, marginTop: 2,
+          width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 1,
           border: isDone ? 'none' : '1.5px solid var(--navy-500)',
           background: isDone ? 'var(--navy-600)' : 'transparent',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -140,8 +140,8 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onDelete }: {
         )}
       </button>
 
-      {/* body */}
-      <div style={{ flex: 1, minWidth: 0 }}>
+      {/* body — tap opens detail sheet */}
+      <button onClick={onOpen} style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', fontFamily: 'inherit' }}>
         <div style={{
           fontSize: 13, color: isDone ? 'var(--navy-500)' : 'var(--navy-100)',
           lineHeight: 1.35,
@@ -151,11 +151,15 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onDelete }: {
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
           {task.due_date && (
             <span style={{
-              fontSize: 10, fontFamily: 'monospace',
+              fontSize: 10, fontFamily: 'monospace', display: 'inline-flex', alignItems: 'center', gap: 3,
               color: bucket === 'overdue' ? '#ff6452' : bucket === 'today' ? '#f5b840' : 'var(--navy-400)',
             }}>
+              {recurring && <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 11 }}>↻</span>}
               {relDate(task.due_date)}
             </span>
+          )}
+          {!task.due_date && recurring && (
+            <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 11, color: 'var(--navy-400)' }}>↻</span>
           )}
           {kr && (
             <span style={{ fontSize: 9, color: 'var(--accent)', background: 'rgba(77,143,255,.12)', borderRadius: 3, padding: '1px 5px' }}>
@@ -168,27 +172,181 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onDelete }: {
             </span>
           ))}
         </div>
-      </div>
-
-      {/* overflow */}
-      <button
-        onClick={() => setMenuOpen(o => !o)}
-        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--navy-500)', padding: '2px 4px', marginTop: 1 }}
-      >⋯</button>
-      {menuOpen && (
-        <div style={{
-          position: 'absolute', right: 16, top: 32, zIndex: 10,
-          background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
-          borderRadius: 8, padding: 4, minWidth: 120,
-          boxShadow: '0 4px 16px rgba(0,0,0,.4)',
-        }}>
-          <button
-            onClick={() => { setMenuOpen(false); onDelete() }}
-            style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: '7px 12px', fontSize: 12, color: '#ff6452' }}
-          >Delete</button>
-        </div>
-      )}
+      </button>
     </div>
+  )
+}
+
+// ── task detail sheet ─────────────────────────────────────────────────────
+
+function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose }: {
+  task: Task
+  spaces: Space[]
+  roadmapItems: RoadmapItem[]
+  onSave: (patch: Partial<Task>) => void
+  onDelete: () => void
+  onClose: () => void
+}) {
+  const [title, setTitle] = useState(task.title)
+  const [dueDate, setDueDate] = useState<string | null>(task.due_date)
+  const [priority, setPriority] = useState<Task['priority']>(task.priority)
+  const [spaceId, setSpaceId] = useState<string | null>(task.space_id)
+  const [krId, setKrId] = useState<string | null>(task.roadmap_item_id)
+
+  const t = new Date(); t.setHours(0, 0, 0, 0)
+  const iso = (d: Date) => d.toISOString().slice(0, 10)
+  const tomorrow = new Date(t); tomorrow.setDate(t.getDate() + 1)
+  const nextMonday = new Date(t); nextMonday.setDate(t.getDate() + ((8 - t.getDay()) % 7 || 7))
+
+  const activeKRs = roadmapItems
+    .filter(r => r.status !== 'abandoned' && r.health_status !== 'done' && r.health_status !== 'failed')
+    .filter(r => !spaceId || r.space_id === spaceId)
+    .sort((a, b) => a.title.localeCompare(b.title))
+
+  function save() {
+    onSave({
+      title: title.trim() || task.title,
+      due_date: dueDate,
+      priority,
+      space_id: spaceId,
+      roadmap_item_id: krId,
+    })
+  }
+
+  const LBL: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 7 }
+  const CHIP = (active: boolean): React.CSSProperties => ({
+    fontSize: 11.5, fontWeight: 500, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
+    border: active ? '1px solid rgba(77,143,255,.4)' : '1px solid var(--navy-600)',
+    background: active ? 'rgba(77,143,255,.14)' : 'transparent',
+    color: active ? 'var(--accent)' : 'var(--navy-300)',
+  })
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.55)' }} />
+      <div style={{
+        position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 71,
+        background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)',
+        borderRadius: '18px 18px 0 0',
+        padding: '18px 18px calc(20px + env(safe-area-inset-bottom, 0px))',
+        maxHeight: '85vh', overflowY: 'auto',
+        animation: 'sheetUp .18s ease',
+      }}>
+        {/* grabber */}
+        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--navy-600)', margin: '0 auto 16px' }} />
+
+        {/* title */}
+        <input
+          value={title}
+          onChange={e => setTitle(e.target.value)}
+          style={{
+            width: '100%', boxSizing: 'border-box', background: 'var(--navy-900)',
+            border: '1px solid var(--navy-600)', borderRadius: 10, padding: '12px 14px',
+            fontSize: 15, fontWeight: 600, color: 'var(--navy-50)', fontFamily: 'inherit',
+            outline: 'none', marginBottom: 18,
+          }}
+        />
+
+        {/* due date */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={LBL}>Due</div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button style={CHIP(dueDate === iso(t))} onClick={() => setDueDate(iso(t))}>Today</button>
+            <button style={CHIP(dueDate === iso(tomorrow))} onClick={() => setDueDate(iso(tomorrow))}>Tomorrow</button>
+            <button style={CHIP(dueDate === iso(nextMonday))} onClick={() => setDueDate(iso(nextMonday))}>Next week</button>
+            <input
+              type="date"
+              value={dueDate ?? ''}
+              onChange={e => setDueDate(e.target.value || null)}
+              style={{
+                background: 'var(--navy-900)', border: '1px solid var(--navy-600)', borderRadius: 8,
+                padding: '6px 9px', fontSize: 12, color: 'var(--navy-100)', fontFamily: 'inherit', colorScheme: 'dark',
+              }}
+            />
+            {dueDate && (
+              <button style={{ ...CHIP(false), color: 'var(--navy-400)' }} onClick={() => setDueDate(null)}>Clear</button>
+            )}
+          </div>
+          {(task.recurrence_text || task.recurrence_rule) && (
+            <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--navy-400)', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <span style={{ fontSize: 13 }}>↻</span> Repeats {task.recurrence_text ?? ''} — completing rolls the date forward
+            </div>
+          )}
+        </div>
+
+        {/* priority */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={LBL}>Priority</div>
+          <div style={{ display: 'flex', gap: 7 }}>
+            {([1, 2, 3, 4] as const).map(p => (
+              <button key={p}
+                onClick={() => setPriority(p)}
+                style={{
+                  flex: 1, padding: '9px 0', borderRadius: 8, cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, fontFamily: 'inherit',
+                  border: priority === p ? `1.5px solid ${PRIORITY_COLOR[p] === 'transparent' ? 'var(--navy-400)' : PRIORITY_COLOR[p]}` : '1px solid var(--navy-600)',
+                  background: priority === p ? 'var(--navy-900)' : 'transparent',
+                  color: PRIORITY_COLOR[p] === 'transparent' ? 'var(--navy-300)' : PRIORITY_COLOR[p],
+                }}
+              >P{p}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* space */}
+        <div style={{ marginBottom: 18 }}>
+          <div style={LBL}>Space</div>
+          <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+            <button style={CHIP(spaceId === null)} onClick={() => { setSpaceId(null); setKrId(null) }}>Inbox</button>
+            {spaces.map(sp => (
+              <button key={sp.id} style={CHIP(spaceId === sp.id)} onClick={() => { setSpaceId(sp.id); if (krId && roadmapItems.find(r => r.id === krId)?.space_id !== sp.id) setKrId(null) }}>
+                {sp.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* KR link */}
+        <div style={{ marginBottom: 22 }}>
+          <div style={LBL}>Linked KR</div>
+          <select
+            value={krId ?? ''}
+            onChange={e => setKrId(e.target.value || null)}
+            style={{
+              width: '100%', boxSizing: 'border-box', background: 'var(--navy-900)',
+              border: '1px solid var(--navy-600)', borderRadius: 8, padding: '10px 12px',
+              fontSize: 13, color: 'var(--navy-100)', fontFamily: 'inherit',
+            }}
+          >
+            <option value="">None</option>
+            {activeKRs.map(kr => (
+              <option key={kr.id} value={kr.id}>{kr.title}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* actions */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={() => { if (confirm('Delete this task?')) onDelete() }}
+            style={{
+              padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,100,82,.3)',
+              background: 'transparent', color: '#ff6452', fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >Delete</button>
+          <button
+            onClick={save}
+            style={{
+              flex: 1, padding: '12px 16px', borderRadius: 10, border: 'none',
+              background: 'var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600,
+              cursor: 'pointer', fontFamily: 'inherit',
+            }}
+          >Save</button>
+        </div>
+      </div>
+      <style>{`@keyframes sheetUp { from { transform: translateY(40px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }`}</style>
+    </>
   )
 }
 
@@ -223,6 +381,8 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
   const [scope, setScope] = useState<Scope>({ kind: 'today' })
   const [creating, setCreating] = useState(false)
   const [doneCollapsed, setDoneCollapsed] = useState(true)
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null)
+  const detailTask = detailTaskId ? tasks.find(t => t.id === detailTaskId) ?? null : null
   const todayStr = today()
 
   // ── filter by scope ──
@@ -306,6 +466,33 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
     }
   }
 
+  async function handleSavePatch(task: Task, patch: Partial<Task>) {
+    // Optimistic
+    setTasks(prev => prev.map(t => t.id === task.id ? { ...t, ...patch } : t))
+    setDetailTaskId(null)
+    try {
+      const updated = await tasksDb.update(task.id, patch)
+      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
+    } catch {
+      setTasks(prev => prev.map(t => t.id === task.id ? task : t))
+      toast('Failed to save task')
+    }
+  }
+
+  async function rescheduleOverdueToToday() {
+    const overdue = tasks.filter(t => !t.completed_at && t.due_date && t.due_date < todayStr)
+    if (!overdue.length) return
+    // Optimistic
+    setTasks(prev => prev.map(t => overdue.some(o => o.id === t.id) ? { ...t, due_date: todayStr } : t))
+    try {
+      await Promise.all(overdue.map(t => tasksDb.update(t.id, { due_date: todayStr })))
+      toast(`${overdue.length} task${overdue.length > 1 ? 's' : ''} moved to today`)
+    } catch {
+      setTasks(prev => prev.map(t => { const orig = overdue.find(o => o.id === t.id); return orig ?? t }))
+      toast('Failed to reschedule')
+    }
+  }
+
   function renderTask(task: Task) {
     return (
       <TaskRow
@@ -314,14 +501,24 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
         tags={tagsByTask[task.id] ?? []}
         roadmapItems={roadmapItems}
         onToggle={() => handleToggle(task)}
-        onDelete={() => handleDelete(task)}
+        onOpen={() => setDetailTaskId(task.id)}
       />
     )
   }
 
   const allSections = [
     ...(filtered.overdue.length > 0 ? [
-      <SectionHeader key="ov-h" label="Overdue" count={filtered.overdue.length} />,
+      <div key="ov-h" style={{ display: 'flex', alignItems: 'center' }}>
+        <div style={{ flex: 1 }}><SectionHeader label="Overdue" count={filtered.overdue.length} /></div>
+        <button
+          onClick={rescheduleOverdueToToday}
+          style={{
+            marginRight: 16, fontSize: 10.5, fontWeight: 600, color: 'var(--accent)',
+            background: 'rgba(77,143,255,.1)', border: '1px solid rgba(77,143,255,.25)',
+            borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+          }}
+        >→ Today</button>
+      </div>,
       ...filtered.overdue.map(renderTask),
     ] : []),
     ...(filtered.today.length > 0 ? [
@@ -431,6 +628,19 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
           </>
         )}
       </div>
+
+      {/* Detail sheet */}
+      {detailTask && (
+        <TaskDetailSheet
+          key={detailTask.id}
+          task={detailTask}
+          spaces={spaces}
+          roadmapItems={roadmapItems}
+          onSave={patch => handleSavePatch(detailTask, patch)}
+          onDelete={() => { handleDelete(detailTask); setDetailTaskId(null) }}
+          onClose={() => setDetailTaskId(null)}
+        />
+      )}
     </div>
   )
 }
