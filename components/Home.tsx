@@ -278,10 +278,10 @@ export default function Home({
   }, [displayQ])
 
   const displayQHabitCheckins = useMemo(() => {
-    if (!activeQSealed || !displayQStart) return habitCheckins
+    if (!displayQStart) return habitCheckins
     const startStr = displayQStart.toISOString().slice(0, 10)
     return habitCheckins.filter(c => c.date >= startStr)
-  }, [habitCheckins, activeQSealed, displayQStart])
+  }, [habitCheckins, displayQStart])
   const checkinSet = useMemo(() => {
     const m = new Map<string, string>()
     for (const c of habitCheckins) m.set(`${c.roadmap_item_id}:${c.date}`, c.id)
