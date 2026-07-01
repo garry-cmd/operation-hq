@@ -46,7 +46,7 @@ import Tasks from '@/components/Tasks'
 import * as tasksDb from '@/lib/db/tasks'
 import type { Task, TaskTag } from '@/lib/types'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'notes' | 'files' | 'tags' | 'settings' | 'tasks'
+type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'notes' | 'files' | 'tags' | 'settings' | 'tasks' | 'profile'
 
 
 export default function HQPage() {
@@ -612,7 +612,7 @@ export default function HQPage() {
       />
       )}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0, paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom, 0px))' : 0 }}>
       {/* Mobile-only bottom nav — replaces the hamburger/drawer on small screens.
           Five primary tabs; secondary screens (Reflect, Settings, etc.) accessible
           via NavRail which still renders as a slide-in drawer when triggered from
@@ -658,7 +658,15 @@ export default function HQPage() {
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
             </svg>
           )},
+          { id: 'profile', label: 'Me', icon: (
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke={ICON_COLOR(screen === 'profile' || screen === 'settings' || screen === 'reflect' || screen === 'park' || screen === 'files' || screen === 'tags')} strokeWidth="1.7">
+              <circle cx="12" cy="8" r="4"/>
+              <path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6"/>
+            </svg>
+          )},
         ]
+        const profileSubs: Screen[] = ['profile', 'settings', 'reflect', 'park', 'files', 'tags']
+        const isTabActive = (id: Screen) => id === 'profile' ? profileSubs.includes(screen) : screen === id
         return (
           <div style={{
             position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
@@ -672,21 +680,19 @@ export default function HQPage() {
             alignItems: 'flex-start',
           }}>
             {tabs.map(tab => (
-              <button key={tab.id} style={TAB_STYLE(screen === tab.id)} onClick={() => goToScreen(tab.id)}>
+              <button key={tab.id} style={TAB_STYLE(isTabActive(tab.id))} onClick={() => goToScreen(tab.id)}>
                 {tab.badge ? (
                   <div style={{ position: 'absolute', top: 6, right: 'calc(50% - 18px)', background: '#ff6452', color: '#fff', fontSize: 8, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '1.5px solid var(--navy-900)' }}>
                     {tab.badge}
                   </div>
                 ) : null}
-                <div style={{ color: ICON_COLOR(screen === tab.id) }}>{tab.icon}</div>
-                <span style={{ fontSize: 10, fontWeight: 500, color: LABEL_COLOR(screen === tab.id), letterSpacing: '.01em' }}>{tab.label}</span>
+                <div style={{ color: ICON_COLOR(isTabActive(tab.id)) }}>{tab.icon}</div>
+                <span style={{ fontSize: 10, fontWeight: 500, color: LABEL_COLOR(isTabActive(tab.id)), letterSpacing: '.01em' }}>{tab.label}</span>
               </button>
             ))}
           </div>
         )
       })()}
-      {/* Spacer so content isn't hidden behind bottom nav on mobile */}
-      {isMobile && <div style={{ height: 'calc(64px + env(safe-area-inset-bottom, 0px))' }} />}
       {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}
@@ -756,6 +762,66 @@ export default function HQPage() {
           tagsByTask={tagsByTask}
           toast={setToast}
         />
+      ) : screen === 'profile' && !loading ? (
+        <main style={{ padding: '20px 16px', width: '100%', maxWidth: 600, margin: '0 auto' }}>
+          {/* Identity block */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+            <div style={{
+              width: 52, height: 52, borderRadius: '50%',
+              background: 'var(--accent)', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 19, fontWeight: 700, letterSpacing: '.02em',
+            }}>{initials}</div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--navy-50)' }}>Garry</div>
+              <div style={{ fontSize: 12, color: 'var(--navy-400)' }}>{user?.email ?? ''}</div>
+            </div>
+          </div>
+
+          {/* Menu groups */}
+          {([
+            { label: 'Screens', items: [
+              { label: 'Reflect', icon: '◷', action: () => goToScreen('reflect') },
+              { label: 'Parking', icon: '⊟', action: () => goToScreen('park') },
+              { label: 'Files', icon: '⊞', action: () => goToScreen('files') },
+              { label: 'Tags', icon: '#', action: () => goToScreen('tags') },
+            ]},
+            { label: 'Preferences', items: [
+              { label: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode', icon: theme === 'dark' ? '☀' : '☾', action: toggleTheme },
+              { label: 'Settings', icon: '⚙', action: () => goToScreen('settings') },
+            ]},
+            { label: 'Account', items: [
+              { label: 'Copy share link', icon: '⧉', action: copyShareLink },
+              { label: 'Sign out', icon: '→', action: () => supabase.auth.signOut(), danger: true },
+            ]},
+          ] as { label: string; items: { label: string; icon: string; action: () => void; danger?: boolean }[] }[]).map(group => (
+            <div key={group.label} style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 8, paddingLeft: 2 }}>
+                {group.label}
+              </div>
+              <div style={{ background: 'var(--navy-800)', border: '1px solid var(--navy-600)', borderRadius: 12, overflow: 'hidden' }}>
+                {group.items.map((item, i) => (
+                  <button
+                    key={item.label}
+                    onClick={item.action}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      width: '100%', padding: '14px 16px',
+                      background: 'none', border: 'none', cursor: 'pointer',
+                      borderTop: i > 0 ? '1px solid var(--navy-700)' : 'none',
+                      fontSize: 14, color: item.danger ? '#ff6452' : 'var(--navy-100)',
+                      fontFamily: 'inherit', textAlign: 'left',
+                    }}
+                  >
+                    <span style={{ width: 22, textAlign: 'center', fontSize: 15, color: item.danger ? '#ff6452' : 'var(--navy-400)' }}>{item.icon}</span>
+                    <span style={{ flex: 1 }}>{item.label}</span>
+                    <span style={{ color: 'var(--navy-500)', fontSize: 13 }}>›</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </main>
       ) : screen === 'files' && !loading ? (
         <Files
           spaces={spaces}

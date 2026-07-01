@@ -90,7 +90,6 @@ export default function Notes({
   const [filterDateTo, setFilterDateTo] = useState<string | null>(null)
   const isMobile = useIsMobile(900)
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
-  const [mobileListOpen, setMobileListOpen] = useState(false)
 
   useEffect(() => {
     if (!initialNoteId) return
@@ -346,45 +345,45 @@ export default function Notes({
       display: isMobile ? 'flex' : 'grid',
       flexDirection: isMobile ? 'column' : undefined,
       gridTemplateColumns: isMobile ? undefined : fullscreen ? '0 0 1fr' : '240px 300px 1fr',
-      height: isMobile ? 'calc(100vh - 48px - max(0px, env(safe-area-inset-top)))' : 'calc(100vh - 0px)', minHeight: 0,
+      height: isMobile ? 'calc(100vh - 64px - env(safe-area-inset-bottom, 0px) - env(safe-area-inset-top, 0px))' : 'calc(100vh - 0px)', minHeight: 0,
       transition: 'grid-template-columns .2s ease',
       fontFamily: 'var(--font-body)',
     }}>
 
-      {/* Mobile openers */}
-      {isMobile && (
-        <div style={{ display: 'flex', borderBottom: `1px solid ${BORDER}`, background: SIDEBAR_BG, flexShrink: 0 }}>
-          {(['Notebooks', 'Notes'] as const).map((label, i) => {
-            const open = i === 0 ? mobileTreeOpen : mobileListOpen
-            const toggle = i === 0
-              ? () => { setMobileTreeOpen(o => !o); setMobileListOpen(false) }
-              : () => { setMobileListOpen(o => !o); setMobileTreeOpen(false) }
-            return (
-              <button key={label} onClick={toggle} style={{
-                flex: 1, padding: '10px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                ...LABEL_STYLE, background: open ? 'var(--hover)' : 'transparent',
-                border: 'none', borderRight: i === 0 ? `1px solid ${BORDER}` : 'none', cursor: 'pointer',
-              }}>
-                <span>{label}</span>
-                <svg width="11" height="11" viewBox="0 0 12 12" fill="none" style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
-                  <path d="M3 5l3 3 3-3" stroke="var(--t-3)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {/* Mobile: Evernote-style — the note LIST is the primary view; tapping a
+          note opens a fullscreen editor with a ← back bar; the scope title in
+          the list header opens the notebook browser as a fullscreen sheet.
+          mobileTreeOpen doubles as the sheet toggle. */}
 
       {/* ── LEFT SIDEBAR ── */}
       <aside style={{
         background: SIDEBAR_BG,
         borderRight: (fullscreen || isMobile) ? 'none' : `1px solid ${BORDER}`,
-        borderBottom: isMobile ? `1px solid ${BORDER}` : 'none',
         overflow: fullscreen ? 'hidden' : 'auto',
         visibility: fullscreen ? 'hidden' : 'visible',
-        ...(isMobile ? { display: mobileTreeOpen ? 'block' : 'none', maxHeight: '60vh', flexShrink: 0 } : {}),
+        ...(isMobile ? {
+          display: mobileTreeOpen ? 'block' : 'none',
+          position: 'fixed', inset: 0, zIndex: 60,
+          paddingTop: 'max(10px, env(safe-area-inset-top))',
+          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        } : {}),
       }}
         onClick={isMobile ? () => setMobileTreeOpen(false) : undefined}>
+
+        {/* Mobile sheet header */}
+        {isMobile && (
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '8px 14px 10px', borderBottom: `1px solid ${BORDER}`,
+          }}>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--t-0)' }}>Browse</span>
+            <button onClick={e => { e.stopPropagation(); setMobileTreeOpen(false) }} style={{
+              width: 32, height: 32, borderRadius: '50%', border: 'none',
+              background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
+              fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>✕</button>
+          </div>
+        )}
 
         {/* SMART VIEWS */}
         <div style={{ padding: '14px 14px 8px' }}>
@@ -490,11 +489,10 @@ export default function Notes({
       <section style={{
         background: LIST_BG,
         borderRight: (fullscreen || isMobile) ? 'none' : `1px solid ${BORDER}`,
-        borderBottom: isMobile ? `1px solid ${BORDER}` : 'none',
         overflow: fullscreen ? 'hidden' : 'auto',
         visibility: fullscreen ? 'hidden' : 'visible',
         display: 'flex', flexDirection: 'column',
-        ...(isMobile ? { display: mobileListOpen ? 'flex' : 'none', maxHeight: '60vh', flexShrink: 0 } : {}),
+        ...(isMobile ? { display: selectedNoteId ? 'none' : 'flex', flex: 1, minHeight: 0 } : {}),
       }}>
         {/* List header — sticky */}
         <div style={{
@@ -502,9 +500,17 @@ export default function Notes({
           padding: '12px 14px 10px', borderBottom: `1px solid ${BORDER}`,
           position: 'sticky', top: 0, background: LIST_BG, zIndex: 2, flexShrink: 0,
         }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--t-0)', lineHeight: 1.2 }}>
+          <div
+            onClick={isMobile ? () => setMobileTreeOpen(true) : undefined}
+            style={isMobile ? { cursor: 'pointer' } : undefined}
+          >
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--t-0)', lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 6 }}>
               {middleHeading}
+              {isMobile && (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M3 5l3 3 3-3" stroke="var(--t-3)" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
             </div>
             <div style={{ ...MONO_COUNT, marginTop: 2 }}>{filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}</div>
           </div>
@@ -651,7 +657,7 @@ export default function Notes({
               const tags = tagsByNote.get(note.id) ?? []
               const sel = selectedNoteId === note.id
               return (
-                <button key={note.id} onClick={() => { setSelectedNoteId(note.id); if (isMobile) setMobileListOpen(false) }}
+                <button key={note.id} onClick={() => setSelectedNoteId(note.id)}
                   style={{
                     display: 'grid', gridTemplateColumns: '1fr 72px 72px 96px',
                     alignItems: 'center', width: '100%', padding: '0 12px', height: 36,
@@ -703,7 +709,7 @@ export default function Notes({
                 note={note}
                 tags={tagsByNote.get(note.id) ?? []}
                 selected={selectedNoteId === note.id}
-                onClick={() => { setSelectedNoteId(note.id); if (isMobile) setMobileListOpen(false) }}
+                onClick={() => setSelectedNoteId(note.id)}
                 onTagClick={onJumpToTag}
               />
             ))}
@@ -715,8 +721,33 @@ export default function Notes({
       <section style={{
         overflowY: 'auto',
         background: 'var(--bg)',
-        ...(isMobile ? { flex: 1, minHeight: 0 } : {}),
+        ...(isMobile ? {
+          display: selectedNoteId ? 'flex' : 'none',
+          flexDirection: 'column',
+          flex: 1, minHeight: 0,
+        } : {}),
       }}>
+        {/* Mobile back bar — Evernote-style return to list */}
+        {isMobile && selectedNote && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 12px', borderBottom: `1px solid ${BORDER}`,
+            background: 'var(--bg)', flexShrink: 0,
+            position: 'sticky', top: 0, zIndex: 5,
+          }}>
+            <button onClick={() => setSelectedNoteId(null)} style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: 'var(--accent)', fontSize: 14, fontWeight: 500,
+              padding: '6px 4px', fontFamily: 'inherit',
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+              {middleHeading}
+            </button>
+          </div>
+        )}
         {selectedNote ? (
           <NoteEditor
             key={selectedNote.id}
