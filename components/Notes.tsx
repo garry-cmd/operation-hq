@@ -90,6 +90,7 @@ export default function Notes({
   const [filterDateTo, setFilterDateTo] = useState<string | null>(null)
   const isMobile = useIsMobile(900)
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   // Mobile: land on the Browse screen when Notes opens (Evernote-style).
   // Runs once when isMobile resolves true after mount; skipped when a
   // deep-link (initialNoteId) is about to select a note directly.
@@ -386,11 +387,22 @@ export default function Notes({
             padding: '8px 14px 10px', borderBottom: `1px solid ${BORDER}`,
           }}>
             <span style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--t-0)' }}>Browse</span>
-            <button onClick={e => { e.stopPropagation(); setMobileTreeOpen(false) }} style={{
-              width: 32, height: 32, borderRadius: '50%', border: 'none',
-              background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
-              fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>✕</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={e => { e.stopPropagation(); setSearchOpen(true) }} aria-label="Search notes" style={{
+                width: 32, height: 32, borderRadius: '50%', border: 'none',
+                background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+                </svg>
+              </button>
+              <button onClick={e => { e.stopPropagation(); setMobileTreeOpen(false) }} style={{
+                width: 32, height: 32, borderRadius: '50%', border: 'none',
+                background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
+                fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>✕</button>
+            </div>
           </div>
         )}
 
@@ -664,6 +676,17 @@ export default function Notes({
             <div style={{ ...MONO_COUNT, marginTop: 2 }}>{filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}</div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            {isMobile && (
+              <button onClick={() => setSearchOpen(true)} aria-label="Search notes" style={{
+                width: 26, height: 26, border: 'none', borderRadius: 5,
+                background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              }}>
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                  <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+                </svg>
+              </button>
+            )}
             {scope.kind !== 'tag' && (
               <button onClick={onCreateNote} title="New note" style={{
                 width: 26, height: 26, border: 'none', borderRadius: 5,
@@ -929,6 +952,215 @@ export default function Notes({
           onCancel={() => setNewNotebookFor(null)}
         />
       )}
+
+      {searchOpen && (
+        <NoteSearchScreen
+          notes={notes}
+          spaces={spaces}
+          notebooks={notebooks}
+          tagsByNote={tagsByNote}
+          onOpen={(note) => {
+            if (note.notebook_id) setScope({ kind: 'notebook', notebookId: note.notebook_id })
+            else if (note.space_id) setScope({ kind: 'space', spaceId: note.space_id })
+            else setScope({ kind: 'inbox' })
+            setSelectedNoteId(note.id)
+            setSearchOpen(false)
+            setMobileTreeOpen(false)
+          }}
+          onClose={() => setSearchOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Note search screen (mobile, Evernote-style) ─────────────────────
+
+const RECENT_SEARCHES_KEY = 'hq-notes-recent-searches'
+
+function loadRecentSearches(): string[] {
+  try { const v = window.localStorage.getItem(RECENT_SEARCHES_KEY); return v ? JSON.parse(v) as string[] : [] } catch { return [] }
+}
+function pushRecentSearch(q: string) {
+  const t = q.trim()
+  if (!t) return
+  try {
+    const cur = loadRecentSearches().filter(s => s.toLowerCase() !== t.toLowerCase())
+    window.localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify([t, ...cur].slice(0, 5)))
+  } catch {}
+}
+
+function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClose }: {
+  notes: Note[]
+  spaces: Space[]
+  notebooks: Notebook[]
+  tagsByNote: Map<string, string[]>
+  onOpen: (note: Note) => void
+  onClose: () => void
+}) {
+  const [q, setQ] = useState('')
+  const [recents, setRecents] = useState<string[]>(() => loadRecentSearches())
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { inputRef.current?.focus() }, [])
+
+  const spaceName = useMemo(() => new Map(spaces.map(s => [s.id, s.name])), [spaces])
+  const notebookName = useMemo(() => new Map(notebooks.map(nb => [nb.id, nb.name])), [notebooks])
+
+  // Lowercased full-text index: title + body text + tags. Built once per notes array.
+  const textIndex = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const n of notes) {
+      const tags = (tagsByNote.get(n.id) ?? []).join(' ')
+      map.set(n.id, `${n.title} ${extractNoteText(n.body)} ${tags}`.toLowerCase())
+    }
+    return map
+  }, [notes, tagsByNote])
+
+  const query = q.trim().toLowerCase()
+
+  const results = useMemo(() => {
+    if (!query) return []
+    const titleHits: Note[] = []
+    const bodyHits: Note[] = []
+    for (const n of notes) {
+      if (n.title.toLowerCase().includes(query)) titleHits.push(n)
+      else if ((textIndex.get(n.id) ?? '').includes(query)) bodyHits.push(n)
+    }
+    const byUpdated = (a: Note, b: Note) => b.updated_at.localeCompare(a.updated_at)
+    return [...titleHits.sort(byUpdated), ...bodyHits.sort(byUpdated)].slice(0, 40)
+  }, [query, notes, textIndex])
+
+  // Zero-query state: recent notes grouped by updated_at
+  const grouped = useMemo(() => {
+    if (query) return null
+    const now = Date.now()
+    const d7 = now - 7 * 86400000
+    const d30 = now - 30 * 86400000
+    const sorted = [...notes].sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    const last7: Note[] = [], last30: Note[] = [], earlier: Note[] = []
+    for (const n of sorted) {
+      const t = new Date(n.updated_at).getTime()
+      if (t >= d7) { if (last7.length < 6) last7.push(n) }
+      else if (t >= d30) { if (last30.length < 6) last30.push(n) }
+      else { if (earlier.length < 8) earlier.push(n) }
+    }
+    return { last7, last30, earlier }
+  }, [query, notes])
+
+  const pick = (note: Note) => {
+    if (query) { pushRecentSearch(q); setRecents(loadRecentSearches()) }
+    onOpen(note)
+  }
+
+  const sectionLabel: React.CSSProperties = {
+    fontSize: 10, fontWeight: 500, color: 'var(--nw-label)',
+    letterSpacing: '.16em', textTransform: 'uppercase',
+    padding: '16px 18px 6px',
+  }
+
+  const row = (note: Note) => {
+    const nb = note.notebook_id ? notebookName.get(note.notebook_id) : null
+    const sp = note.space_id ? spaceName.get(note.space_id) : null
+    const crumb = sp ? (nb ? `${sp} › ${nb}` : sp) : 'Inbox'
+    return (
+      <button key={note.id} onClick={() => pick(note)} style={{
+        display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
+        padding: '11px 18px', background: 'none', border: 'none', cursor: 'pointer',
+        textAlign: 'left', fontFamily: 'inherit',
+      }}>
+        <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--t-3)" strokeWidth="1.4" style={{ flexShrink: 0, marginTop: 2 }}>
+          <rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/>
+          <path d="M5 5h6M5 8h6M5 11h3.5"/>
+        </svg>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 15.5, fontWeight: 500, color: 'var(--t-0)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {note.title || 'Untitled'}
+          </div>
+          <div style={{ fontSize: 12.5, color: 'var(--t-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {crumb}
+          </div>
+        </div>
+      </button>
+    )
+  }
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0,
+      bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))',
+      background: 'var(--bg)', zIndex: 40,
+      display: 'flex', flexDirection: 'column',
+      paddingTop: 'env(safe-area-inset-top, 0px)',
+    }}>
+      {/* Search header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', flexShrink: 0 }}>
+        <button onClick={onClose} aria-label="Back" style={{
+          background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)',
+          padding: 6, display: 'flex', flexShrink: 0,
+        }}>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+            <polyline points="15 18 9 12 15 6"/>
+          </svg>
+        </button>
+        <input
+          ref={inputRef}
+          value={q}
+          onChange={e => setQ(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && results.length > 0) pick(results[0]) }}
+          placeholder="Search notes…"
+          style={{
+            flex: 1, fontSize: 16, padding: '10px 14px', borderRadius: 12,
+            border: '1.5px solid var(--accent)', background: 'var(--surface)',
+            color: 'var(--t-0)', fontFamily: 'inherit', outline: 'none', minWidth: 0,
+          }}
+        />
+        {q && (
+          <button onClick={() => setQ('')} aria-label="Clear" style={{
+            background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t-3)',
+            padding: 6, fontSize: 15, flexShrink: 0,
+          }}>✕</button>
+        )}
+      </div>
+
+      {/* Body */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+        {!query && (
+          <>
+            {recents.length > 0 && (
+              <>
+                <div style={sectionLabel}>Recent searches</div>
+                {recents.map(s => (
+                  <button key={s} onClick={() => setQ(s)} style={{
+                    display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                    padding: '10px 18px', background: 'none', border: 'none', cursor: 'pointer',
+                    textAlign: 'left', fontFamily: 'inherit',
+                  }}>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--t-3)" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                      <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+                    </svg>
+                    <span style={{ fontSize: 15.5, color: 'var(--t-1)' }}>{s}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            {grouped && grouped.last7.length > 0 && (<><div style={sectionLabel}>Last 7 days</div>{grouped.last7.map(row)}</>)}
+            {grouped && grouped.last30.length > 0 && (<><div style={sectionLabel}>Last 30 days</div>{grouped.last30.map(row)}</>)}
+            {grouped && grouped.earlier.length > 0 && (<><div style={sectionLabel}>Earlier</div>{grouped.earlier.map(row)}</>)}
+          </>
+        )}
+        {query && (
+          <>
+            <div style={sectionLabel}>{results.length === 0 ? 'No results' : `Results (${results.length})`}</div>
+            {results.map(row)}
+            {results.length === 0 && (
+              <div style={{ padding: '8px 18px', fontSize: 13.5, color: 'var(--t-3)' }}>
+                No notes match “{q}”
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   )
 }
