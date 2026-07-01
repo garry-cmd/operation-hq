@@ -170,14 +170,14 @@ export default function FastCapture({
 
       {dialOpen && TYPES.map((t, i) => (
         <button key={t.id} onClick={() => openType(t.id)}
-          style={{ position: 'fixed', right: 16, bottom: `${88 + 56 + (i * 52)}px`, zIndex: 46, display: 'flex', alignItems: 'center', gap: 10, background: 'var(--navy-700)', border: `1px solid ${t.color}`, borderRadius: 99, padding: '8px 14px 8px 10px', cursor: 'pointer', color: 'var(--navy-50)', fontSize: 13, fontWeight: 600, animation: `fabIn .15s ease ${i * 0.04}s both` }}>
+          style={{ position: 'fixed', right: 16, bottom: `calc(env(safe-area-inset-bottom, 0px) + ${90 + 56 + (i * 52)}px)`, zIndex: 46, display: 'flex', alignItems: 'center', gap: 10, background: 'var(--navy-700)', border: `1px solid ${t.color}`, borderRadius: 99, padding: '8px 14px 8px 10px', cursor: 'pointer', color: 'var(--navy-50)', fontSize: 13, fontWeight: 600, animation: `fabIn .15s ease ${i * 0.04}s both` }}>
           <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--navy-600)', border: `1.5px solid ${t.color}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: t.color, flexShrink: 0 }}>{t.icon}</div>
           {t.label}
         </button>
       ))}
 
       <button onClick={() => dialOpen ? close() : setDialOpen(true)}
-        style={{ position: 'fixed', right: 16, bottom: 88, zIndex: 47, width: 48, height: 48, borderRadius: '50%', background: dialOpen ? 'var(--navy-500)' : 'var(--accent)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', transition: 'background .15s, transform .15s', transform: dialOpen ? 'rotate(45deg)' : 'rotate(0deg)' }}>
+        style={{ position: 'fixed', right: 16, bottom: 'calc(env(safe-area-inset-bottom, 0px) + 90px)', zIndex: 47, width: 48, height: 48, borderRadius: '50%', background: dialOpen ? 'var(--navy-500)' : 'var(--accent)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 20px rgba(0,0,0,0.4)', transition: 'background .15s, transform .15s', transform: dialOpen ? 'rotate(45deg)' : 'rotate(0deg)' }}>
         <svg width="22" height="22" viewBox="0 0 22 22" fill="none"><path d="M11 4v14M4 11h14" stroke="white" strokeWidth="2" strokeLinecap="round"/></svg>
       </button>
 

@@ -612,18 +612,13 @@ export default function HQPage() {
       />
       )}
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0, paddingBottom: isMobile ? 'calc(64px + env(safe-area-inset-bottom, 0px))' : 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, paddingTop: isMobile ? 'env(safe-area-inset-top, 0px)' : 0, paddingBottom: isMobile ? 'calc(84px + env(safe-area-inset-bottom, 0px))' : 0 }}>
       {/* Mobile-only bottom nav — replaces the hamburger/drawer on small screens.
           Five primary tabs; secondary screens (Reflect, Settings, etc.) accessible
           via NavRail which still renders as a slide-in drawer when triggered from
           the Agent or Settings gear. Hidden on desktop where NavRail is permanent. */}
       {isMobile && (() => {
         const overdueCount = tasks.filter(t => !t.completed_at && t.due_date && t.due_date < new Date().toISOString().slice(0, 10)).length
-        const TAB_STYLE = (active: boolean): React.CSSProperties => ({
-          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 3, cursor: 'pointer', padding: '8px 0 0', border: 'none',
-          background: 'transparent', position: 'relative',
-        })
         const ICON_COLOR = (active: boolean) => active ? 'var(--accent)' : 'var(--navy-500)'
         const LABEL_COLOR = (active: boolean) => active ? 'var(--accent)' : 'var(--navy-500)'
         const tabs: { id: Screen; label: string; icon: React.ReactNode; badge?: number }[] = [
@@ -669,27 +664,46 @@ export default function HQPage() {
         const isTabActive = (id: Screen) => id === 'profile' ? profileSubs.includes(screen) : screen === id
         return (
           <div style={{
-            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
-            height: 'calc(64px + env(safe-area-inset-bottom, 0px))',
-            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-            background: 'rgba(10,13,22,.96)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
-            borderTop: '1px solid var(--navy-700)',
+            position: 'fixed',
+            left: 14, right: 14,
+            bottom: 'calc(env(safe-area-inset-bottom, 0px) + 10px)',
+            zIndex: 50,
+            height: 62,
+            borderRadius: 999,
+            background: theme === 'dark' ? 'rgba(16,21,33,.92)' : 'rgba(255,255,255,.94)',
+            backdropFilter: 'blur(24px)',
+            WebkitBackdropFilter: 'blur(24px)',
+            border: '1px solid var(--navy-600)',
+            boxShadow: '0 8px 32px rgba(0,0,0,.35), 0 2px 8px rgba(0,0,0,.2)',
             display: 'flex',
-            alignItems: 'flex-start',
+            alignItems: 'center',
+            padding: '0 6px',
           }}>
-            {tabs.map(tab => (
-              <button key={tab.id} style={TAB_STYLE(isTabActive(tab.id))} onClick={() => goToScreen(tab.id)}>
-                {tab.badge ? (
-                  <div style={{ position: 'absolute', top: 6, right: 'calc(50% - 18px)', background: '#ff6452', color: '#fff', fontSize: 8, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '1.5px solid var(--navy-900)' }}>
-                    {tab.badge}
-                  </div>
-                ) : null}
-                <div style={{ color: ICON_COLOR(isTabActive(tab.id)) }}>{tab.icon}</div>
-                <span style={{ fontSize: 10, fontWeight: 500, color: LABEL_COLOR(isTabActive(tab.id)), letterSpacing: '.01em' }}>{tab.label}</span>
-              </button>
-            ))}
+            {tabs.map(tab => {
+              const active = isTabActive(tab.id)
+              return (
+                <button key={tab.id} style={{
+                  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  gap: 2, cursor: 'pointer', border: 'none',
+                  background: 'transparent', position: 'relative', padding: 0,
+                }} onClick={() => goToScreen(tab.id)}>
+                  {tab.badge ? (
+                    <div style={{ position: 'absolute', top: -3, right: 'calc(50% - 20px)', background: '#ff6452', color: '#fff', fontSize: 8, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', zIndex: 2 }}>
+                      {tab.badge}
+                    </div>
+                  ) : null}
+                  {/* tinted bubble behind active icon — Evernote-style */}
+                  <div style={{
+                    width: 52, height: 30, borderRadius: 999,
+                    background: active ? 'var(--accent-dim, rgba(77,143,255,.16))' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'background .15s',
+                    color: ICON_COLOR(active),
+                  }}>{tab.icon}</div>
+                  <span style={{ fontSize: 9.5, fontWeight: active ? 600 : 500, color: LABEL_COLOR(active), letterSpacing: '.01em' }}>{tab.label}</span>
+                </button>
+              )
+            })}
           </div>
         )
       })()}

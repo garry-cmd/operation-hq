@@ -345,7 +345,7 @@ export default function Notes({
       display: isMobile ? 'flex' : 'grid',
       flexDirection: isMobile ? 'column' : undefined,
       gridTemplateColumns: isMobile ? undefined : fullscreen ? '0 0 1fr' : '240px 300px 1fr',
-      height: isMobile ? 'calc(100vh - 64px - env(safe-area-inset-bottom, 0px) - env(safe-area-inset-top, 0px))' : 'calc(100vh - 0px)', minHeight: 0,
+      height: isMobile ? 'calc(100vh - 84px - env(safe-area-inset-bottom, 0px) - env(safe-area-inset-top, 0px))' : 'calc(100vh - 0px)', minHeight: 0,
       transition: 'grid-template-columns .2s ease',
       fontFamily: 'var(--font-body)',
     }}>
@@ -385,6 +385,144 @@ export default function Notes({
           </div>
         )}
 
+        {isMobile ? (
+          /* ── MOBILE BROWSE — Evernote-style big rows ── */
+          <div>
+            <div style={{
+              padding: '16px 18px 8px',
+              fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
+              letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--t-3)',
+            }}>
+              {spaces.length} spaces · {counts.all} notes
+            </div>
+
+            {/* Inbox + All notes */}
+            {([
+              { icon: <InboxIcon size={20} color="currentColor"/>, label: 'Inbox', count: counts.inbox, act: () => { setScope({ kind: 'inbox' }); setSelectedNoteId(null) } },
+              { icon: <LayersIcon size={20} color="currentColor"/>, label: 'All notes', count: counts.all, act: () => { setScope({ kind: 'all' }); setSelectedNoteId(null) } },
+            ]).map(row => (
+              <button key={row.label} onClick={row.act} style={{
+                display: 'flex', alignItems: 'center', gap: 14, width: '100%',
+                padding: '17px 18px', background: 'none', border: 'none',
+                borderTop: `1px solid ${BORDER}`, cursor: 'pointer',
+                fontFamily: 'inherit', textAlign: 'left',
+              }}>
+                <span style={{ color: 'var(--t-2)', display: 'flex', flexShrink: 0 }}>{row.icon}</span>
+                <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--t-0)' }}>{row.label}</span>
+                <span style={{ fontSize: 15, color: 'var(--t-3)' }}>{row.count}</span>
+              </button>
+            ))}
+
+            <div style={{ height: 10, borderTop: `1px solid ${BORDER}`, background: 'var(--surface-2)' }} />
+
+            {/* Spaces as expandable stacks */}
+            {spaces.map(space => {
+              const isExpanded = expandedSpaces.has(space.id)
+              const topLevel = notebooksBySpace.get(space.id) ?? []
+              const hasBooks = topLevel.length > 0
+              return (
+                <div key={space.id}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center',
+                    borderTop: `1px solid ${BORDER}`,
+                  }}>
+                    <button
+                      onClick={() => { setScope({ kind: 'space', spaceId: space.id }); setSelectedNoteId(null) }}
+                      style={{
+                        flex: 1, display: 'flex', alignItems: 'center', gap: 14,
+                        padding: '17px 0 17px 18px', background: 'none', border: 'none',
+                        cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', minWidth: 0,
+                      }}>
+                      <span style={{
+                        width: 20, height: 20, borderRadius: 5, flexShrink: 0,
+                        background: space.color ?? 'var(--t-3)', opacity: .85,
+                      }} />
+                      <span style={{ fontSize: 18, fontWeight: 600, color: 'var(--t-0)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{space.name}</span>
+                      <span style={{ fontSize: 15, color: 'var(--t-3)', flexShrink: 0 }}>{counts.bySpace[space.id] ?? 0}</span>
+                    </button>
+                    {hasBooks && (
+                      <button
+                        onClick={e => { e.stopPropagation(); toggleSpace(space.id) }}
+                        style={{
+                          width: 56, alignSelf: 'stretch', background: 'none', border: 'none',
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          color: 'var(--t-3)',
+                        }}>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+                          <path d="M4 6l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                  {isExpanded && topLevel.map(nb => {
+                    const kids = childrenByParent.get(nb.id) ?? []
+                    return (
+                      <div key={nb.id}>
+                        <button
+                          onClick={() => { setScope({ kind: 'notebook', notebookId: nb.id }); setSelectedNoteId(null) }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                            padding: '13px 18px 13px 52px', background: 'none', border: 'none',
+                            borderTop: `1px solid ${BORDER}`, cursor: 'pointer',
+                            fontFamily: 'inherit', textAlign: 'left',
+                          }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--t-3)" strokeWidth="1.6" style={{ flexShrink: 0 }}>
+                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4a2 2 0 0 0-2-2H6.5A2.5 2.5 0 0 0 4 4.5z"/>
+                            <path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/>
+                          </svg>
+                          <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--t-1)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{nb.name}</span>
+                          <span style={{ fontSize: 14, color: 'var(--t-3)', flexShrink: 0 }}>{counts.byNotebook[nb.id] ?? 0}</span>
+                        </button>
+                        {kids.map(child => (
+                          <button
+                            key={child.id}
+                            onClick={() => { setScope({ kind: 'notebook', notebookId: child.id }); setSelectedNoteId(null) }}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                              padding: '11px 18px 11px 78px', background: 'none', border: 'none',
+                              borderTop: `1px solid ${BORDER}`, cursor: 'pointer',
+                              fontFamily: 'inherit', textAlign: 'left',
+                            }}>
+                            <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--t-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{child.name}</span>
+                            <span style={{ fontSize: 13, color: 'var(--t-3)', flexShrink: 0 }}>{counts.byNotebook[child.id] ?? 0}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })}
+
+            {/* Tags */}
+            {allTags.length > 0 && (
+              <>
+                <div style={{ height: 10, borderTop: `1px solid ${BORDER}`, background: 'var(--surface-2)' }} />
+                <div style={{
+                  padding: '16px 18px 8px',
+                  fontFamily: 'var(--font-mono)', fontSize: 11, fontWeight: 600,
+                  letterSpacing: '.14em', textTransform: 'uppercase', color: 'var(--t-3)',
+                }}>Tags</div>
+                {allTags.map(tag => (
+                  <button key={tag}
+                    onClick={() => { setScope({ kind: 'tag', tag }); setSelectedNoteId(null) }}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                      padding: '13px 18px', background: 'none', border: 'none',
+                      borderTop: `1px solid ${BORDER}`, cursor: 'pointer',
+                      fontFamily: 'inherit', textAlign: 'left',
+                    }}>
+                    <span style={{ color: 'var(--accent)', fontSize: 15, fontWeight: 600, flexShrink: 0 }}>#</span>
+                    <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--t-1)', flex: 1 }}>{tag}</span>
+                    <span style={{ fontSize: 14, color: 'var(--t-3)' }}>{counts.byTag[tag] ?? 0}</span>
+                  </button>
+                ))}
+              </>
+            )}
+            <div style={{ height: 24 }} />
+          </div>
+        ) : (
+        <>
         {/* SMART VIEWS */}
         <div style={{ padding: '14px 14px 8px' }}>
           <div style={{ ...LABEL_STYLE, marginBottom: 6 }}>Smart views</div>
@@ -482,6 +620,8 @@ export default function Notes({
               />
             ))}
           </div>
+        )}
+        </>
         )}
       </aside>
 
