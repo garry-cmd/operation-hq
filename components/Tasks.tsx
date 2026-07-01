@@ -222,11 +222,12 @@ function TaskRow({ task, tags, spaces, roadmapItems, onToggle, onOpen }: {
 
 // ── task detail sheet ─────────────────────────────────────────────────────
 
-function TaskDetailSheet({ task, tags: initialTags, spaces, roadmapItems, onSave, onDelete, onClose }: {
+function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItems, onSave, onDelete, onClose }: {
   task: Task
   spaces: Space[]
   roadmapItems: RoadmapItem[]
   tags: string[]
+  allTags: string[]
   onSave: (patch: Partial<Task>, tags: string[]) => void
   onDelete: () => void
   onClose: () => void
@@ -395,6 +396,29 @@ function TaskDetailSheet({ task, tags: initialTags, spaces, roadmapItems, onSave
               }}
             />
           </div>
+          {(() => {
+            const q = tagDraft.trim().toLowerCase().replace(/^#/, '')
+            const suggestions = allTags.filter(t => !tags.includes(t) && (!q || t.includes(q))).slice(0, 24)
+            if (suggestions.length === 0) return null
+            return (
+              <div style={{
+                display: 'flex', gap: 7, overflowX: 'auto', marginTop: 9,
+                paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+              }}>
+                {suggestions.map(t => (
+                  <button key={t}
+                    onClick={() => { setTags(prev => [...prev, t]); setTagDraft('') }}
+                    style={{
+                      flexShrink: 0, fontSize: 12.5, fontWeight: 500,
+                      color: 'var(--navy-300)', background: 'var(--navy-700)',
+                      border: '1px solid var(--navy-600)', borderRadius: 8,
+                      padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    }}
+                  >#{t}</button>
+                ))}
+              </div>
+            )
+          })()}
         </div>
 
         {/* space */}
@@ -754,6 +778,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
           key={detailTask.id}
           task={detailTask}
           tags={tagsByTask[detailTask.id] ?? []}
+          allTags={allTags}
           spaces={spaces}
           roadmapItems={roadmapItems}
           onSave={(patch, tags) => handleSavePatch(detailTask, patch, tags)}
