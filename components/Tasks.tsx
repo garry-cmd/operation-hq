@@ -236,6 +236,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
   const [description, setDescription] = useState(task.description ?? '')
   const [tags, setTags] = useState<string[]>(initialTags)
   const [tagDraft, setTagDraft] = useState('')
+  const [tagPickerOpen, setTagPickerOpen] = useState(false)
   const commitTagDraft = () => {
     const t = tagDraft.trim().toLowerCase().replace(/^#/, '')
     if (t && !tags.includes(t)) setTags(prev => [...prev, t])
@@ -364,6 +365,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
         {/* tags */}
         <div style={{ marginBottom: 18 }}>
           <div style={LBL}>Tags</div>
+          {/* selected tags + Add-tag opener */}
           <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', alignItems: 'center' }}>
             {tags.map(tag => (
               <span key={tag} style={{
@@ -380,42 +382,73 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
                 }}>×</button>
               </span>
             ))}
-            <input
-              value={tagDraft}
-              onChange={e => setTagDraft(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commitTagDraft() }
-                if (e.key === 'Backspace' && !tagDraft && tags.length) setTags(prev => prev.slice(0, -1))
-              }}
-              onBlur={commitTagDraft}
-              placeholder={tags.length ? 'Add…' : 'Add tag…'}
-              style={{
-                flex: 1, minWidth: 90, background: 'var(--navy-900)',
-                border: '1px solid var(--navy-600)', borderRadius: 8, padding: '8px 11px',
-                fontSize: 13, color: 'var(--navy-100)', fontFamily: 'inherit', outline: 'none',
-              }}
-            />
+            {!tagPickerOpen && (
+              <button onClick={() => setTagPickerOpen(true)} style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                fontSize: 12.5, fontWeight: 500, color: 'var(--navy-300)',
+                background: 'transparent', border: '1px dashed var(--navy-500)',
+                borderRadius: 8, padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit',
+              }}>+ {tags.length ? 'Tag' : 'Add tag'}</button>
+            )}
           </div>
-          {(() => {
+
+          {/* picker — opens on tap; existing tags as a wrapped tappable grid, keyboard only when creating new */}
+          {tagPickerOpen && (() => {
             const q = tagDraft.trim().toLowerCase().replace(/^#/, '')
-            const suggestions = allTags.filter(t => !tags.includes(t) && (!q || t.includes(q))).slice(0, 24)
-            if (suggestions.length === 0) return null
+            const suggestions = allTags.filter(t => !tags.includes(t) && (!q || t.includes(q)))
+            const canCreate = q.length > 0 && !allTags.includes(q) && !tags.includes(q)
             return (
               <div style={{
-                display: 'flex', gap: 7, overflowX: 'auto', marginTop: 9,
-                paddingBottom: 4, scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
+                marginTop: 10, padding: 12, borderRadius: 12,
+                background: 'var(--navy-900)', border: '1px solid var(--navy-600)',
               }}>
-                {suggestions.map(t => (
-                  <button key={t}
-                    onClick={() => { setTags(prev => [...prev, t]); setTagDraft('') }}
-                    style={{
-                      flexShrink: 0, fontSize: 12.5, fontWeight: 500,
-                      color: 'var(--navy-300)', background: 'var(--navy-700)',
-                      border: '1px solid var(--navy-600)', borderRadius: 8,
-                      padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: suggestions.length || canCreate ? 12 : 0 }}>
+                  <input
+                    autoFocus
+                    value={tagDraft}
+                    onChange={e => setTagDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') { e.preventDefault(); if (canCreate || q) { commitTagDraft() } }
+                      if (e.key === 'Escape') { setTagDraft(''); setTagPickerOpen(false) }
                     }}
-                  >#{t}</button>
-                ))}
+                    placeholder="Filter or create…"
+                    style={{
+                      flex: 1, minWidth: 0, background: 'var(--navy-800)',
+                      border: '1px solid var(--navy-600)', borderRadius: 8, padding: '9px 12px',
+                      fontSize: 16, color: 'var(--navy-50)', fontFamily: 'inherit', outline: 'none',
+                    }}
+                  />
+                  <button onClick={() => { setTagDraft(''); setTagPickerOpen(false) }} aria-label="Done" style={{
+                    fontSize: 13, fontWeight: 600, color: 'var(--accent)', background: 'none',
+                    border: 'none', cursor: 'pointer', padding: '8px 4px', fontFamily: 'inherit', flexShrink: 0,
+                  }}>Done</button>
+                </div>
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap', maxHeight: 168, overflowY: 'auto' }}>
+                  {canCreate && (
+                    <button onClick={() => { setTags(prev => [...prev, q]); setTagDraft('') }} style={{
+                      fontSize: 12.5, fontWeight: 600, color: 'var(--accent)',
+                      background: 'var(--accent-dim, rgba(77,143,255,.12))',
+                      border: '1px solid rgba(77,143,255,.3)', borderRadius: 8,
+                      padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                    }}>+ Create “{q}”</button>
+                  )}
+                  {suggestions.map(t => (
+                    <button key={t}
+                      onClick={() => { setTags(prev => [...prev, t]); setTagDraft('') }}
+                      style={{
+                        fontSize: 12.5, fontWeight: 500,
+                        color: 'var(--navy-200)', background: 'var(--navy-700)',
+                        border: '1px solid var(--navy-600)', borderRadius: 8,
+                        padding: '7px 12px', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                      }}
+                    >#{t}</button>
+                  ))}
+                  {suggestions.length === 0 && !canCreate && (
+                    <span style={{ fontSize: 12.5, color: 'var(--navy-500)', padding: '4px 2px' }}>
+                      {allTags.length === 0 ? 'No tags yet — type to create one' : 'All tags added'}
+                    </span>
+                  )}
+                </div>
               </div>
             )
           })()}
