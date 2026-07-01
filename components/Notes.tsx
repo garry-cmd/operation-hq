@@ -385,7 +385,9 @@ export default function Notes({
           <div style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '8px 14px 10px', borderBottom: `1px solid ${BORDER}`,
-          }}>
+            WebkitUserSelect: 'none', userSelect: 'none',
+            WebkitTapHighlightColor: 'transparent',
+          } as React.CSSProperties}>
             <span style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--t-0)' }}>Browse</span>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={e => { e.stopPropagation(); setSearchOpen(true) }} aria-label="Search notes" style={{
@@ -1089,10 +1091,12 @@ function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClos
       position: 'fixed',
       top: 0, left: 0, right: 0,
       bottom: 'calc(84px + env(safe-area-inset-bottom, 0px))',
-      background: 'var(--bg)', zIndex: 40,
+      background: 'var(--bg)', zIndex: 70,
       display: 'flex', flexDirection: 'column',
       paddingTop: 'env(safe-area-inset-top, 0px)',
-    }}>
+      WebkitUserSelect: 'none', userSelect: 'none',
+      WebkitTapHighlightColor: 'transparent',
+    } as React.CSSProperties}>
       {/* Search header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', flexShrink: 0 }}>
         <button onClick={onClose} aria-label="Back" style={{
