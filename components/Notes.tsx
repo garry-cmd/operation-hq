@@ -373,9 +373,9 @@ export default function Notes({
         visibility: fullscreen ? 'hidden' : 'visible',
         ...(isMobile ? {
           display: mobileTreeOpen ? 'block' : 'none',
-          position: 'fixed', inset: 0, zIndex: 60,
+          position: 'fixed', inset: 0, zIndex: 40,
           paddingTop: 'max(10px, env(safe-area-inset-top))',
-          paddingBottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+          paddingBottom: 'calc(96px + env(safe-area-inset-bottom, 0px))',
         } : {}),
       }}
         onClick={isMobile ? () => setMobileTreeOpen(false) : undefined}>
