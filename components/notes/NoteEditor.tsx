@@ -1,6 +1,6 @@
-import { useIsMobile } from '@/lib/useIsMobile'
 'use client'
 import React from 'react'
+import { useIsMobile } from '@/lib/useIsMobile'
 import { InboxIcon } from '../Icons'
 /**
  * NoteEditor — the standalone TipTap note editor, extracted from Notes.tsx so
