@@ -536,20 +536,6 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
     }
   }
 
-  async function rescheduleOverdueToToday() {
-    const overdue = tasks.filter(t => !t.completed_at && t.due_date && t.due_date < todayStr)
-    if (!overdue.length) return
-    // Optimistic
-    setTasks(prev => prev.map(t => overdue.some(o => o.id === t.id) ? { ...t, due_date: todayStr } : t))
-    try {
-      await Promise.all(overdue.map(t => tasksDb.update(t.id, { due_date: todayStr })))
-      toast(`${overdue.length} task${overdue.length > 1 ? 's' : ''} moved to today`)
-    } catch {
-      setTasks(prev => prev.map(t => { const orig = overdue.find(o => o.id === t.id); return orig ?? t }))
-      toast('Failed to reschedule')
-    }
-  }
-
   function renderTask(task: Task) {
     return (
       <TaskRow
@@ -566,17 +552,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
 
   const allSections = [
     ...(filtered.overdue.length > 0 ? [
-      <div key="ov-h" style={{ display: 'flex', alignItems: 'center' }}>
-        <div style={{ flex: 1 }}><SectionHeader label="Overdue" count={filtered.overdue.length} /></div>
-        <button
-          onClick={rescheduleOverdueToToday}
-          style={{
-            marginRight: 16, fontSize: 10.5, fontWeight: 600, color: 'var(--accent)',
-            background: 'rgba(77,143,255,.1)', border: '1px solid rgba(77,143,255,.25)',
-            borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
-          }}
-        >→ Today</button>
-      </div>,
+      <SectionHeader key="ov-h" label="Overdue" count={filtered.overdue.length} />,
       ...filtered.overdue.map(renderTask),
     ] : []),
     ...(filtered.today.length > 0 ? [
@@ -606,13 +582,6 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
         flexShrink: 0,
       }}>
         <span style={{ fontSize: 18, fontWeight: 700, color: 'var(--navy-50)', letterSpacing: '-.025em' }}>Tasks</span>
-        <button
-          onClick={() => setCreating(true)}
-          style={{
-            fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'rgba(77,143,255,.1)',
-            border: '1px solid rgba(77,143,255,.25)', borderRadius: 6, padding: '5px 10px', cursor: 'pointer',
-          }}
-        >+ New</button>
       </div>
 
       {/* scope chips */}
@@ -651,15 +620,6 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
         })}
       </div>
 
-      {/* inline create */}
-      {creating && (
-        <InlineCreate
-          onSave={handleCreate}
-          onCancel={() => setCreating(false)}
-          spaceId={scope.kind === 'space' ? scope.spaceId : null}
-        />
-      )}
-
       {/* list */}
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 100 }}>
 
@@ -672,6 +632,32 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
         )}
 
         {allSections}
+
+        {/* add task — persistent ghost card; becomes the inline create in place */}
+        {creating ? (
+          <InlineCreate
+            onSave={handleCreate}
+            onCancel={() => setCreating(false)}
+            spaceId={scope.kind === 'space' ? scope.spaceId : null}
+          />
+        ) : (
+          <button
+            onClick={() => setCreating(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
+              margin: '4px 14px 10px', borderRadius: 14, width: 'calc(100% - 28px)',
+              background: 'transparent', border: '1px dashed var(--navy-500)',
+              cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left',
+            }}
+          >
+            <span style={{
+              width: 30, height: 30, borderRadius: '50%', border: '2px solid var(--navy-500)',
+              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: 'var(--navy-400)', fontSize: 18, fontWeight: 300, lineHeight: 1,
+            }}>+</span>
+            <span style={{ fontSize: 16, fontWeight: 500, color: 'var(--navy-300)' }}>Add task</span>
+          </button>
+        )}
 
         {/* Done section */}
         {filtered.done.length > 0 && (
