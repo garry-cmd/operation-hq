@@ -90,6 +90,15 @@ export default function Notes({
   const [filterDateTo, setFilterDateTo] = useState<string | null>(null)
   const isMobile = useIsMobile(900)
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
+  // Mobile: land on the Browse screen when Notes opens (Evernote-style).
+  // Runs once when isMobile resolves true after mount; skipped when a
+  // deep-link (initialNoteId) is about to select a note directly.
+  const browseInitRef = useRef(false)
+  useEffect(() => {
+    if (!isMobile || browseInitRef.current) return
+    browseInitRef.current = true
+    if (!initialNoteId) setMobileTreeOpen(true)
+  }, [isMobile, initialNoteId])
 
   useEffect(() => {
     if (!initialNoteId) return
