@@ -3,7 +3,7 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jun 28, 2026 (session 2)**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jul 1, 2026 (mobile UX + Tasks build)**.
 
 ---
 
@@ -46,6 +46,38 @@ column doesn't exist.
 ---
 
 ## Current state — shipped
+
+### Jul 1 session — Tasks screen built + mobile UX overhaul (Evernote/Todoist-informed)
+
+Long session, ~18 deploys. Theme: bring mobile to parity, build Tasks from scratch, restyle toward Evernote (Notes) and Todoist (Tasks) patterns Garry shared as screenshots.
+
+**Tasks — new module (was DB table + types only, no UI):**
+- `lib/db/tasks.ts` created: `listAll`, `create`, `update`, `toggleComplete` (recurring tasks advance `due_date` by rule instead of completing), `remove`, `listTagsForTasks`, `setTags`.
+- `components/Tasks.tsx` created: scope chips (Today/Overdue/Inbox/All/per-space/**per-tag**), due-bucketed sections (Overdue/Today/Upcoming/None/Done-collapsed), optimistic toggle/delete.
+- **Todoist-style card rows** — rounded `--navy-800` cards w/ `--card-shadow` tokens (both themes), 30px circle checkbox whose **ring color = priority** (P1 alarm / P2 caution / P3 accent / P4 navy-500), 16.5px wrapping title, one-line **description preview**, **`KR: <title>`** readable sub-line (the alignment moat, replaced the 10px chip), meta line = calendar icon + "Due 5 days ago" + ↻ + **space name** (new; cross-space scopes now show origin) + inline `#tags`. Done cards fade to .55.
+- **Description field** — textarea in detail sheet (column already existed; no migration).
+- **Detail sheet (`TaskDetailSheet`)** — title, description, due quick-picks, P1–P4, **Tags editor** (accent chips + × ; add via Enter/comma/blur; backspace pops; existing-tag **fast-scroll suggestion row** filters as you type), space chips, linked-KR select, delete. Optimistic save w/ rollback.
+- Creation via persistent dashed **"＋ Add task"** ghost card at list bottom (swaps to inline create in place). Removed `+ New` and `→ Today` header buttons per Garry.
+- **Tag system integration** — `task_tags` shares global namespace with `note_tags`; tag scope slices tasks cross-space. This is the filtering unlock (`#waiting`, `#errand`, `#deep-work` as context lists).
+- Data audit: 146 tasks / 117 open / 15 overdue, all real (VidScrip, Keeply, My OKRs, USPSA). No cleanup needed.
+
+**Mobile navigation — replaced hamburger/drawer with floating pill bottom nav:**
+- 6 tabs: Home · Notes · Tasks (overdue badge) · Roadmap · Agent · Me. Evernote-style floating rounded pill (blur, shadow, tinted `--accent-dim` bubble behind active icon, theme-aware). NavRail hidden entirely on mobile (`<900px`); desktop unchanged. Dead `drawerOpen` state removed.
+- **Me** profile tab (`'profile'` screen): avatar/email header + grouped menu (Screens: Reflect/Parking/Files/Tags · Preferences: theme toggle, Settings · Account: share, sign out). Highlights for all sub-screens via `profileSubs`.
+
+**Notes — Evernote-style mobile:**
+- Opens directly to **Browse** (run-once effect keyed to isMobile). Browse = big rows (Inbox/All + expandable space stacks + notebooks + tags), dedicated full-screen in the aside; desktop sidebar gated behind `{!isMobile}`.
+- **Search screen** (new `NoteSearchScreen`) — magnifier in Browse + list headers. Full-screen: autofocus input, back arrow, clear. Zero-query state = recent searches (localStorage, last 5) + notes grouped Last 7d/30d/Earlier. Live results across title + body (`extractNoteText`) + tags, title hits first, cap 40, Space›Notebook breadcrumb. `z-70` (above Browse `z-40`), iOS selection-callout suppressed. **Note:** searches globally regardless of browse scope (intentional, matches Evernote).
+- Fixed: Browse sheet (`z-60`) was covering bottom nav (`z-50`) → dropped Browse to `z-40`, padded bottom 96px for pill clearance.
+- NoteEditor: focus-mode toggle hidden on mobile (editor already fullscreen; back bar handles exit).
+
+**Home:** "Close the week" section now **collapsible** (sec-hdr pattern, `hq-home-closes-open`, default open). Section-header + checkbox tap targets already fixed Jun-prior.
+
+**App icon:** blue lightning bolt → **nautical compass rose** (amber north needle, cobalt points, instrument bezel on deep navy `#0d1424`). PIL-generated at 1024px → `public/icon-512/192/apple-touch-icon.png`. iOS caches Home Screen icon — delete/re-add to refresh.
+
+**Light mode:** page bg → **`#f7f9fc`** (Option D, Evernote-flat near-white; was `#e7ebf2`). `--navy-900` + `--bg` + `themeColor` synced. Chose via side-by-side mockups. Task date picker `colorScheme` unlocked from dark → `'light dark'`.
+
+**Mobile sweep:** primary text inputs → 16px (task create/detail, FastCapture, Agent composer — prevents iOS zoom); tap targets enlarged (inline-create Add/✕, Notes header buttons 26→30px, ⋯ menu); nav badge → `--nw-alarm-text` token.
 
 ### Jun 28 session 2 — Todoist backlog: 7 items shipped
 
@@ -98,6 +130,8 @@ column doesn't exist.
 
 ## Open follow-ups / tech debt (newest first)
 
+- **Tasks tag input auto-focuses keyboard on tap (open).** Garry wants tapping the Tags field to open a picker/scrollable list of existing tags to select from, NOT pop the keyboard immediately. Current fast-scroll suggestion row (deployed `dpl_Edrcm6...`) sits under an autofocusing input. Next: make it tap-to-open (modal or dropdown of existing tags, keyboard only when creating new). Was mid-fix when session ended — nothing shipped for it.
+- **Tag suggestions in Tasks are task-tags only** — `note_tags` share the namespace but aren't threaded into `Tasks`. Small prop-thread to also suggest note-only tags in the sheet.
 - **Evernote `--repair` re-import** — run `node evernote-migrate.mjs ~/Desktop/ --repair` to restore 194 table-containing notes. Script on Desktop. 194 placeholder notes already deleted from DB.
 - **`roadmap_items.effort_size`** — column exists, all NULL. Garry needs to populate via Roadmap.
 - **Issue 2 Phase B — weekly-update ritual (deferred).** Phase A gave actions inline update threads; Phase B makes "weekly update" first-class with week-grouped logs + Close Week tie-in.
