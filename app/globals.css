@@ -94,7 +94,7 @@
 /* ── LIGHT (de-washed: cool slate desk, crisp white instruments) ── */
 [data-theme="light"] {
   /* legacy navy ladder — re-pointed for separation + visible hairlines */
-  --navy-900: #e7ebf2;   /* page bg (was #f7f8fb) */
+  --navy-900: #f7f9fc;   /* page bg — Option D near-white (was #e7ebf2) */
   --navy-800: #ffffff;   /* card */
   --navy-700: #eef2f8;   /* elevated / hover */
   --navy-600: #d2d9e5;   /* border (was #d8dde6) */
@@ -128,7 +128,7 @@
   --nw-glow-green:   rgba(22,138,62,.20);
 
   /* ── evolved vocabulary ── */
-  --bg:        #e7ebf2;
+  --bg:        #f7f9fc;
   --bg-rail:   #ffffff;
   --surface:   #ffffff;
   --surface-2: #e9edf4;
