@@ -79,7 +79,11 @@ function InlineCreate({ onSave, onCancel, spaceId }: {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 15, padding: '13px 18px', borderBottom: '1px solid var(--navy-700)' }}>
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 14, padding: '14px 16px',
+      margin: '0 14px 10px', borderRadius: 14,
+      background: 'var(--navy-800)', border: '1px dashed var(--navy-500)',
+    }}>
       <div style={{ width: 30, height: 30, borderRadius: '50%', border: '2px solid var(--navy-500)', flexShrink: 0 }} />
       <input
         ref={ref}
@@ -106,21 +110,29 @@ function InlineCreate({ onSave, onCancel, spaceId }: {
 
 // ── task row ──────────────────────────────────────────────────────────────
 
-function TaskRow({ task, tags, roadmapItems, onToggle, onOpen }: {
+function TaskRow({ task, tags, spaces, roadmapItems, onToggle, onOpen }: {
   task: Task
   tags: string[]
+  spaces: Space[]
   roadmapItems: RoadmapItem[]
   onToggle: () => void
   onOpen: () => void
 }) {
   const bucket = dueBucket(task)
   const kr = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
+  const space = task.space_id ? spaces.find(s => s.id === task.space_id) : null
   const isDone = !!task.completed_at
   const recurring = !!(task.recurrence_rule || task.recurrence_text)
   const ringColor = isDone ? 'var(--navy-500)' : (PRIORITY_COLOR[task.priority] ?? 'var(--navy-500)')
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 15, padding: '13px 18px' }}>
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px',
+      margin: '0 14px 10px', borderRadius: 14,
+      background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
+      boxShadow: 'var(--card-shadow), var(--card-inset)',
+      opacity: isDone ? .55 : 1,
+    }}>
       {/* circle checkbox — ring carries the priority color */}
       <button
         onClick={onToggle}
@@ -147,27 +159,45 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onOpen }: {
           lineHeight: 1.3, letterSpacing: '-.01em',
           textDecoration: isDone ? 'line-through' : 'none',
         }}>{task.title}</div>
-        {(task.due_date || recurring || kr || tags.length > 0) && (
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+
+        {/* KR context — the alignment moat, readable not chipped */}
+        {kr && (
+          <div style={{
+            fontSize: 13, color: 'var(--navy-400)', marginTop: 3, lineHeight: 1.35,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            KR: {kr.title}
+          </div>
+        )}
+
+        {(task.due_date || recurring || space || tags.length > 0) && (
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
             {task.due_date && (
               <span style={{
-                fontSize: 13.5, display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 5,
                 color: bucket === 'overdue' ? 'var(--nw-alarm-text, #ff6452)' : bucket === 'today' ? 'var(--nw-caution-text, #f5b840)' : 'var(--navy-400)',
               }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ flexShrink: 0 }}>
+                  <rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3"/>
+                </svg>
                 {relDate(task.due_date)}
-                {recurring && <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 14 }}>↻</span>}
+                {recurring && <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 13 }}>↻</span>}
               </span>
             )}
             {!task.due_date && recurring && (
-              <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 14, color: 'var(--navy-400)' }}>↻</span>
+              <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 13, color: 'var(--navy-400)' }}>↻</span>
             )}
-            {kr && (
-              <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-dim, rgba(77,143,255,.12))', borderRadius: 5, padding: '2px 7px' }}>
-                {kr.title.length > 24 ? kr.title.slice(0, 24) + '…' : kr.title}
+            {space && (
+              <span style={{ fontSize: 12.5, color: 'var(--navy-400)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ flexShrink: 0 }}>
+                  <path d="M8.7 2.3l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 0 1-1.4 0l-5-5A1 1 0 0 1 2 8V3a1 1 0 0 1 1-1h5a1 1 0 0 1 .7.3z"/>
+                  <circle cx="5.5" cy="5.5" r=".5" fill="currentColor"/>
+                </svg>
+                {space.name}
               </span>
             )}
             {tags.map(tag => (
-              <span key={tag} style={{ fontSize: 10.5, color: 'var(--navy-400)', background: 'var(--navy-700)', borderRadius: 5, padding: '2px 7px' }}>
+              <span key={tag} style={{ fontSize: 12, color: 'var(--navy-400)' }}>
                 #{tag}
               </span>
             ))}
@@ -497,6 +527,7 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
   function renderTask(task: Task) {
     return (
       <TaskRow
+                  spaces={spaces}
         key={task.id}
         task={task}
         tags={tagsByTask[task.id] ?? []}
