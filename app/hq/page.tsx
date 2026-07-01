@@ -73,7 +73,6 @@ export default function HQPage() {
   // itself on item-click) share it. Always closed on desktop — the rail is
   // already a permanent column.
   const isMobile = useIsMobile(900)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   // Notes "focus mode" — when on (desktop), the NavRail is hidden and Notes
   // collapses its own two panes so the editor gets the full viewport width.
   const [notesFocus, setNotesFocus] = useState(false)
@@ -540,7 +539,6 @@ export default function HQPage() {
     }
     if (r.krId) setInitialKRId(r.krId)
     goToScreen(r.screen as Screen)
-    if (isMobile) setDrawerOpen(false)
   }
 
   // Space-scoped data — everything filters from the active space's objectives.
@@ -688,7 +686,7 @@ export default function HQPage() {
                   background: 'transparent', position: 'relative', padding: 0,
                 }} onClick={() => goToScreen(tab.id)}>
                   {tab.badge ? (
-                    <div style={{ position: 'absolute', top: -3, right: 'calc(50% - 20px)', background: '#ff6452', color: '#fff', fontSize: 8, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', zIndex: 2 }}>
+                    <div style={{ position: 'absolute', top: -3, right: 'calc(50% - 20px)', background: 'var(--nw-alarm-text, #ff6452)', color: '#fff', fontSize: 9, fontWeight: 700, minWidth: 15, height: 15, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', zIndex: 2 }}>
                       {tab.badge}
                     </div>
                   ) : null}

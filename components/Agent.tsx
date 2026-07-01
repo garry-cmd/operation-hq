@@ -338,7 +338,7 @@ export default function Agent({
           style={{
             flex: 1, resize: 'none', maxHeight: 160, padding: '11px 14px', borderRadius: 12,
             background: 'var(--navy-800)', border: '1px solid var(--navy-600)', color: 'var(--navy-50)',
-            fontSize: 14, lineHeight: 1.5, fontFamily: 'inherit', outline: 'none',
+            fontSize: 16, lineHeight: 1.5, fontFamily: 'inherit', outline: 'none',
           }}
         />
         <button

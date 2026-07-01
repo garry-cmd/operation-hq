@@ -89,16 +89,16 @@ function InlineCreate({ onSave, onCancel, spaceId }: {
         placeholder="Task name…"
         style={{
           flex: 1, background: 'transparent', border: 'none', outline: 'none',
-          fontSize: 13, color: 'var(--navy-50)', fontFamily: 'inherit',
+          fontSize: 16, color: 'var(--navy-50)', fontFamily: 'inherit',
         }}
       />
       <button
         onClick={submit}
-        style={{ fontSize: 11, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px' }}
+        style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 12px' }}
       >Add</button>
       <button
         onClick={onCancel}
-        style={{ fontSize: 11, color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer' }}
+        style={{ fontSize: 14, color: 'var(--navy-400)', background: 'none', border: 'none', cursor: 'pointer', padding: '10px 10px' }}
       >✕</button>
     </div>
   )
@@ -216,7 +216,7 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
 
   const LBL: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 7 }
   const CHIP = (active: boolean): React.CSSProperties => ({
-    fontSize: 11.5, fontWeight: 500, padding: '7px 13px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
+    fontSize: 12.5, fontWeight: 500, padding: '9px 14px', borderRadius: 8, cursor: 'pointer', whiteSpace: 'nowrap',
     border: active ? '1px solid rgba(77,143,255,.4)' : '1px solid var(--navy-600)',
     background: active ? 'rgba(77,143,255,.14)' : 'transparent',
     color: active ? 'var(--accent)' : 'var(--navy-300)',
@@ -243,7 +243,7 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
           style={{
             width: '100%', boxSizing: 'border-box', background: 'var(--navy-900)',
             border: '1px solid var(--navy-600)', borderRadius: 10, padding: '12px 14px',
-            fontSize: 15, fontWeight: 600, color: 'var(--navy-50)', fontFamily: 'inherit',
+            fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', fontFamily: 'inherit',
             outline: 'none', marginBottom: 18,
           }}
         />
@@ -261,7 +261,7 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
               onChange={e => setDueDate(e.target.value || null)}
               style={{
                 background: 'var(--navy-900)', border: '1px solid var(--navy-600)', borderRadius: 8,
-                padding: '6px 9px', fontSize: 12, color: 'var(--navy-100)', fontFamily: 'inherit', colorScheme: 'dark',
+                padding: '6px 9px', fontSize: 12, color: 'var(--navy-100)', fontFamily: 'inherit', colorScheme: 'light dark',
               }}
             />
             {dueDate && (

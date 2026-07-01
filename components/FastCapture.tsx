@@ -198,7 +198,7 @@ export default function FastCapture({
                 active === 'note'      ? 'Note title (optional)' :
                                          'e.g. 200 KB swings sub-15 min'
               }
-              style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 12, padding: '13px 14px', fontSize: 15, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
+              style={{ width: '100%', background: 'var(--navy-800)', border: '1px solid var(--navy-500)', borderRadius: 12, padding: '13px 14px', fontSize: 16, color: 'var(--navy-50)', fontFamily: 'inherit', marginBottom: 12, outline: 'none', boxSizing: 'border-box' }} />
 
             {/* NOTE — body */}
             {active === 'note' && (

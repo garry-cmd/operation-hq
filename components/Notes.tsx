@@ -680,7 +680,7 @@ export default function Notes({
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {isMobile && (
               <button onClick={() => setSearchOpen(true)} aria-label="Search notes" style={{
-                width: 26, height: 26, border: 'none', borderRadius: 5,
+                width: 30, height: 30, border: 'none', borderRadius: 6,
                 background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
               }}>
@@ -691,7 +691,7 @@ export default function Notes({
             )}
             {scope.kind !== 'tag' && (
               <button onClick={onCreateNote} title="New note" style={{
-                width: 26, height: 26, border: 'none', borderRadius: 5,
+                width: 30, height: 30, border: 'none', borderRadius: 6,
                 background: 'var(--accent)', color: '#fff', cursor: 'pointer',
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                 fontSize: 18, lineHeight: 1, fontFamily: 'inherit', fontWeight: 300, flexShrink: 0,

@@ -1,3 +1,4 @@
+import { useIsMobile } from '@/lib/useIsMobile'
 'use client'
 import React from 'react'
 import { InboxIcon } from '../Icons'
@@ -339,6 +340,7 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
   const noteNotebook = note.notebook_id ? notebooks.find(n => n.id === note.notebook_id) : null
 
   const [moreOpen, setMoreOpen] = useState(false)
+  const isMobile = useIsMobile(900)
   const moreRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => {
     if (!moreOpen) return
@@ -358,7 +360,7 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
         background: 'var(--surface)',
       }}>
         {/* Back / collapse */}
-        <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode' : 'Focus mode'}
+        {!isMobile && <button onClick={onToggleFullscreen} title={fullscreen ? 'Exit focus mode' : 'Focus mode'}
           style={{ background: 'none', border: 'none', color: 'var(--t-3)', cursor: 'pointer', padding: '4px', display: 'inline-flex', alignItems: 'center', borderRadius: 4 }}
           onMouseEnter={e => { e.currentTarget.style.color = 'var(--t-1)'; e.currentTarget.style.background = 'var(--hover)' }}
           onMouseLeave={e => { e.currentTarget.style.color = 'var(--t-3)'; e.currentTarget.style.background = 'none' }}>
@@ -366,7 +368,7 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
             ? <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M10 1.5v3.5h3.5M10 5l4-4M6 14.5v-3.5H2.5M6 11l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             : <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
           }
-        </button>
+        </button>}
 
         {/* Breadcrumb path */}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 4, minWidth: 0, overflow: 'hidden' }}>
@@ -401,7 +403,7 @@ export function NoteEditor({ note, tags, spaces, roadmapItems, notebooks, fullsc
             title="More options"
             style={{
               background: moreOpen ? 'var(--hover)' : 'none', border: 'none', borderRadius: 5,
-              color: 'var(--t-2)', cursor: 'pointer', padding: '4px 7px',
+              color: 'var(--t-2)', cursor: 'pointer', padding: '7px 10px',
               display: 'inline-flex', alignItems: 'center', fontSize: 16, lineHeight: 1,
               fontFamily: 'inherit',
             }}
