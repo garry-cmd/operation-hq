@@ -150,6 +150,7 @@ export default function Home({
   const [vitalsOpen, setVitalsOpen] = useState<boolean>(() => loadLS<boolean>('hq-home-vitals-open', true))
   const [focusOpen, setFocusOpen] = useState(false)
   const [objectivesOpen, setObjectivesOpen] = useState(false)
+  const [closesOpen, setClosesOpen] = useState<boolean>(() => loadLS<boolean>('hq-home-closes-open', true))
 
   const [addActionObj, setAddActionObj] = useState<string | null>(null)
   const [actionKRSel, setActionKRSel] = useState<string>('')
@@ -222,6 +223,7 @@ export default function Home({
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])
   useEffect(() => { try { window.localStorage.setItem('hq-home-vitals-open', JSON.stringify(vitalsOpen)) } catch {} }, [vitalsOpen])
+  useEffect(() => { try { window.localStorage.setItem('hq-home-closes-open', JSON.stringify(closesOpen)) } catch {} }, [closesOpen])
   useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
   useEffect(() => { try { window.localStorage.setItem('hq-home-obj-collapsed', JSON.stringify(collapsed)) } catch {} }, [collapsed])
 
@@ -1196,8 +1198,13 @@ export default function Home({
           {/* close the week — bottom of main */}
           {openCloses.length > 0 && (
             <div className="closes">
-              <div className="seclbl"><span className="lbl">Close the week</span><span className="rule" /></div>
-              {openCloses.map(({ sp, wk, overdue }) => (
+              <button className="sec-hdr" onClick={() => setClosesOpen(v => !v)}>
+                <span className={`sec-chev${closesOpen ? ' open' : ''}`}>▸</span>
+                <span className="lbl">Close the week</span>
+                <span className="sec-meta">{openCloses.length} open</span>
+                <span className="rule" />
+              </button>
+              {closesOpen && openCloses.map(({ sp, wk, overdue }) => (
                 <div key={sp.id} className="closebar">
                   <div className="ci">◷</div>
                   <div className="ct">
