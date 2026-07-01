@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from 'react'
 import SpaceSwitcher from './SpaceSwitcher'
 import { Space, AnnualObjective, RoadmapItem } from '@/lib/types'
 
-export type Screen = 'home' | 'agent' | 'notes' | 'files' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings'
+export type Screen = 'home' | 'agent' | 'notes' | 'files' | 'roadmap' | 'reflect' | 'park' | 'tags' | 'settings' | 'tasks'
 
 interface Props {
   screen: Screen

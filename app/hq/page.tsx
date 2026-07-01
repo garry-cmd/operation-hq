@@ -42,8 +42,11 @@ import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 import type { QuarterReview } from '@/lib/types'
 import { checkIsTauri, onTauriEvent } from '@/lib/tauri'
+import Tasks from '@/components/Tasks'
+import * as tasksDb from '@/lib/db/tasks'
+import type { Task, TaskTag } from '@/lib/types'
 
-type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'notes' | 'files' | 'tags' | 'settings'
+type Screen = 'home' | 'agent' | 'reflect' | 'roadmap' | 'park' | 'notes' | 'files' | 'tags' | 'settings' | 'tasks'
 
 
 export default function HQPage() {
@@ -107,6 +110,8 @@ export default function HQPage() {
   const [agentMessages, setAgentMessages] = useState<ChatMsg[]>([])
   const [agentPending, setAgentPending] = useState(false)
   const [tagsByNote, setTagsByNote] = useState<Map<string, string[]>>(new Map())
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [tagsByTask, setTagsByTask] = useState<Record<string, string[]>>({})
   const [shareToken, setShareToken] = useState('')
   const [spaces, setSpaces] = useState<Space[]>([])
   const [activeSpaceId, setActiveSpaceId] = useState('')
@@ -310,6 +315,21 @@ export default function HQPage() {
     } catch (err) {
       console.error('loadAll: note_tags failed:', err)
       setTagsByNote(new Map())
+    }
+    // Tasks + task tags
+    try {
+      const taskRows = await tasksDb.listAll()
+      setTasks(taskRows)
+      if (taskRows.length > 0) {
+        const tagRows = await tasksDb.listTagsForTasks(taskRows.map(t => t.id))
+        const tmap: Record<string, string[]> = {}
+        for (const row of tagRows) {
+          tmap[row.task_id] = [...(tmap[row.task_id] ?? []), row.tag]
+        }
+        setTagsByTask(tmap)
+      }
+    } catch (err) {
+      console.error('loadAll: tasks failed:', err)
     }
     // Set active space from localStorage or default to first.
     const savedSpaceId = localStorage.getItem('hq-active-space')
@@ -551,7 +571,7 @@ export default function HQPage() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--navy-900)' }}>
-      {!(notesFocus && !isMobile) && (
+      {!isMobile && !(notesFocus && !isMobile) && (
       <NavRail
         screen={screen}
         onScreenChange={goToScreen}
@@ -586,47 +606,87 @@ export default function HQPage() {
         onToggleTheme={toggleTheme}
         onCopyShareLink={copyShareLink}
         onSignOut={() => supabase.auth.signOut()}
-        isMobile={isMobile}
-        isOpen={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
+        isMobile={false}
+        isOpen={false}
+        onClose={() => {}}
       />
       )}
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-      {/* Mobile-only top bar — hamburger + brand. Hidden on desktop where
-          NavRail is permanently visible. Sticky so it stays during scroll. */}
-      {isMobile && (
-        <div style={{
-          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 25,
-          display: 'flex', alignItems: 'center', gap: 10,
-          paddingTop: 'max(10px, env(safe-area-inset-top))',
-          paddingBottom: 10,
-          paddingLeft: 14,
-          paddingRight: 14,
-          background: 'var(--navy-800)',
-          borderBottom: '1px solid var(--navy-600)',
-          minHeight: 48,
-        }}>
-          <button
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Open menu"
-            style={{
-              width: 36, height: 36, borderRadius: 6,
-              background: 'transparent', border: 'none', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'var(--navy-100)',
-            }}>
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-              <path d="M2 4h14M2 9h14M2 14h14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+      {/* Mobile-only bottom nav — replaces the hamburger/drawer on small screens.
+          Five primary tabs; secondary screens (Reflect, Settings, etc.) accessible
+          via NavRail which still renders as a slide-in drawer when triggered from
+          the Agent or Settings gear. Hidden on desktop where NavRail is permanent. */}
+      {isMobile && (() => {
+        const overdueCount = tasks.filter(t => !t.completed_at && t.due_date && t.due_date < new Date().toISOString().slice(0, 10)).length
+        const TAB_STYLE = (active: boolean): React.CSSProperties => ({
+          flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 3, cursor: 'pointer', padding: '8px 0 0', border: 'none',
+          background: 'transparent', position: 'relative',
+        })
+        const ICON_COLOR = (active: boolean) => active ? 'var(--accent)' : 'var(--navy-500)'
+        const LABEL_COLOR = (active: boolean) => active ? 'var(--accent)' : 'var(--navy-500)'
+        const tabs: { id: Screen; label: string; icon: React.ReactNode; badge?: number }[] = [
+          { id: 'home', label: 'Home', icon: (
+            <svg width="23" height="23" viewBox="0 0 24 24" fill={screen === 'home' ? 'var(--accent)' : 'none'} stroke={ICON_COLOR(screen === 'home')} strokeWidth="1.7">
+              <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/>
             </svg>
-          </button>
-          <div style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', color: 'var(--navy-50)' }}>
-            Operation <span style={{ color: 'var(--accent)' }}>HQ</span>
+          )},
+          { id: 'notes', label: 'Notes', icon: (
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke={ICON_COLOR(screen === 'notes')} strokeWidth="1.7">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+          )},
+          { id: 'tasks', label: 'Tasks', badge: overdueCount || undefined, icon: (
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke={ICON_COLOR(screen === 'tasks')} strokeWidth="1.7">
+              <polyline points="9 11 12 14 22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+          )},
+          { id: 'roadmap', label: 'Roadmap', icon: (
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke={ICON_COLOR(screen === 'roadmap')} strokeWidth="1.7">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="9" y1="21" x2="9" y2="9"/>
+            </svg>
+          )},
+          { id: 'agent', label: 'Agent', icon: (
+            <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke={ICON_COLOR(screen === 'agent')} strokeWidth="1.7">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          )},
+        ]
+        return (
+          <div style={{
+            position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 50,
+            height: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+            paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+            background: 'rgba(10,13,22,.96)',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderTop: '1px solid var(--navy-700)',
+            display: 'flex',
+            alignItems: 'flex-start',
+          }}>
+            {tabs.map(tab => (
+              <button key={tab.id} style={TAB_STYLE(screen === tab.id)} onClick={() => goToScreen(tab.id)}>
+                {tab.badge ? (
+                  <div style={{ position: 'absolute', top: 6, right: 'calc(50% - 18px)', background: '#ff6452', color: '#fff', fontSize: 8, fontWeight: 700, minWidth: 14, height: 14, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px', border: '1.5px solid var(--navy-900)' }}>
+                    {tab.badge}
+                  </div>
+                ) : null}
+                <div style={{ color: ICON_COLOR(screen === tab.id) }}>{tab.icon}</div>
+                <span style={{ fontSize: 10, fontWeight: 500, color: LABEL_COLOR(screen === tab.id), letterSpacing: '.01em' }}>{tab.label}</span>
+              </button>
+            ))}
           </div>
-        </div>
-      )}
-      {/* Spacer that compensates for the fixed mobile top bar height so content isn't hidden under it */}
-      {isMobile && <div style={{ height: 'calc(48px + max(0px, env(safe-area-inset-top)))' }} />}
+        )
+      })()}
+      {/* Spacer so content isn't hidden behind bottom nav on mobile */}
+      {isMobile && <div style={{ height: 'calc(64px + env(safe-area-inset-bottom, 0px))' }} />}
       {/* Tasks/Notes/Tags use full viewport width for their multi-pane layouts;
           all other screens get the standard centered main with conditional
           maxWidth (Roadmap/Summary/panels widen; otherwise narrow). */}
@@ -686,6 +746,16 @@ export default function HQPage() {
           toast={setToast}
         />
 
+      ) : screen === 'tasks' && !loading ? (
+        <Tasks
+          spaces={spaces}
+          activeSpaceId={activeSpaceId}
+          roadmapItems={roadmapItems}
+          tasks={tasks}
+          setTasks={setTasks}
+          tagsByTask={tagsByTask}
+          toast={setToast}
+        />
       ) : screen === 'files' && !loading ? (
         <Files
           spaces={spaces}
