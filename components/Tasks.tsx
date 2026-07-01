@@ -233,6 +233,21 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
   onClose: () => void
 }) {
   const [title, setTitle] = useState(task.title)
+  // Swipe-down-to-dismiss (drag from the grabber zone)
+  const [dragY, setDragY] = useState(0)
+  const dragStart = useRef<number | null>(null)
+  const onDragStart = (clientY: number) => { dragStart.current = clientY }
+  const onDragMove = (clientY: number) => {
+    if (dragStart.current == null) return
+    const dy = clientY - dragStart.current
+    if (dy > 0) setDragY(dy)
+  }
+  const onDragEnd = () => {
+    if (dragStart.current == null) return
+    dragStart.current = null
+    if (dragY > 110) onClose()
+    else setDragY(0)
+  }
   const [description, setDescription] = useState(task.description ?? '')
   const [tags, setTags] = useState<string[]>(initialTags)
   const [tagDraft, setTagDraft] = useState('')
@@ -285,10 +300,21 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
         borderRadius: '18px 18px 0 0',
         padding: '18px 18px calc(20px + env(safe-area-inset-bottom, 0px))',
         maxHeight: '85vh', overflowY: 'auto',
-        animation: 'sheetUp .18s ease',
+        transform: dragY ? `translateY(${dragY}px)` : undefined,
+        transition: dragStart.current == null ? 'transform .2s ease' : 'none',
+        animation: dragY ? 'none' : 'sheetUp .18s ease',
+        touchAction: dragStart.current != null ? 'none' : undefined,
       }}>
-        {/* grabber */}
-        <div style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--navy-600)', margin: '0 auto 16px' }} />
+        {/* grabber — drag handle for swipe-to-dismiss */}
+        <div
+          onTouchStart={e => onDragStart(e.touches[0].clientY)}
+          onTouchMove={e => onDragMove(e.touches[0].clientY)}
+          onTouchEnd={onDragEnd}
+          onMouseDown={e => { onDragStart(e.clientY); const mm = (ev: MouseEvent) => onDragMove(ev.clientY); const mu = () => { onDragEnd(); window.removeEventListener('mousemove', mm); window.removeEventListener('mouseup', mu) }; window.addEventListener('mousemove', mm); window.addEventListener('mouseup', mu) }}
+          style={{ padding: '4px 0 14px', margin: '-4px 0 0', cursor: 'grab', touchAction: 'none' }}
+        >
+          <div style={{ width: 40, height: 5, borderRadius: 3, background: 'var(--navy-500)', margin: '0 auto' }} />
+        </div>
 
         {/* title */}
         <input
