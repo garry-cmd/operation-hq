@@ -160,6 +160,16 @@ function TaskRow({ task, tags, spaces, roadmapItems, onToggle, onOpen }: {
           textDecoration: isDone ? 'line-through' : 'none',
         }}>{task.title}</div>
 
+        {/* description preview — one line, muted */}
+        {task.description && (
+          <div style={{
+            fontSize: 13, color: 'var(--navy-300)', marginTop: 3, lineHeight: 1.35,
+            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          }}>
+            {task.description}
+          </div>
+        )}
+
         {/* KR context — the alignment moat, readable not chipped */}
         {kr && (
           <div style={{
@@ -219,6 +229,7 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
   onClose: () => void
 }) {
   const [title, setTitle] = useState(task.title)
+  const [description, setDescription] = useState(task.description ?? '')
   const [dueDate, setDueDate] = useState<string | null>(task.due_date)
   const [priority, setPriority] = useState<Task['priority']>(task.priority)
   const [spaceId, setSpaceId] = useState<string | null>(task.space_id)
@@ -237,6 +248,7 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
   function save() {
     onSave({
       title: title.trim() || task.title,
+      description: description.trim() || null,
       due_date: dueDate,
       priority,
       space_id: spaceId,
@@ -274,7 +286,21 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
             width: '100%', boxSizing: 'border-box', background: 'var(--navy-900)',
             border: '1px solid var(--navy-600)', borderRadius: 10, padding: '12px 14px',
             fontSize: 16, fontWeight: 600, color: 'var(--navy-50)', fontFamily: 'inherit',
-            outline: 'none', marginBottom: 18,
+            outline: 'none', marginBottom: 10,
+          }}
+        />
+
+        {/* description */}
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          placeholder="Description…"
+          rows={3}
+          style={{
+            width: '100%', boxSizing: 'border-box', background: 'var(--navy-900)',
+            border: '1px solid var(--navy-600)', borderRadius: 10, padding: '11px 14px',
+            fontSize: 14, lineHeight: 1.5, color: 'var(--navy-100)', fontFamily: 'inherit',
+            outline: 'none', marginBottom: 18, resize: 'vertical', minHeight: 76,
           }}
         />
 
