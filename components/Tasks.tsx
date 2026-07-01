@@ -27,19 +27,20 @@ function relDate(iso: string): string {
   const now = new Date()
   now.setHours(0, 0, 0, 0)
   const diff = Math.round((d.getTime() - now.getTime()) / 86400000)
-  if (diff === 0) return 'Today'
-  if (diff === 1) return 'Tomorrow'
-  if (diff === -1) return 'Yesterday'
-  if (diff < 0) return `${Math.abs(diff)}d ago`
-  if (diff < 7) return d.toLocaleDateString('en-US', { weekday: 'short' })
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  if (diff === 0) return 'Due today'
+  if (diff === 1) return 'Due tomorrow'
+  if (diff === -1) return 'Due yesterday'
+  if (diff < 0) return `Due ${Math.abs(diff)} days ago`
+  if (diff < 7) return `Due ${d.toLocaleDateString('en-US', { weekday: 'long' })}`
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return `Due ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) })}`
 }
 
 const PRIORITY_COLOR: Record<number, string> = {
-  1: '#ff6452',
-  2: '#f5b840',
-  3: '#4d9fff',
-  4: 'transparent',
+  1: 'var(--nw-alarm-text, #ff6452)',
+  2: 'var(--nw-caution-text, #f5b840)',
+  3: 'var(--accent)',
+  4: 'var(--navy-500)',
 }
 
 type Scope =
@@ -78,9 +79,8 @@ function InlineCreate({ onSave, onCancel, spaceId }: {
   }
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--navy-700)' }}>
-      <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: 'transparent', flexShrink: 0 }} />
-      <div style={{ width: 20, height: 20, borderRadius: 5, border: '1.5px solid var(--navy-500)', flexShrink: 0 }} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 15, padding: '13px 18px', borderBottom: '1px solid var(--navy-700)' }}>
+      <div style={{ width: 30, height: 30, borderRadius: '50%', border: '2px solid var(--navy-500)', flexShrink: 0 }} />
       <input
         ref={ref}
         value={title}
@@ -117,24 +117,24 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onOpen }: {
   const kr = task.roadmap_item_id ? roadmapItems.find(r => r.id === task.roadmap_item_id) : null
   const isDone = !!task.completed_at
   const recurring = !!(task.recurrence_rule || task.recurrence_text)
+  const ringColor = isDone ? 'var(--navy-500)' : (PRIORITY_COLOR[task.priority] ?? 'var(--navy-500)')
 
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--navy-700)' }}>
-      {/* priority bar */}
-      <div style={{ width: 4, alignSelf: 'stretch', borderRadius: 2, background: PRIORITY_COLOR[task.priority] ?? 'transparent', flexShrink: 0, minHeight: 20 }} />
-
-      {/* checkbox */}
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 15, padding: '13px 18px' }}>
+      {/* circle checkbox — ring carries the priority color */}
       <button
         onClick={onToggle}
+        aria-label={isDone ? 'Mark not done' : 'Mark done'}
         style={{
-          width: 24, height: 24, borderRadius: '50%', flexShrink: 0, marginTop: 1,
-          border: isDone ? 'none' : '1.5px solid var(--navy-500)',
+          width: 30, height: 30, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+          border: `2px solid ${ringColor}`,
           background: isDone ? 'var(--navy-600)' : 'transparent',
           cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'background .12s',
         }}
       >
         {isDone && (
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="var(--navy-300)" strokeWidth="2.5">
+          <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="var(--navy-300)" strokeWidth="2.4">
             <polyline points="2,6 5,9 10,3"/>
           </svg>
         )}
@@ -143,35 +143,36 @@ function TaskRow({ task, tags, roadmapItems, onToggle, onOpen }: {
       {/* body — tap opens detail sheet */}
       <button onClick={onOpen} style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', cursor: 'pointer', padding: 0, textAlign: 'left', fontFamily: 'inherit' }}>
         <div style={{
-          fontSize: 13, color: isDone ? 'var(--navy-500)' : 'var(--navy-100)',
-          lineHeight: 1.35,
+          fontSize: 16.5, fontWeight: 500, color: isDone ? 'var(--navy-400)' : 'var(--navy-100)',
+          lineHeight: 1.3, letterSpacing: '-.01em',
           textDecoration: isDone ? 'line-through' : 'none',
-          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}>{task.title}</div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
-          {task.due_date && (
-            <span style={{
-              fontSize: 10, fontFamily: 'monospace', display: 'inline-flex', alignItems: 'center', gap: 3,
-              color: bucket === 'overdue' ? '#ff6452' : bucket === 'today' ? '#f5b840' : 'var(--navy-400)',
-            }}>
-              {recurring && <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 11 }}>↻</span>}
-              {relDate(task.due_date)}
-            </span>
-          )}
-          {!task.due_date && recurring && (
-            <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 11, color: 'var(--navy-400)' }}>↻</span>
-          )}
-          {kr && (
-            <span style={{ fontSize: 9, color: 'var(--accent)', background: 'rgba(77,143,255,.12)', borderRadius: 3, padding: '1px 5px' }}>
-              {kr.title.length > 20 ? kr.title.slice(0, 20) + '…' : kr.title}
-            </span>
-          )}
-          {tags.map(tag => (
-            <span key={tag} style={{ fontSize: 9, color: 'var(--navy-400)', background: 'var(--navy-700)', borderRadius: 3, padding: '1px 5px' }}>
-              #{tag}
-            </span>
-          ))}
-        </div>
+        {(task.due_date || recurring || kr || tags.length > 0) && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4, flexWrap: 'wrap' }}>
+            {task.due_date && (
+              <span style={{
+                fontSize: 13.5, display: 'inline-flex', alignItems: 'center', gap: 4,
+                color: bucket === 'overdue' ? 'var(--nw-alarm-text, #ff6452)' : bucket === 'today' ? 'var(--nw-caution-text, #f5b840)' : 'var(--navy-400)',
+              }}>
+                {relDate(task.due_date)}
+                {recurring && <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 14 }}>↻</span>}
+              </span>
+            )}
+            {!task.due_date && recurring && (
+              <span title={task.recurrence_text ?? 'Recurring'} style={{ fontSize: 14, color: 'var(--navy-400)' }}>↻</span>
+            )}
+            {kr && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-dim, rgba(77,143,255,.12))', borderRadius: 5, padding: '2px 7px' }}>
+                {kr.title.length > 24 ? kr.title.slice(0, 24) + '…' : kr.title}
+              </span>
+            )}
+            {tags.map(tag => (
+              <span key={tag} style={{ fontSize: 10.5, color: 'var(--navy-400)', background: 'var(--navy-700)', borderRadius: 5, padding: '2px 7px' }}>
+                #{tag}
+              </span>
+            ))}
+          </div>
+        )}
       </button>
     </div>
   )
@@ -330,8 +331,8 @@ function TaskDetailSheet({ task, spaces, roadmapItems, onSave, onDelete, onClose
           <button
             onClick={() => { if (confirm('Delete this task?')) onDelete() }}
             style={{
-              padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(255,100,82,.3)',
-              background: 'transparent', color: '#ff6452', fontSize: 13, fontWeight: 600,
+              padding: '12px 16px', borderRadius: 10, border: '1px solid var(--nw-alarm-text)',
+              background: 'transparent', color: 'var(--nw-alarm-text)', fontSize: 13, fontWeight: 600,
               cursor: 'pointer', fontFamily: 'inherit',
             }}
           >Delete</button>
@@ -359,15 +360,15 @@ function SectionHeader({ label, count, collapsed, onToggle }: {
     <div
       onClick={onToggle}
       style={{
-        padding: '10px 16px 6px',
+        padding: '16px 18px 6px',
         display: 'flex', alignItems: 'center', gap: 8,
         cursor: onToggle ? 'pointer' : 'default',
       }}
     >
-      <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase' }}>
+      <span style={{ fontSize: 17, fontWeight: 650, color: 'var(--navy-100)', letterSpacing: '-.015em' }}>
         {label}
       </span>
-      <span style={{ fontSize: 10, color: 'var(--navy-500)', fontFamily: 'monospace' }}>{count}</span>
+      <span style={{ fontSize: 15, color: 'var(--navy-400)', fontWeight: 400 }}>({count})</span>
       {onToggle && (
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--navy-500)', transform: collapsed ? 'rotate(-90deg)' : 'none', transition: 'transform .15s' }}>▾</span>
       )}
@@ -579,14 +580,14 @@ export default function Tasks({ spaces, activeSpaceId, roadmapItems, tasks, setT
                 flexShrink: 0, fontSize: 11, fontWeight: 500,
                 padding: '4px 11px', borderRadius: 20, cursor: 'pointer', whiteSpace: 'nowrap',
                 border: isActive
-                  ? `1px solid ${urgent ? 'rgba(255,100,82,.4)' : 'rgba(77,143,255,.38)'}`
+                  ? `1px solid ${urgent ? 'var(--nw-alarm-text)' : 'rgba(77,143,255,.38)'}`
                   : '1px solid var(--navy-600)',
                 background: isActive
-                  ? `${urgent ? 'rgba(255,100,82,.14)' : 'rgba(77,143,255,.14)'}`
+                  ? `${urgent ? 'var(--nw-alarm-bg, rgba(255,100,82,.14))' : 'rgba(77,143,255,.14)'}`
                   : 'transparent',
                 color: isActive
-                  ? (urgent ? '#ff6452' : 'var(--accent)')
-                  : (urgent ? '#ff6452' : 'var(--navy-300)'),
+                  ? (urgent ? 'var(--nw-alarm-text)' : 'var(--accent)')
+                  : (urgent ? 'var(--nw-alarm-text)' : 'var(--navy-300)'),
               }}
             >{label}</button>
           )
