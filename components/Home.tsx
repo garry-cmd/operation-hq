@@ -1227,7 +1227,7 @@ export default function Home({
 
       <style>{`
 
-        .home{max-width:1340px;margin:0 auto;padding:8px 4px 80px;}
+        .home{max-width:1340px;margin:0 auto;padding:8px 4px 80px;overflow-x:hidden;}
         .lbl{font-family:var(--font-mono);font-size:9.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label);}
 
         .hd{display:flex;align-items:center;gap:13px;padding:8px 0 2px;flex-wrap:wrap;}
@@ -1652,9 +1652,10 @@ export default function Home({
           .habits-cards{grid-template-columns:1fr;}
           .hcard{height:116px;}
           .vitals-groups{grid-template-columns:1fr;gap:10px;}
-          .exp{flex-direction:column;}
-          .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);border-left-width:4px;}
-          .act-col{flex:1 1 auto;border-left:none;border-top:1px solid var(--line);}
+          .exp{flex-direction:column;width:100%;}
+          .rail{flex:1 1 auto;width:100%;box-sizing:border-box;border-right:none;border-bottom:1px solid var(--line);border-left-width:4px;}
+          .kr-col{width:100%;box-sizing:border-box;}
+          .act-col{flex:1 1 auto;width:100%;box-sizing:border-box;border-left:none;border-top:1px solid var(--line);}
           .ohb{padding:6px 10px;font-size:15px;}
           .addact{padding:10px 12px;font-size:13px;}
           .rail-top{padding-bottom:4px;}
