@@ -18,6 +18,7 @@ import * as trackedFilesDb from '@/lib/db/trackedFiles'
 import * as qrDb from '@/lib/db/quarterReviews'
 import type { QuarterReview as QRType } from '@/lib/db/quarterReviews'
 import { extractNoteText } from '@/lib/noteText'
+import { listRecentBriefs } from '@/lib/db/briefings'
 import Roadmap from '@/components/Roadmap'
 import ObjectivePanel from '@/components/ObjectivePanel'
 import Reflect from '@/components/Reflect'
@@ -41,7 +42,7 @@ import MetricLogModal from '@/components/MetricLogModal'
 import { useIsMobile } from '@/lib/useIsMobile'
 import type { User } from '@supabase/supabase-js'
 import type { QuarterReview } from '@/lib/types'
-import { checkIsTauri, onTauriEvent } from '@/lib/tauri'
+import { checkIsTauri, onTauriEvent, notifyNative, setBadge } from '@/lib/tauri'
 import Tasks from '@/components/Tasks'
 import * as tasksDb from '@/lib/db/tasks'
 import type { Task, TaskTag } from '@/lib/types'
@@ -65,7 +66,7 @@ export default function HQPage() {
   const [copied, setCopied] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>('light')
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [captureRequest, setCaptureRequest] = useState<{ type: 'note'; key: number } | null>(null)
+  const [captureRequest, setCaptureRequest] = useState<{ type: 'task' | 'note'; key: number } | null>(null)
 
   // Mobile fallback (May 17): the NavRail collapses into a hamburger-triggered
   // slide-in drawer below 900px. Drawer state lives at the page level so the
@@ -493,16 +494,57 @@ export default function HQPage() {
   // ── Tauri bridge ─────────────────────────────────────────────────────────
   // Detect Tauri on mount (so isTauri() is ready synchronously for pickers),
   // then listen for global-shortcut events from the Rust shell.
+  const [isTauriApp, setIsTauriApp] = useState(false)
   useEffect(() => {
     let unlisten: (() => void) | null = null
     checkIsTauri().then(detected => {
       if (!detected) return
-      onTauriEvent('hq:capture', () => {
-        setCaptureRequest({ type: 'note', key: Date.now() })
+      setIsTauriApp(true)
+      onTauriEvent('hq:capture', (payload) => {
+        // Shell sends 'task' (⌘T) or 'note' (⌘N)
+        setCaptureRequest({ type: payload === 'task' ? 'task' : 'note', key: Date.now() })
       }).then(fn => { unlisten = fn })
     })
     return () => { unlisten?.() }
   }, [])
+
+  // ── Desktop dock badge — overdue open tasks ───────────────────────────────
+  const overdueTaskCount = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    return tasks.filter(t => !t.completed_at && t.due_date && t.due_date < today).length
+  }, [tasks])
+  useEffect(() => {
+    if (!isTauriApp) return
+    setBadge(overdueTaskCount > 0 ? overdueTaskCount : null)
+  }, [isTauriApp, overdueTaskCount])
+
+  // ── Desktop native notifications for Scout briefings ─────────────────────
+  // Web push doesn't reach the WKWebView iframe, so the desktop app polls
+  // briefings and raises native macOS notifications for new ones. First run
+  // stamps the marker without notifying (no backlog spam).
+  useEffect(() => {
+    if (!isTauriApp) return
+    const KEY = 'hq-tauri-briefs-seen'
+    let cancelled = false
+    async function check() {
+      try {
+        const briefs = await listRecentBriefs(10)
+        if (cancelled || briefs.length === 0) return
+        const seen = localStorage.getItem(KEY)
+        if (!seen) { localStorage.setItem(KEY, briefs[0].created_at); return }
+        const fresh = briefs.filter(b => b.created_at > seen)
+        if (fresh.length === 0) return
+        localStorage.setItem(KEY, briefs[0].created_at)
+        for (const b of fresh.slice(0, 3)) {
+          const body = b.body.replace(/[#*_`>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 180)
+          notifyNative(b.title, body)
+        }
+      } catch { /* transient — next poll retries */ }
+    }
+    check()
+    const t = setInterval(check, 5 * 60 * 1000)
+    return () => { cancelled = true; clearInterval(t) }
+  }, [isTauriApp])
 
   function copyShareLink() {
     if (!shareToken) {
@@ -616,7 +658,7 @@ export default function HQPage() {
           via NavRail which still renders as a slide-in drawer when triggered from
           the Agent or Settings gear. Hidden on desktop where NavRail is permanent. */}
       {isMobile && (() => {
-        const overdueCount = tasks.filter(t => !t.completed_at && t.due_date && t.due_date < new Date().toISOString().slice(0, 10)).length
+        const overdueCount = overdueTaskCount
         const ICON_COLOR = (active: boolean) => active ? 'var(--accent)' : 'var(--navy-500)'
         const LABEL_COLOR = (active: boolean) => active ? 'var(--accent)' : 'var(--navy-500)'
         const tabs: { id: Screen; label: string; icon: React.ReactNode; badge?: number }[] = [

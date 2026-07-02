@@ -94,6 +94,25 @@ export async function shellOpen(pathOrUrl: string): Promise<void> {
 }
 
 /**
+ * Raise a native OS notification via the desktop shell.
+ * Returns false when not in Tauri (caller can fall back to web push / in-app).
+ */
+export async function notifyNative(title: string, body: string): Promise<boolean> {
+  if (!(await checkIsTauri())) return false
+  try { await call('HQ_NOTIFY', { title, body }); return true }
+  catch (e) { console.error('notifyNative failed', e); return false }
+}
+
+/**
+ * Set the macOS dock badge count. null or 0 clears it. No-op in the browser.
+ */
+export async function setBadge(count: number | null): Promise<void> {
+  if (!(await checkIsTauri())) return
+  try { await call('HQ_SET_BADGE', { count }) }
+  catch (e) { console.error('setBadge failed', e) }
+}
+
+/**
  * Listen for Tauri events forwarded from the shell.
  */
 export async function onTauriEvent(
