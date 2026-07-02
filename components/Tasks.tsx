@@ -135,23 +135,30 @@ function TaskRow({ task, tags, spaces, roadmapItems, onToggle, onOpen }: {
       boxShadow: 'var(--card-shadow), var(--card-inset)',
       opacity: isDone ? .55 : 1,
     }}>
-      {/* circle checkbox — ring carries the priority color */}
+      {/* circle checkbox — 44px hit area around a 30px ring (priority color) */}
       <button
-        onClick={onToggle}
+        onClick={e => { e.stopPropagation(); onToggle() }}
         aria-label={isDone ? 'Mark not done' : 'Mark done'}
         style={{
-          width: 30, height: 30, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+          width: 44, height: 44, flexShrink: 0, margin: '-7px 0 0 -7px', padding: 0,
+          background: 'none', border: 'none', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          WebkitTapHighlightColor: 'transparent',
+        } as React.CSSProperties}
+      >
+        <span style={{
+          width: 30, height: 30, borderRadius: '50%',
           border: `2px solid ${ringColor}`,
           background: isDone ? 'var(--navy-600)' : 'transparent',
-          cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
           transition: 'background .12s',
-        }}
-      >
-        {isDone && (
-          <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="var(--navy-300)" strokeWidth="2.4">
-            <polyline points="2,6 5,9 10,3"/>
-          </svg>
-        )}
+        }}>
+          {isDone && (
+            <svg width="13" height="13" viewBox="0 0 12 12" fill="none" stroke="var(--navy-300)" strokeWidth="2.4">
+              <polyline points="2,6 5,9 10,3"/>
+            </svg>
+          )}
+        </span>
       </button>
 
       {/* body — tap opens detail sheet */}
