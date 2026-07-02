@@ -953,6 +953,9 @@ export default function HQPage() {
         setRoadmapItems={setRoadmapItems}
         setActions={setActions}
         setNotes={setNotes}
+        setTasks={setTasks}
+        onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
+        onGoToTasks={() => setScreen('tasks')}
         toast={setToast}
         openRequest={captureRequest}
       />
