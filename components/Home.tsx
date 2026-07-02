@@ -580,16 +580,24 @@ export default function Home({
     return (
       <Fragment key={a.id}>
         <div className={`frow${a.completed ? ' done' : ''}`}>
-          <button className={`fcb${a.completed ? ' on' : ''}`} onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>{a.completed ? '✓' : ''}</button>
-          <span className="ftitle">{a.title}</span>
-          {carried > 0 && <span className="fcarried" title={`Carried ${carried} week${carried > 1 ? 's' : ''}`}>carried</span>}
-          <div className="frow-actions">
-            <span className="fkrtag" title={kr.title}><span className="kd" />{kr.title}</span>
-            <button className="sched back" title="Move to backlog" onClick={() => scheduleAction(a, null)}>backlog</button>
-            <button className={`flogchip${open ? ' open' : ''}${aLogs.length ? ' has' : ''}`} onClick={() => toggleActLogs(a.id)} title={open ? 'Hide updates' : 'Updates'}>
-              <span className="lcar">▸</span>{aLogs.length ? aLogs.length : 'note'}
-            </button>
-            <button className="act-del" title="Delete action" onClick={() => deleteAction(a)}>×</button>
+          <button className="fcb-wrap" onClick={() => toggleAction(a)} title={a.completed ? 'Mark not done' : 'Mark done'}>
+            <span className={`fcb${a.completed ? ' on' : ''}`}>{a.completed ? '✓' : ''}</span>
+          </button>
+          <div className="frow-body">
+            <span className="ftitle">{a.title}</span>
+            <div className="frow-sub">
+              <span className="fkrtag"><span className="kd" style={{ background: `var(--sc, var(--navy-500))` }} />{kr.title}</span>
+              {carried > 0 && <span className="fcarried">carried {carried > 1 ? `${carried}×` : ''}</span>}
+              <div className="frow-overflow">
+                {aLogs.length > 0 && (
+                  <button className={`flogchip${open ? ' open' : ''}`} onClick={() => toggleActLogs(a.id)}>
+                    <span className="lcar">▸</span>{aLogs.length}
+                  </button>
+                )}
+                <button className="sched back frow-desktop-only" title="Move to backlog" onClick={() => scheduleAction(a, null)}>backlog</button>
+                <button className="act-del frow-desktop-only" title="Delete action" onClick={() => deleteAction(a)}>×</button>
+              </div>
+            </div>
           </div>
         </div>
         {open && (
@@ -1281,17 +1289,28 @@ export default function Home({
         .sgrp-h .dot{width:8px;height:8px;border-radius:3px;background:var(--sc,var(--navy-500));flex-shrink:0;}
         .sgrp-h .nm{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--nw-label-dim);}
         .sgrp-h .n{font-family:var(--font-mono);font-size:9px;color:var(--navy-600);}
-        .frow{display:flex;align-items:center;gap:12px;padding:8px 18px;border-top:1px solid var(--line);}
+        /* focus row — 2-line layout */
+        .frow{display:flex;align-items:center;gap:10px;padding:9px 18px;border-top:1px solid var(--line);}
         .frow:hover{background:var(--hover);}
-        .fcb{width:18px;height:18px;border-radius:50%;flex-shrink:0;border:1.6px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;transition:.12s;}
-        .fcb:hover{border-color:var(--nw-nominal-text);}
+        /* checkbox: small ring inside a large invisible tap target */
+        .fcb-wrap{width:44px;height:44px;flex-shrink:0;margin:-12px -4px -12px -12px;display:flex;align-items:center;justify-content:center;background:none;border:none;cursor:pointer;padding:0;}
+        .fcb{width:18px;height:18px;border-radius:50%;border:1.6px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;transition:.12s;pointer-events:none;}
+        .fcb-wrap:hover .fcb{border-color:var(--nw-nominal-text);}
         .fcb.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
-        .ftitle{flex:1;min-width:0;font-size:13.5px;color:var(--navy-50);line-height:1.35;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        /* body: title + sub-row */
+        .frow-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;}
+        .ftitle{font-size:14px;color:var(--navy-50);line-height:1.3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .frow.done .ftitle{color:var(--navy-500);text-decoration:line-through;}
-        .fcarried{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.04em;color:var(--nw-caution-text);background:rgba(245,184,64,.1);border-radius:5px;padding:2px 7px;flex-shrink:0;}
-        .fkrtag{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-300);background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 8px;display:inline-flex;align-items:center;gap:5px;max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;}
-        .fkrtag .kd{width:6px;height:6px;border-radius:2px;background:var(--sc,var(--navy-500));flex-shrink:0;}
-        .frow.done .fkrtag{opacity:.5;}
+        /* sub-row: KR tag + badges + overflow controls */
+        .frow-sub{display:flex;align-items:center;gap:6px;min-width:0;}
+        .fkrtag{font-family:var(--font-mono);font-size:9px;font-weight:500;color:var(--navy-400);display:inline-flex;align-items:center;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+        .fkrtag .kd{width:6px;height:6px;border-radius:2px;flex-shrink:0;}
+        .frow.done .fkrtag{opacity:.45;}
+        .fcarried{font-family:var(--font-mono);font-size:8px;font-weight:600;letter-spacing:.04em;color:var(--nw-caution-text);background:rgba(245,184,64,.1);border-radius:4px;padding:1px 5px;flex-shrink:0;}
+        /* overflow controls — log count + backlog/delete on desktop */
+        .frow-overflow{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0;}
+        .frow-desktop-only{display:none;}
+        .frow:hover .frow-desktop-only{display:inline-flex;}
         .flogchip{font-family:var(--font-mono);font-size:8.5px;font-weight:600;color:var(--navy-500);background:var(--surface-2);border:1px solid var(--line-2);border-radius:5px;padding:2px 7px;cursor:pointer;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;flex-shrink:0;}
         .flogchip:hover{color:var(--navy-200);border-color:var(--navy-400);}
         .flogchip.has{color:var(--navy-200);}
@@ -1302,7 +1321,7 @@ export default function Home({
         .addlog{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);border:1px dashed var(--line-2);border-radius:6px;padding:4px 9px;background:none;cursor:pointer;align-self:flex-start;}
         .addlog:hover{color:var(--accent);border-color:var(--accent);}
         .hide-done .frow.done{display:none;}
-        .frow-actions{display:contents;}
+
 
         /* mobile: focus-head + action rows */
         @media(max-width:899px){
@@ -1314,14 +1333,9 @@ export default function Home({
           .dtoggle{order:4;margin-left:auto;}
           .sec-hdr{min-height:44px;padding:10px 0;}
           .sec-chev{font-size:13px;padding:6px;margin:-6px 0 -6px -6px;}
-          .frow{flex-wrap:wrap;row-gap:3px;align-items:flex-start;padding:8px 4px;}
-          .fcb{margin-top:2px;min-width:36px;min-height:36px;}
-          .cb-sm{min-width:32px;min-height:32px;}
-          .ftitle{flex:1 1 0;min-width:0;white-space:normal;}
-          .fcarried{order:1;}
-          .frow-actions{display:flex;align-items:center;gap:6px;flex:0 0 100%;margin-left:22px;box-sizing:border-box;flex-wrap:wrap;}
-          .fkrtag{max-width:140px;flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-          .frow .sched,.frow .flogchip,.frow .act-del{flex-shrink:0;}
+          .ftitle{white-space:normal;font-size:14px;line-height:1.35;}
+          .fkrtag{max-width:160px;}
+          .frow-desktop-only{display:none !important;}
           .act{flex-wrap:wrap;row-gap:3px;}
           .ameta{flex:0 0 100%;margin-left:22px;flex-wrap:wrap;gap:5px;}
           .krtag{max-width:140px;}
