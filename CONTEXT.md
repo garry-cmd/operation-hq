@@ -3,7 +3,7 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jul 1, 2026 (mobile UX + Tasks build)**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jul 1, 2026 (Home redesign + mobile polish)**.
 
 ---
 
@@ -46,6 +46,37 @@ column doesn't exist.
 ---
 
 ## Current state — shipped
+
+### Jul 1 session 2 — Home redesign + mobile overflow fixes
+
+**Home card polish + visual hierarchy overhaul (`components/Home.tsx`):**
+- **Objective cards** — `navy-800` + `var(--card-shadow), var(--card-inset)` (matches Tasks card treatment; was `var(--surface)` + generic shadow)
+- **Action column items** — mini-cards (`surface` bg + `line` border + `border-radius:9px`) instead of flat text rows
+- **Vitals** — two grouped containers (Metrics / Habits) each in their own `navy-800` card with amber label + rule; replaces flat strip
+- **Focus this week** — single `navy-800` card with `border-top` space-group dividers inside; replaces flat `.sgrp` list. Space headers now just a compact label row inside the card
+- **Space group headers** in Objectives — `border-bottom: 1px solid var(--line-2)` + amber `nw-label` color; was dim and easy to miss when scrolling
+- **Quarter pill in header** — subtle amber badge (`rgba(200,160,64,.08)` bg + border); was plain text
+- **Close the week removed from Home** — belonged in Reflect; `reviews`, `weekForSpace`, `onCloseWeek` props removed from Home entirely. Reflect already had the same wiring
+
+**Focus row redesign (mobile-first):**
+- Checkbox: 18px ring inside a 44px invisible `fcb-wrap` touch target — no more oversized filled green bubbles on mobile (was `min-width:36px;min-height:36px` override inflating the circle)
+- Row structure: title line + subordinate `frow-sub` line (space-colored dot + KR name in muted mono, no border box; carried badge)
+- backlog/delete controls: hidden on mobile (`frow-desktop-only`), appear on desktop hover only
+
+**Mobile overflow fixes (expanded objective cards):**
+- `ocard`: `min-width:0` so flex column parent can constrain it
+- `exp`: `max-width:100%` at base; `width:100%` on mobile
+- `rail`, `kr-col`, `act-col`: `width:100%;box-sizing:border-box` on mobile
+- `kr-head`: `flex-wrap:wrap` on mobile; `kt` title gets `flex:1 1 100%` so it takes its own line, pushing status chips below instead of forcing the card wider
+- `home`: `overflow-x:hidden` backstop
+
+**Collapsed card mobile fix:**
+- `col-row` wraps to 2 lines: name + % on line 1, pills full-width on line 2
+- `prog-bar` and `pacechip` hidden on mobile (redundant with the % number)
+
+**Data fix — 3Q2026 KRs stuck as `planned`:**
+- Quarter roll SQL (Jun 28) moved KRs to 3Q but left `status='planned'`. `getActiveKRs` filters these out, so Home board and Vitals showed nothing.
+- Fixed via SQL: `UPDATE roadmap_items SET status='active' WHERE quarter='3Q2026' AND status='planned' AND is_parked=false` — 44 rows updated.
 
 ### Jul 1 session — Tasks screen built + mobile UX overhaul (Evernote/Todoist-informed)
 
@@ -233,21 +264,25 @@ Share-page query optimization · PWA install prompt · more keyboard shortcuts �
 19. **Objective-spine + page-level panels.** `ObjectivePanel` is a page-level drawer (`openObjectiveId` lifted to `page.tsx`).
 20. **`scopedQuarters` must use `PLANNING_ROLLING`, not `ROLLING`** — the visible grid columns are `PLANNING_ROLLING`; using `ROLLING` (anchored to `ACTIVE_Q`) causes objective header spans to be wrong at any non-zero planning offset. Always pass the local `PLANNING_ROLLING` variable when computing which quarters an objective covers in Roadmap.
 21. **FAB `activeKRs` must use `getActiveKRs`, not `getCurrentQuarterKRs(ACTIVE_Q)`** — after a quarter roll `ACTIVE_Q` still points to the old quarter until July 1. `getActiveKRs` returns all non-parked/non-abandoned KRs regardless of quarter, which is the correct set for the action picker.
+22. **Quarter roll must set `status='active'`** — the roll SQL moves KRs to the new quarter but `status` stays `'planned'`. `getActiveKRs` filters out `'planned'`, so Home board + Vitals show nothing. After any quarter roll, run: `UPDATE roadmap_items SET status='active' WHERE quarter='<NQ>' AND status='planned' AND is_parked=false`.
+23. **Home mobile overflow pattern** — flex children in column-direction flex need `width:100%;box-sizing:border-box` AND `min-width:0` at every level to prevent intrinsic sizing from escaping the card. `overflow-x:hidden` on the page container is the last-resort backstop.
 
 ---
 
 ## Deploy workflow (autonomous — Jun 27+)
 
-Claude pushes directly to GitHub; Vercel auto-deploys on push to `main`; Claude polls `Vercel:list_deployments` until `READY`.
+Claude pushes directly to GitHub via PAT; Vercel auto-deploys on push to `main`; Claude polls `Vercel:list_deployments` until `READY`.
 
-**Session start:** paste the GitHub PAT (session-scoped, not persisted).
+**PAT:** Stored in Claude memory — no need to paste at session start. Rotate here when refreshed.
+
+**Git identity:** `user.email=garry@svirene.com` · `user.name=Garry Hoffman`
 
 **Claude's deploy loop:**
-1. Clone/sync: `git clone --depth 1 https://garry-cmd:<PAT>@github.com/garry-cmd/operation-hq /tmp/operation-hq`
+1. Clone: `git clone --depth 1 https://garry-cmd:<PAT>@github.com/garry-cmd/operation-hq /tmp/operation-hq`
 2. Make changes in sandbox
 3. Verify: `npx tsc --noEmit 2>&1 | grep -v "validator.ts\|next/server\|Cannot find module\|@types/node"`
-4. Commit + push: `git add -A && git commit -m "..." && git push origin HEAD:main`
-5. Poll `Vercel:list_deployments` (projectId `prj_rgWkigVjdCzawkB3g00GqTIMFTEC`, teamId `team_FD2H6R0bDq59mIOZWsPE8YLg`) until `READY`; if `ERROR`, pull build logs and fix
+4. Commit + push: `git config user.email garry@svirene.com && git config user.name "Garry Hoffman" && git add -A && git commit -m "..." && git push https://garry-cmd:<PAT>@github.com/garry-cmd/operation-hq HEAD:main`
+5. Poll `Vercel:list_deployments` (projectId `prj_rgWkigVjdCzawkB3g00GqTIMFTEC`, teamId `team_FD2H6R0bDq59mIOZWsPE8YLg`) — sleep 50s before first poll; if `ERROR`, pull build logs and fix
 6. Garry verifies in the live app
 
 **Re-sync within session:** `git fetch --depth 1 origin main && git reset --hard origin/main` before re-patching files already touched this session.
