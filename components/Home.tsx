@@ -5,7 +5,7 @@ import { TodoistIcon, EvernoteNotebookIcon, DriveFolderIcon, EvernoteNoteIcon, D
 import type { Dispatch, SetStateAction, ReactNode, CSSProperties, MouseEvent as ReactMouseEvent } from 'react'
 import type {
   Space, AnnualObjective, RoadmapItem, WeeklyAction, MetricCheckin,
-  HabitCheckin, Note, Notebook, TrackedFile, WeeklyReview, ObjectiveLog,
+  HabitCheckin, Note, Notebook, TrackedFile, ObjectiveLog,
 } from '@/lib/types'
 import { getMonday, addWeeks, parseDateLocal, ACTIVE_Q, formatMinutes } from '@/lib/utils'
 import { getMetricKRs } from '@/lib/krFilters'
@@ -108,9 +108,7 @@ interface Props {
   driveGranted: boolean
   trackedFiles: TrackedFile[]
   setTrackedFiles: Dispatch<SetStateAction<TrackedFile[]>>
-  reviews: WeeklyReview[]
-  weekForSpace: (spaceId: string) => string
-  onCloseWeek: (spaceId: string, week: string) => void
+
   onOpenNote: (noteId: string) => void
   onLogMetric: (krId: string) => void
   setObjectives: Dispatch<SetStateAction<AnnualObjective[]>>
@@ -129,7 +127,7 @@ interface Props {
 export default function Home({
   spaces, objectives, roadmapItems, actions, setActions,
   metricCheckins, habitCheckins, setHabitCheckins,
-  reviews, weekForSpace, onCloseWeek, onLogMetric,
+  onLogMetric,
   setObjectives, setRoadmapItems, onOpenObjective,
   links,
   logs, setLogs, initialKRId, onConsumeInitialKRId, onQuarterClose, quarterReviews = [], toast,
@@ -150,7 +148,7 @@ export default function Home({
   const [vitalsOpen, setVitalsOpen] = useState<boolean>(() => loadLS<boolean>('hq-home-vitals-open', true))
   const [focusOpen, setFocusOpen] = useState(false)
   const [objectivesOpen, setObjectivesOpen] = useState(false)
-  const [closesOpen, setClosesOpen] = useState<boolean>(() => loadLS<boolean>('hq-home-closes-open', true))
+
 
   const [addActionObj, setAddActionObj] = useState<string | null>(null)
   const [actionKRSel, setActionKRSel] = useState<string>('')
@@ -223,7 +221,7 @@ export default function Home({
   useEffect(() => { try { window.localStorage.setItem('hq-home-space-filter', JSON.stringify(spaceFilter)) } catch {} }, [spaceFilter])
   useEffect(() => { try { window.localStorage.setItem('hq-home-hide-focus-done', JSON.stringify(hideFocusDone)) } catch {} }, [hideFocusDone])
   useEffect(() => { try { window.localStorage.setItem('hq-home-vitals-open', JSON.stringify(vitalsOpen)) } catch {} }, [vitalsOpen])
-  useEffect(() => { try { window.localStorage.setItem('hq-home-closes-open', JSON.stringify(closesOpen)) } catch {} }, [closesOpen])
+
   useEffect(() => { try { window.localStorage.setItem('hq-home-qtr-scope', JSON.stringify(quarterScope)) } catch {} }, [quarterScope])
   useEffect(() => { try { window.localStorage.setItem('hq-home-obj-collapsed', JSON.stringify(collapsed)) } catch {} }, [collapsed])
 
@@ -239,16 +237,7 @@ export default function Home({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialKRId])
 
-  // ── close-week status per space (independent of displayed week) ──
-  const thisMonday = getMonday()
-  const openCloses = orderedSpaces
-    .map(sp => {
-      const wk = weekForSpace(sp.id)
-      const closed = reviews.some(r => r.space_id === sp.id && r.week_start === wk && r.closed_at != null)
-      const open = !closed && wk <= thisMonday
-      return { sp, wk, open, overdue: open && wk < thisMonday }
-    })
-    .filter(r => r.open && (spaceFilter === null || r.sp.id === spaceFilter))
+
 
   // ── metric readout per KR + metric band ──
   const latestMetricByKR = useMemo(() => {
@@ -1117,16 +1106,16 @@ export default function Home({
             <span className="rule" />
           </button>
           {vitalsOpen && (
-            <div className="sec-body">
+            <div className="vitals-groups">
               {metricKRs.length > 0 && (
-                <div className="vrow">
-                  <div className="sublbl">Metrics · {displayQ}</div>
+                <div className="vgroup">
+                  <div className="vgroup-lbl">Metrics · {displayQ}</div>
                   <div className="metrics">{metricKRs.map(metricCard)}</div>
                 </div>
               )}
               {habitKRs.length > 0 && (
-                <div className="vrow">
-                  <div className="sublbl">Habits · 4-week rolling</div>
+                <div className="vgroup">
+                  <div className="vgroup-lbl">Habits · 4-week rolling</div>
                   <div className="habits-cards">{habitKRs.map(habitCard)}</div>
                 </div>
               )}
@@ -1147,19 +1136,17 @@ export default function Home({
             {focusOpen && focusDone > 0 && <button className="dtoggle" onClick={e => { e.stopPropagation(); setHideFocusDone(v => !v) }}>{hideFocusDone ? 'show done' : 'hide done'}</button>}
           </button>
           {focusOpen && (
-            <div className="sec-body">
-              <div className={`focuslist${hideFocusDone ? ' hide-done' : ''}`}>
-                {focusBySpace.map(g => {
-                  const d = g.items.filter(i => i.a.completed).length
-                  if (hideFocusDone && d === g.items.length) return null
-                  return (
-                    <div key={g.sp.id} className="sgrp" style={{ ['--sc']: spaceDisplayColor(g.sp) } as CSSProperties}>
-                      <div className="sgrp-h"><span className="dot" /><span className="nm">{g.sp.name}</span><span className="n">{d}/{g.items.length}</span></div>
-                      {g.items.map(focusRow)}
-                    </div>
-                  )
-                })}
-              </div>
+            <div className={`focuslist${hideFocusDone ? ' hide-done' : ''}`}>
+              {focusBySpace.map(g => {
+                const d = g.items.filter(i => i.a.completed).length
+                if (hideFocusDone && d === g.items.length) return null
+                return (
+                  <div key={g.sp.id} className="sgrp" style={{ ['--sc']: spaceDisplayColor(g.sp) } as CSSProperties}>
+                    <div className="sgrp-h"><span className="dot" /><span className="nm">{g.sp.name}</span><span className="n">{d}/{g.items.length}</span></div>
+                    {g.items.map(focusRow)}
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
@@ -1195,27 +1182,7 @@ export default function Home({
             )
           )}
 
-          {/* close the week — bottom of main */}
-          {openCloses.length > 0 && (
-            <div className="closes">
-              <button className="sec-hdr" onClick={() => setClosesOpen(v => !v)}>
-                <span className={`sec-chev${closesOpen ? ' open' : ''}`}>▸</span>
-                <span className="lbl">Close the week</span>
-                <span className="sec-meta">{openCloses.length} open</span>
-                <span className="rule" />
-              </button>
-              {closesOpen && openCloses.map(({ sp, wk, overdue }) => (
-                <div key={sp.id} className="closebar">
-                  <div className="ci">◷</div>
-                  <div className="ct">
-                    <b>{sp.name} — week of {fmtRange(wk).split(' – ')[0]}{overdue ? ' (overdue)' : ''}</b>
-                    <div>Review KRs, log metrics, plan next week</div>
-                  </div>
-                  <button className="cb-close" onClick={() => onCloseWeek(sp.id, wk)}>Close week →</button>
-                </div>
-              ))}
-            </div>
-          )}
+
         </div>
       </div>
 
@@ -1257,7 +1224,7 @@ export default function Home({
 
         .hd{display:flex;align-items:center;gap:13px;padding:8px 0 2px;flex-wrap:wrap;}
         .hd-brand{font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--nw-cream);letter-spacing:-.015em;}
-        .hd-qtr{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--nw-label);letter-spacing:.14em;}
+        .hd-qtr{font-family:var(--font-mono);font-size:11px;font-weight:600;color:var(--nw-label);letter-spacing:.14em;background:rgba(200,160,64,.08);border:1px solid rgba(200,160,64,.18);border-radius:6px;padding:3px 8px;}
         .qclose-btn{font-family:var(--font-mono);font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:var(--accent);border:none;border-radius:7px;padding:5px 12px;cursor:pointer;white-space:nowrap;flex-shrink:0;}
         .qclose-btn:hover{background:var(--accent-2,#4a8af4);}
         .hd-controls{margin-left:auto;display:flex;align-items:center;gap:9px;}
@@ -1307,15 +1274,15 @@ export default function Home({
         .focus-head .rule{flex:1;height:1px;background:var(--line);}
         .dtoggle{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.04em;color:var(--navy-400);background:var(--surface-2);border:1px solid var(--line-2);border-radius:6px;padding:4px 9px;cursor:pointer;}
         .dtoggle:hover{color:var(--navy-100);border-color:var(--navy-400);}
-        .focuslist{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:6px 0;}
-        .sgrp{padding:9px 18px;}
+        .focuslist{background:var(--navy-800);border:1px solid var(--navy-600);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow),var(--card-inset);margin-bottom:8px;}
+        .sgrp{padding:0;}
         .sgrp + .sgrp{border-top:1px solid var(--line);}
-        .sgrp-h{display:flex;align-items:center;gap:8px;margin:0 0 5px;}
+        .sgrp-h{display:flex;align-items:center;gap:8px;padding:10px 18px 6px;}
         .sgrp-h .dot{width:8px;height:8px;border-radius:3px;background:var(--sc,var(--navy-500));flex-shrink:0;}
         .sgrp-h .nm{font-family:var(--font-mono);font-size:9px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--nw-label-dim);}
         .sgrp-h .n{font-family:var(--font-mono);font-size:9px;color:var(--navy-600);}
-        .frow{display:flex;align-items:center;gap:12px;padding:7px 4px;border-radius:8px;}
-        .frow:hover{background:rgba(255,255,255,.014);}
+        .frow{display:flex;align-items:center;gap:12px;padding:8px 18px;border-top:1px solid var(--line);}
+        .frow:hover{background:var(--hover);}
         .fcb{width:18px;height:18px;border-radius:50%;flex-shrink:0;border:1.6px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:10px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;transition:.12s;}
         .fcb:hover{border-color:var(--nw-nominal-text);}
         .fcb.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
@@ -1444,8 +1411,10 @@ export default function Home({
 
 
 
-        .vrow + .vrow{margin-top:16px;}
-        .sublbl{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label-dim);margin:0 0 9px;}
+        .vitals-groups{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:8px;}
+        .vgroup{background:var(--navy-800);border:1px solid var(--navy-600);border-radius:14px;padding:16px 18px;box-shadow:var(--card-shadow),var(--card-inset);}
+        .vgroup-lbl{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--nw-label-dim);margin:0 0 12px;display:flex;align-items:center;gap:8px;}
+        .vgroup-lbl::after{content:'';flex:1;height:1px;background:var(--line);}
 
         /* habit flip cards (front % + trend / back week check-off) */
         .habits-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:13px;}
@@ -1488,16 +1457,16 @@ export default function Home({
         .main{flex:1;min-width:0;}
 
         /* space group headers (All view) */
-        .spacehdr{display:flex;align-items:center;gap:9px;margin:22px 0 11px;}
+        .spacehdr{display:flex;align-items:center;gap:10px;margin:24px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--line-2);}
         .spacehdr:first-child{margin-top:0;}
-        .spacehdr .dot{width:9px;height:9px;border-radius:3px;background:var(--sc,var(--navy-500));flex-shrink:0;}
-        .spacehdr .nm{font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--nw-label);}
+        .spacehdr .dot{width:10px;height:10px;border-radius:3px;background:var(--sc,var(--navy-500));flex-shrink:0;}
+        .spacehdr .nm{font-family:var(--font-mono);font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--nw-label);}
         .spacehdr .ct{font-family:var(--font-mono);font-size:9.5px;color:var(--navy-600);}
-        .spacehdr .rule{flex:1;height:1px;background:var(--line);}
+        .spacehdr .rule{flex:1;}
 
         .empty{color:var(--navy-500);font-size:13px;padding:30px 0;text-align:center;}
         .board{display:flex;flex-direction:column;gap:12px;margin-bottom:4px;}
-        .ocard{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.02) inset,0 8px 24px -16px rgba(0,0,0,.7);}
+        .ocard{background:var(--navy-800);border:1px solid var(--navy-600);border-radius:14px;overflow:hidden;box-shadow:var(--card-shadow),var(--card-inset);}
 
         /* collapsed pill row */
         .col-row{display:flex;align-items:center;gap:13px;padding:13px 15px;cursor:pointer;border-left:3px solid var(--oc,var(--navy-500));}
@@ -1621,9 +1590,9 @@ export default function Home({
 
         /* right: actions column */
         .act-col{flex:0 0 320px;border-left:1px solid var(--line);background:rgba(255,255,255,.012);padding:12px 14px;}
-        .ac-grp + .ac-grp{margin-top:12px;}
+        .ac-grp + .ac-grp{margin-top:8px;}
         .ac-lbl{font-family:var(--font-mono);font-size:8.5px;font-weight:600;letter-spacing:.13em;text-transform:uppercase;color:var(--nw-label-dim);margin:0 0 6px;}
-        .act{display:flex;align-items:center;gap:8px;padding:4px 0;flex-wrap:wrap;}
+        .act{display:flex;align-items:center;gap:8px;padding:7px 10px;flex-wrap:wrap;background:var(--surface);border:1px solid var(--line);border-radius:9px;margin-bottom:6px;}
         .cb-sm{width:14px;height:14px;border-radius:50%;flex-shrink:0;border:1.4px solid var(--navy-500);display:inline-flex;align-items:center;justify-content:center;font-size:8px;color:var(--navy-900);background:transparent;cursor:pointer;padding:0;}
         .cb-sm.on{background:var(--nw-nominal-text);border-color:var(--nw-nominal-text);}
         .at{flex:1;font-size:12.5px;color:var(--navy-100);min-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -1656,24 +1625,19 @@ export default function Home({
         .addact{font-family:var(--font-mono);font-size:9px;font-weight:600;color:var(--navy-500);border:1px dashed var(--line-2);border-radius:6px;padding:5px 9px;background:none;cursor:pointer;margin-top:10px;width:100%;}
         .addact:hover{color:var(--accent);border-color:var(--accent);}
 
-        .closes{display:flex;flex-direction:column;gap:10px;margin-top:30px;}
-        .closebar{display:flex;align-items:center;gap:16px;background:linear-gradient(90deg,rgba(200,150,66,.07),transparent 55%),var(--surface);border:1px solid var(--line-2);border-radius:13px;padding:13px 16px;}
-        .closebar .ci{width:32px;height:32px;border-radius:9px;background:rgba(200,150,66,.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;}
-        .closebar .ct b{font-family:var(--font-display);font-weight:600;font-size:13.5px;color:var(--nw-cream);}
-        .closebar .ct div{font-size:11.5px;color:var(--navy-400);margin-top:1px;}
-        .cb-close{margin-left:auto;font-family:var(--font-body);font-weight:600;font-size:12.5px;color:#fff;background:var(--accent);border:none;border-radius:9px;padding:8px 15px;cursor:pointer;}
-        .cb-close:hover{background:var(--accent-2,#6ea3ff);}
+
 
         @media (max-width:1080px){
           .metrics{grid-template-columns:repeat(2,1fr);}
           .body{flex-direction:column;}
+          .vitals-groups{grid-template-columns:1fr;}
         }
         @media (max-width:899px){
           .metrics{grid-template-columns:1fr;}
           .mcard{height:130px;}
           .habits-cards{grid-template-columns:1fr;}
           .hcard{height:116px;}
-          .vrow + .vrow{margin-top:12px;}
+          .vitals-groups{grid-template-columns:1fr;gap:10px;}
           .exp{flex-direction:column;}
           .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);border-left-width:4px;}
           .act-col{flex:1 1 auto;border-left:none;border-top:1px solid var(--line);}

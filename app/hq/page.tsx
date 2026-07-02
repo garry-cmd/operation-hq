@@ -727,9 +727,6 @@ export default function HQPage() {
             driveGranted={driveGranted}
             trackedFiles={trackedFiles}
             setTrackedFiles={setTrackedFiles}
-            reviews={reviews}
-            weekForSpace={weekForSpace}
-            onCloseWeek={(spaceId, week) => setClosingWizard({ spaceId, week })}
             onOpenNote={id => { setNotesInitialId(id); setScreen('notes') }}
             onLogMetric={krId => setLoggingMetricKRId(krId)}
             setObjectives={setObjectives}
