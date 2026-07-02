@@ -35,6 +35,7 @@ interface Props {
 
   // Badges on nav rows. All optional / zero-friendly.
   homeAttentionCount?: number
+  tasksOverdueCount?: number
   parkedCount?: number
   reviewsCount?: number
 
@@ -70,6 +71,7 @@ const NAV_GROUPS: { label: string; items: { id: Screen; label: string; icon: Rea
       { id: 'home', label: 'Home', icon: <HomeIcon /> },
       { id: 'agent', label: 'Chief of Staff', icon: <AgentIcon /> },
       { id: 'notes', label: 'Notes', icon: <NotesIcon /> },
+      { id: 'tasks', label: 'Tasks', icon: <TasksIcon /> },
       { id: 'files', label: 'Files', icon: <FilesIcon /> },
     ],
   },
@@ -114,6 +116,7 @@ export default function NavRail(props: Props) {
     if (id === 'home') return props.homeAttentionCount
     if (id === 'park') return props.parkedCount
     if (id === 'reflect') return props.reviewsCount
+    if (id === 'tasks') return props.tasksOverdueCount
     return undefined
   }
 
