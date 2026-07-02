@@ -8,6 +8,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Task, Space, RoadmapItem, TaskTag } from '@/lib/types'
+import { useIsMobile } from '@/lib/useIsMobile'
 import * as tasksDb from '@/lib/db/tasks'
 
 // ── helpers ──────────────────────────────────────────────────────────────
@@ -239,8 +240,9 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
   onDelete: () => void
   onClose: () => void
 }) {
+  const isMobile = useIsMobile(900)
   const [title, setTitle] = useState(task.title)
-  // Swipe-down-to-dismiss (drag from the grabber zone)
+  // Swipe-down-to-dismiss (drag from the grabber zone; mobile only)
   const [dragY, setDragY] = useState(0)
   const dragStart = useRef<number | null>(null)
   const saveAndCloseRef = useRef<() => void>(() => {})
@@ -295,9 +297,14 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
       roadmap_item_id: krId,
     }, buildTags())
   }
-  // Dismissing the sheet (backdrop tap, swipe-down) commits edits — bottom-sheet convention.
+  // Dismissing the sheet (backdrop tap, swipe-down, Esc) commits edits — bottom-sheet convention.
   const saveAndClose = () => { save() }
   saveAndCloseRef.current = saveAndClose
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); saveAndCloseRef.current() } }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const LBL: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 7 }
   const CHIP = (active: boolean): React.CSSProperties => ({
@@ -310,7 +317,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
   return (
     <>
       <div onClick={saveAndClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.55)' }} />
-      <div style={{
+      <div style={isMobile ? {
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 71,
         background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)',
         borderRadius: '18px 18px 0 0',
@@ -320,8 +327,16 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
         transition: dragStart.current == null ? 'transform .2s ease' : 'none',
         animation: dragY ? 'none' : 'sheetUp .18s ease',
         touchAction: dragStart.current != null ? 'none' : undefined,
+      } : {
+        position: 'fixed', left: '50%', top: '50%', transform: 'translate(-50%, -50%)', zIndex: 71,
+        width: 'min(600px, 92vw)', maxHeight: '82vh', overflowY: 'auto',
+        background: 'var(--navy-800)', border: '1px solid var(--navy-600)',
+        borderRadius: 16, padding: '22px 24px 24px',
+        boxShadow: 'var(--card-shadow), 0 24px 64px rgba(0,0,0,.45)',
+        animation: 'modalIn .16s ease',
       }}>
-        {/* grabber — drag handle for swipe-to-dismiss */}
+        {/* grabber — drag handle for swipe-to-dismiss (mobile only) */}
+        {isMobile && (
         <div
           onTouchStart={e => onDragStart(e.touches[0].clientY)}
           onTouchMove={e => onDragMove(e.touches[0].clientY)}
@@ -331,6 +346,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
         >
           <div style={{ width: 40, height: 5, borderRadius: 3, background: 'var(--navy-500)', margin: '0 auto' }} />
         </div>
+        )}
 
         {/* title */}
         <input
@@ -548,7 +564,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
           >Save</button>
         </div>
       </div>
-      <style>{`@keyframes sheetUp { from { transform: translateY(40px); opacity: 0 } to { transform: translateY(0); opacity: 1 } }`}</style>
+      <style>{`@keyframes sheetUp { from { transform: translateY(40px); opacity: 0 } to { transform: translateY(0); opacity: 1 } } @keyframes modalIn { from { transform: translate(-50%, -50%) scale(.97); opacity: 0 } to { transform: translate(-50%, -50%) scale(1); opacity: 1 } }`}</style>
     </>
   )
 }

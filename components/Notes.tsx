@@ -91,6 +91,20 @@ export default function Notes({
   const isMobile = useIsMobile(900)
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+
+  // Desktop: "/" opens note search when not typing in an input/editor.
+  useEffect(() => {
+    if (isMobile) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return
+      const el = e.target as HTMLElement | null
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+      e.preventDefault()
+      setSearchOpen(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isMobile])
   // Mobile: land on the Browse screen when Notes opens (Evernote-style).
   // Runs once when isMobile resolves true after mount; skipped when a
   // deep-link (initialNoteId) is about to select a note directly.
@@ -678,17 +692,15 @@ export default function Notes({
             <div style={{ ...MONO_COUNT, marginTop: 2 }}>{filteredNotes.length} {filteredNotes.length === 1 ? 'note' : 'notes'}</div>
           </div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-            {isMobile && (
-              <button onClick={() => setSearchOpen(true)} aria-label="Search notes" style={{
-                width: 30, height: 30, border: 'none', borderRadius: 6,
-                background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-              }}>
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
-                  <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
-                </svg>
-              </button>
-            )}
+            <button onClick={() => setSearchOpen(true)} aria-label="Search notes" title={isMobile ? undefined : 'Search notes ( / )'} style={{
+              width: 30, height: 30, border: 'none', borderRadius: 6,
+              background: 'var(--surface-2)', color: 'var(--t-2)', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+            }}>
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+                <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+              </svg>
+            </button>
             {scope.kind !== 'tag' && (
               <button onClick={onCreateNote} title="New note" style={{
                 width: 30, height: 30, border: 'none', borderRadius: 6,
@@ -1000,25 +1012,51 @@ function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClos
   onOpen: (note: Note) => void
   onClose: () => void
 }) {
+  const isMobile = useIsMobile(900)
   const [q, setQ] = useState('')
   const [recents, setRecents] = useState<string[]>(() => loadRecentSearches())
+  const [sel, setSel] = useState(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const selRef = useRef<HTMLButtonElement>(null)
   useEffect(() => { inputRef.current?.focus() }, [])
+  useEffect(() => { selRef.current?.scrollIntoView({ block: 'nearest' }) }, [sel])
 
   const spaceName = useMemo(() => new Map(spaces.map(s => [s.id, s.name])), [spaces])
   const notebookName = useMemo(() => new Map(notebooks.map(nb => [nb.id, nb.name])), [notebooks])
 
-  // Lowercased full-text index: title + body text + tags. Built once per notes array.
+  // Case-preserving body text (snippets) + lowercased full index (matching).
+  // Built once per notes array.
+  const rawText = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const n of notes) map.set(n.id, extractNoteText(n.body))
+    return map
+  }, [notes])
   const textIndex = useMemo(() => {
     const map = new Map<string, string>()
     for (const n of notes) {
       const tags = (tagsByNote.get(n.id) ?? []).join(' ')
-      map.set(n.id, `${n.title} ${extractNoteText(n.body)} ${tags}`.toLowerCase())
+      map.set(n.id, `${n.title} ${rawText.get(n.id) ?? ''} ${tags}`.toLowerCase())
     }
     return map
-  }, [notes, tagsByNote])
+  }, [notes, rawText, tagsByNote])
 
   const query = q.trim().toLowerCase()
+  useEffect(() => { setSel(0) }, [query])
+
+  /** Excerpt around the first body match, with match offsets for highlighting. */
+  const snippetFor = (note: Note): { pre: string; hit: string; post: string } | null => {
+    if (!query) return null
+    const raw = rawText.get(note.id) ?? ''
+    const idx = raw.toLowerCase().indexOf(query)
+    if (idx < 0) return null
+    const from = Math.max(0, idx - 44)
+    const to = Math.min(raw.length, idx + query.length + 88)
+    return {
+      pre: (from > 0 ? '…' : '') + raw.slice(from, idx),
+      hit: raw.slice(idx, idx + query.length),
+      post: raw.slice(idx + query.length, to) + (to < raw.length ? '…' : ''),
+    }
+  }
 
   const results = useMemo(() => {
     if (!query) return []
@@ -1060,24 +1098,42 @@ function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClos
     padding: '16px 18px 6px',
   }
 
-  const row = (note: Note) => {
+  const row = (note: Note, i?: number) => {
     const nb = note.notebook_id ? notebookName.get(note.notebook_id) : null
     const sp = note.space_id ? spaceName.get(note.space_id) : null
     const crumb = sp ? (nb ? `${sp} › ${nb}` : sp) : 'Inbox'
+    const selected = !isMobile && i != null && i === sel
+    const snip = query && i != null ? snippetFor(note) : null
     return (
-      <button key={note.id} onClick={() => pick(note)} style={{
-        display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
-        padding: '11px 18px', background: 'none', border: 'none', cursor: 'pointer',
-        textAlign: 'left', fontFamily: 'inherit',
-      }}>
+      <button key={note.id} ref={selected ? selRef : undefined}
+        onClick={() => pick(note)}
+        onMouseMove={i != null && !isMobile ? () => setSel(i) : undefined}
+        style={{
+          display: 'flex', alignItems: 'flex-start', gap: 12, width: '100%',
+          padding: '11px 18px', border: 'none', cursor: 'pointer',
+          background: selected ? 'var(--accent-bg)' : 'none',
+          textAlign: 'left', fontFamily: 'inherit',
+        }}>
         <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--t-3)" strokeWidth="1.4" style={{ flexShrink: 0, marginTop: 2 }}>
           <rect x="2.5" y="1.5" width="11" height="13" rx="1.5"/>
           <path d="M5 5h6M5 8h6M5 11h3.5"/>
         </svg>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15.5, fontWeight: 500, color: 'var(--t-0)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {note.title || 'Untitled'}
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0, fontSize: 15.5, fontWeight: 500, color: 'var(--t-0)', lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {note.title || 'Untitled'}
+            </div>
+            {!isMobile && (
+              <span style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--t-3)' }}>
+                {new Date(note.updated_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </span>
+            )}
           </div>
+          {snip && (
+            <div style={{ fontSize: 12.5, color: 'var(--t-2)', marginTop: 3, lineHeight: 1.45, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' } as React.CSSProperties}>
+              {snip.pre}<mark style={{ background: 'rgba(77,143,255,.28)', color: 'var(--t-0)', borderRadius: 2, padding: '0 1px' }}>{snip.hit}</mark>{snip.post}
+            </div>
+          )}
           <div style={{ fontSize: 12.5, color: 'var(--t-3)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {crumb}
           </div>
@@ -1085,6 +1141,84 @@ function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClos
       </button>
     )
   }
+
+  if (!isMobile) return (
+    <>
+      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.45)' }} />
+      <div style={{
+        position: 'fixed', left: '50%', top: '13vh', transform: 'translateX(-50%)', zIndex: 71,
+        width: 'min(680px, 92vw)', maxHeight: '68vh',
+        background: 'var(--surface)', border: `1px solid ${BORDER}`, borderRadius: 14,
+        boxShadow: '0 24px 64px rgba(0,0,0,.5)',
+        display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        animation: 'modalIn2 .14s ease',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: `1px solid ${BORDER}`, flexShrink: 0 }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="var(--t-3)" strokeWidth="1.8" strokeLinecap="round" style={{ flexShrink: 0 }}>
+            <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+          </svg>
+          <input
+            ref={inputRef}
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, results.length - 1)) }
+              else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)) }
+              else if (e.key === 'Enter' && results.length > 0) pick(results[Math.min(sel, results.length - 1)])
+              else if (e.key === 'Escape') onClose()
+            }}
+            placeholder="Search notes…"
+            style={{
+              flex: 1, fontSize: 15.5, border: 'none', background: 'none',
+              color: 'var(--t-0)', fontFamily: 'inherit', outline: 'none', minWidth: 0,
+            }}
+          />
+          <span style={{ flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--t-3)', border: `1px solid ${BORDER}`, borderRadius: 4, padding: '2px 6px' }}>esc</span>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {!query && (
+            <>
+              {recents.length > 0 && (
+                <>
+                  <div style={sectionLabel}>Recent searches</div>
+                  {recents.map(s => (
+                    <button key={s} onClick={() => setQ(s)} style={{
+                      display: 'flex', alignItems: 'center', gap: 12, width: '100%',
+                      padding: '8px 18px', background: 'none', border: 'none', cursor: 'pointer',
+                      textAlign: 'left', fontFamily: 'inherit',
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="var(--t-3)" strokeWidth="1.6" strokeLinecap="round" style={{ flexShrink: 0 }}>
+                        <circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/>
+                      </svg>
+                      <span style={{ fontSize: 14, color: 'var(--t-1)' }}>{s}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+              {grouped && grouped.last7.length > 0 && (<><div style={sectionLabel}>Last 7 days</div>{grouped.last7.map(n => row(n))}</>)}
+              {grouped && grouped.last30.length > 0 && (<><div style={sectionLabel}>Last 30 days</div>{grouped.last30.map(n => row(n))}</>)}
+              {grouped && grouped.earlier.length > 0 && (<><div style={sectionLabel}>Earlier</div>{grouped.earlier.map(n => row(n))}</>)}
+            </>
+          )}
+          {query && (
+            <>
+              <div style={sectionLabel}>{results.length === 0 ? 'No results' : `Results (${results.length})`}</div>
+              {results.map((n, i) => row(n, i))}
+              {results.length === 0 && (
+                <div style={{ padding: '8px 18px 16px', fontSize: 13.5, color: 'var(--t-3)' }}>
+                  No notes match “{q}”
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 14, padding: '8px 16px', borderTop: `1px solid ${BORDER}`, flexShrink: 0, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--t-3)' }}>
+          <span>↑↓ navigate</span><span>↵ open</span><span>esc close</span>
+        </div>
+      </div>
+      <style>{`@keyframes modalIn2 { from { opacity: 0; transform: translateX(-50%) translateY(-8px) } to { opacity: 1; transform: translateX(-50%) translateY(0) } }`}</style>
+    </>
+  )
 
   return (
     <div style={{
@@ -1111,7 +1245,12 @@ function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClos
           ref={inputRef}
           value={q}
           onChange={e => setQ(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && results.length > 0) pick(results[0]) }}
+          onKeyDown={e => {
+            if (e.key === 'ArrowDown') { e.preventDefault(); setSel(s => Math.min(s + 1, results.length - 1)) }
+            else if (e.key === 'ArrowUp') { e.preventDefault(); setSel(s => Math.max(s - 1, 0)) }
+            else if (e.key === 'Enter' && results.length > 0) pick(results[Math.min(sel, results.length - 1)])
+            else if (e.key === 'Escape') onClose()
+          }}
           placeholder="Search notes…"
           style={{
             flex: 1, fontSize: 16, padding: '10px 14px', borderRadius: 12,
@@ -1156,7 +1295,7 @@ function NoteSearchScreen({ notes, spaces, notebooks, tagsByNote, onOpen, onClos
         {query && (
           <>
             <div style={sectionLabel}>{results.length === 0 ? 'No results' : `Results (${results.length})`}</div>
-            {results.map(row)}
+            {results.map((n, i) => row(n, i))}
             {results.length === 0 && (
               <div style={{ padding: '8px 18px', fontSize: 13.5, color: 'var(--t-3)' }}>
                 No notes match “{q}”
