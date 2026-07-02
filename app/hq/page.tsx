@@ -637,6 +637,7 @@ export default function HQPage() {
         }}
 
         parkedCount={parkedCount}
+        tasksOverdueCount={overdueTaskCount || undefined}
         reviewsCount={spaceReviews.filter(r => r.closed_at != null).length}
         agentWorking={agentPending}
         onOpenSearch={() => setPaletteOpen(true)}
