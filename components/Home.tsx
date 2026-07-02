@@ -1655,14 +1655,15 @@ export default function Home({
           .exp{flex-direction:column;}
           .rail{flex:1 1 auto;border-right:none;border-bottom:1px solid var(--line);border-left-width:4px;}
           .act-col{flex:1 1 auto;border-left:none;border-top:1px solid var(--line);}
-          .col-name{max-width:200px;}
-          .col-row{padding:12px 14px;min-height:48px;}
           .ohb{padding:6px 10px;font-size:15px;}
           .addact{padding:10px 12px;font-size:13px;}
           .rail-top{padding-bottom:4px;}
-        }
-        @media (max-width:760px){
-          .col-name{max-width:150px;}
+          /* collapsed card: 2-line layout */
+          .col-row{flex-wrap:wrap;row-gap:6px;padding:12px 14px;min-height:0;}
+          .col-name{max-width:none;flex:1 1 0;min-width:0;}
+          .prog-bar{display:none;}
+          .pacechip{display:none;}
+          .pills{flex:0 0 100%;margin-left:20px;}
         }
       `}</style>
     </div>
