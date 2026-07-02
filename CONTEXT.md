@@ -3,7 +3,7 @@
 > **Single source of truth.** Read this first; update once at session end.
 > Historical session-by-session detail lives in `docs/operation-hq-pickup-notes.md`
 > (retained for history, no longer the working doc) and the dated
-> `docs/operation-hq-session-*.md` logs. Last updated: **Jul 1, 2026 (Home redesign + mobile polish)**.
+> `docs/operation-hq-session-*.md` logs. Last updated: **Jul 1, 2026 session 3 (desktop-app nativeness + Tasks/Notes desktop treatments)**.
 
 ---
 
@@ -46,6 +46,34 @@ column doesn't exist.
 ---
 
 ## Current state — shipped
+
+### Jul 1 session 3 — Desktop-app nativeness + Tasks/Notes desktop treatments
+
+**Desktop shell v2 (`operation-hq-desktop` @ 813d147 — rebuilt + reinstalled):**
+- **Native notifications** — `notify(title, body)` command (tauri-plugin-notification), bridged as `HQ_NOTIFY`
+- **Dock badge** — `set_badge(count)` command (`set_badge_count`, macOS), bridged as `HQ_SET_BADGE`; None/0 clears
+- **Auto-launch at login** — tauri-plugin-autostart (LaunchAgent), enabled on first run
+- **Window size/position persistence** — tauri-plugin-window-state; `VISIBLE` flag excluded so quit-while-hidden-to-tray doesn't relaunch invisible
+- Auto-updater deliberately skipped: needs signing keypair + hosted artifacts built on the Mac; shell is thin and the app updates via Vercel
+
+**Web side of the bridge (`lib/tauri.ts`, `app/hq/page.tsx`):**
+- `notifyNative(title, body)` + `setBadge(count)` bridge calls
+- **Scout briefings → native notifications**: web push can't reach the WKWebView iframe, so in Tauri the app polls `briefings` every 5min and raises native notifications for new ones. First run stamps `hq-tauri-briefs-seen` without backlog spam; bodies markdown-stripped, 180-char cap
+- **Dock badge = overdue open task count** (`overdueTaskCount` memo, shared with both nav badges)
+- **Fix: shell `hq:capture` payload honored** — ⌘T opened *note* capture before; now 'task'/'note' route correctly (`captureRequest` type widened)
+
+**Fix: Tasks missing from desktop NavRail.** The Jul 1 Tasks build wired the screen into the mobile pill nav only; desktop NavRail never got the item (an unused `TasksIcon` was already in the file). Added to Daily group after Notes with `tasksOverdueCount` badge.
+
+**Tasks — desktop detail modal (`TaskDetailSheet`):**
+- Desktop (>900px): centered modal — `min(600px, 92vw)`, 82vh max, card shadow, `modalIn` scale animation; grabber + swipe-to-dismiss mobile-only
+- **Esc commits + closes** (same auto-save convention as backdrop/swipe)
+- Mobile bottom sheet unchanged
+
+**Notes — desktop search (`NoteSearchScreen` now viewport-adaptive):**
+- Desktop: Spotlight-style centered palette (680px, top 13vh) replacing the mobile full-screen shell; search icon in list header ungated; **`/` opens search** when not typing in an input/editor
+- **Match-context snippets** — excerpt around first body hit with the query `<mark>`-highlighted; case-preserving `rawText` index built alongside the lowercased match index (one text-extraction walk per notes-array change)
+- **Keyboard nav** — ↑/↓ selection (mouse-move syncs), Enter opens selected, Esc closes; footer hint bar; updated-at date per row
+- Mobile search unchanged apart from gaining Esc + arrow keys
 
 ### Jul 1 session 2 — Home redesign + mobile overflow fixes
 
@@ -174,13 +202,17 @@ Long session, ~18 deploys. Theme: bring mobile to parity, build Tasks from scrat
 
 **Autonomous deploy workflow established.** Claude pushes directly to GitHub via session-scoped PAT; Vercel auto-deploys; Claude polls via Vercel MCP until READY.
 
-**Tauri Phase 2 SHIPPED.** Architecture: Tauri shell loads `tauri://localhost` (local `dist/index.html`), which renders `hq.svirene.com` in a fullscreen iframe. Shell listens for HQ_PING/HQ_PICK_FILE/HQ_PICK_FOLDER/HQ_SHELL_OPEN from the iframe; posts HQ_REPLY back. `lib/tauri.ts` detects Tauri via `HQ_TAURI_READY` message (synchronous, no async ping). Desktop repo: `garry-cmd/operation-hq-desktop`.
+**Tauri Phase 2 SHIPPED.** Architecture: Tauri shell loads `tauri://localhost` (local `dist/index.html`), which renders `hq.svirene.com` in a fullscreen iframe. Shell listens for HQ_PING/HQ_PICK_FILE/HQ_PICK_FOLDER/HQ_SHELL_OPEN from the iframe; posts HQ_REPLY back. `lib/tauri.ts` detects Tauri via `HQ_TAURI_READY` message (synchronous, no async ping). Desktop repo: `garry-cmd/operation-hq-desktop`. **v2 (Jul 1):** + HQ_NOTIFY / HQ_SET_BADGE, autostart, window-state — see Jul 1 session 3.
 
 **Hard-won lessons:** WKWebView blocks `fetch()` and `invoke()` from remote HTTPS pages (OS-level WebKit constraint). Only working pattern: shell at `tauri://localhost`, app in iframe, postMessage IPC. `postMessage` to `tauri://localhost` parent must use `'*'` as target origin.
 
 ---
 
 ## Open follow-ups / tech debt (newest first)
+
+- **Task description preview renders raw markdown** — e.g. a task description containing `**bold**` shows the asterisks literally in the card preview. Strip markdown in the preview render.
+- **Desktop-app native notifications unverified live** — will prove out at the next Scout watcher run (19:30/00:00 UTC) with the app open. Badge + ⌘T verified by install fingerprint only.
+- **Desktop shell auto-updater** — deliberately skipped; revisit if shell churn increases (needs signing keypair + hosted update artifacts).
 
 - **Tag suggestions in Tasks are task-tags only** — `note_tags` share the namespace but aren't threaded into `Tasks`. Small prop-thread to also suggest note-only tags in the sheet's picker.
 - **Swipeable board columns for Tasks (deferred).** Todoist screenshot showed one-space-per-column horizontal board; Tasks uses scope chips instead. Structural, not styling — its own session if wanted.
@@ -266,6 +298,8 @@ Share-page query optimization · PWA install prompt · more keyboard shortcuts �
 21. **FAB `activeKRs` must use `getActiveKRs`, not `getCurrentQuarterKRs(ACTIVE_Q)`** — after a quarter roll `ACTIVE_Q` still points to the old quarter until July 1. `getActiveKRs` returns all non-parked/non-abandoned KRs regardless of quarter, which is the correct set for the action picker.
 22. **Quarter roll must set `status='active'`** — the roll SQL moves KRs to the new quarter but `status` stays `'planned'`. `getActiveKRs` filters out `'planned'`, so Home board + Vitals show nothing. After any quarter roll, run: `UPDATE roadmap_items SET status='active' WHERE quarter='<NQ>' AND status='planned' AND is_parked=false`.
 23. **Home mobile overflow pattern** — flex children in column-direction flex need `width:100%;box-sizing:border-box` AND `min-width:0` at every level to prevent intrinsic sizing from escaping the card. `overflow-x:hidden` on the page container is the last-resort backstop.
+24. **Mobile pill nav and desktop NavRail are separate registries** — a new screen must be added to BOTH (`page.tsx` pill tabs and `NavRail.tsx` `NAV_GROUPS`). Tasks shipped mobile-only for a day because this was missed.
+25. **WKWebView cache survives app replacement** (keyed to bundle id `com.keeply.hq`). If the desktop app serves a stale bundle: quit, `rm -rf ~/Library/WebKit/com.keeply.hq` + `~/Library/Caches/com.keeply.hq`, relaunch. Install the app to `/Applications` only — stray copies (Desktop/Downloads/mounted dmg) cause launching old builds; `mdfind "kMDItemCFBundleIdentifier == 'com.keeply.hq'"` finds them all.
 
 ---
 
