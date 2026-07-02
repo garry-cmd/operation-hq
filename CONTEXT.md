@@ -79,6 +79,27 @@ Long session, ~18 deploys. Theme: bring mobile to parity, build Tasks from scrat
 
 **Mobile sweep:** primary text inputs → 16px (task create/detail, FastCapture, Agent composer — prevents iOS zoom); tap targets enlarged (inline-create Add/✕, Notes header buttons 26→30px, ⋯ menu); nav badge → `--nw-alarm-text` token.
 
+**Tasks — Todoist-style card rows + description + tags (later in session):**
+- Rows became rounded cards (`--navy-800` + `--card-shadow`, both themes); done fades .55. 30px circle checkbox ring = priority; `KR: <title>` readable sub-line; one-line description preview; meta line = calendar icon + due phrase + ↻ + space name + inline `#tags`.
+- **Description** field (textarea in detail sheet; column pre-existed, no migration).
+- **Tag system** — `lib/db/tasks.ts` `setTags`; shared global namespace with `note_tags`. Detail sheet Tags editor: chips + ×, **tap-to-open picker** (dashed "+ Add tag" opens a panel with existing tags as a tappable wrapped grid + filter/create input — keyboard only when creating, not on first tap; earlier auto-focus-input version was the bug). Scope chips gain a `#tag` chip per tag in use (most-used first); tag scope slices tasks cross-space. This is the filtering unlock.
+- Removed `+ New` and `→ Today` header buttons; creation via persistent dashed "＋ Add task" ghost card at list bottom.
+- **Detail sheet swipe-to-dismiss** — drag the grabber (40×5, 44px hit zone) down past 110px to close; backdrop tap + swipe both now **commit edits on the way out** (bottom-sheet convention). This fixed the tag-persistence bug: previously only the explicit Save button persisted, so adding a tag then leaving discarded it. `buildTags()` also folds an uncommitted tag draft into the save.
+- **Checkbox dead-tap fix** — 30px ring wrapped in a 44px hit area + `stopPropagation` (taps just outside the circle did nothing before).
+
+**FAB (FastCapture):**
+- New **Task** capture type (nearest the thumb): title + Due chips (No date/Today/Tomorrow) + optional space/Inbox; creates via `tasksDb.create`, lands on Tasks screen. Distinct from "Action" (weekly_action→KR).
+- **Note capture now opens the created note in the real editor** (`setNotesInitialId` + `screen='notes'`) instead of toasting — was a quick-capture dead-end resembling the objective-log box.
+- **z-index fix** — capture sheet was `z-48` under the pill nav `z-50`, hiding the Save button behind the nav. FAB layer lifted above: backdrop 51, sheet 52, dial 53, FAB 54.
+
+**Home:** "Close the week" section now collapsible (`hq-home-closes-open`, default open).
+
+**App icon:** lightning bolt → nautical compass rose (amber north, cobalt points, instrument bezel, deep navy). PIL-generated. iOS caches — delete/re-add Home Screen icon.
+
+**Light mode:** page bg → `#f7f9fc` (Evernote-flat near-white). `--navy-900` + `--bg` + `themeColor` synced. Task date picker `colorScheme` → `'light dark'`.
+
+**Mobile sweep:** dead `drawerOpen` state removed; text inputs → 16px (task/note/FastCapture/Agent, prevents iOS zoom); tap targets enlarged; nav badge → `--nw-alarm-text`. NoteEditor focus-mode toggle hidden on mobile.
+
 ### Jun 28 session 2 — Todoist backlog: 7 items shipped
 
 **Bugs fixed:**
@@ -130,8 +151,9 @@ Long session, ~18 deploys. Theme: bring mobile to parity, build Tasks from scrat
 
 ## Open follow-ups / tech debt (newest first)
 
-- **Tasks tag input auto-focuses keyboard on tap (open).** Garry wants tapping the Tags field to open a picker/scrollable list of existing tags to select from, NOT pop the keyboard immediately. Current fast-scroll suggestion row (deployed `dpl_Edrcm6...`) sits under an autofocusing input. Next: make it tap-to-open (modal or dropdown of existing tags, keyboard only when creating new). Was mid-fix when session ended — nothing shipped for it.
-- **Tag suggestions in Tasks are task-tags only** — `note_tags` share the namespace but aren't threaded into `Tasks`. Small prop-thread to also suggest note-only tags in the sheet.
+- **Tag suggestions in Tasks are task-tags only** — `note_tags` share the namespace but aren't threaded into `Tasks`. Small prop-thread to also suggest note-only tags in the sheet's picker.
+- **Swipeable board columns for Tasks (deferred).** Todoist screenshot showed one-space-per-column horizontal board; Tasks uses scope chips instead. Structural, not styling — its own session if wanted.
+- **Task detail sheet unsaved-edit model** — dismissing now auto-commits (good). No explicit Cancel/discard path; if a discard-on-dismiss option is ever wanted, add it. Not currently a problem.
 - **Evernote `--repair` re-import** — run `node evernote-migrate.mjs ~/Desktop/ --repair` to restore 194 table-containing notes. Script on Desktop. 194 placeholder notes already deleted from DB.
 - **`roadmap_items.effort_size`** — column exists, all NULL. Garry needs to populate via Roadmap.
 - **Issue 2 Phase B — weekly-update ritual (deferred).** Phase A gave actions inline update threads; Phase B makes "weekly update" first-class with week-grouped logs + Close Week tie-in.
