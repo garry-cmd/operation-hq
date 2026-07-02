@@ -236,6 +236,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
   // Swipe-down-to-dismiss (drag from the grabber zone)
   const [dragY, setDragY] = useState(0)
   const dragStart = useRef<number | null>(null)
+  const saveAndCloseRef = useRef<() => void>(() => {})
   const onDragStart = (clientY: number) => { dragStart.current = clientY }
   const onDragMove = (clientY: number) => {
     if (dragStart.current == null) return
@@ -245,7 +246,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
   const onDragEnd = () => {
     if (dragStart.current == null) return
     dragStart.current = null
-    if (dragY > 110) onClose()
+    if (dragY > 110) saveAndCloseRef.current()
     else setDragY(0)
   }
   const [description, setDescription] = useState(task.description ?? '')
@@ -272,6 +273,11 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
     .filter(r => !spaceId || r.space_id === spaceId)
     .sort((a, b) => a.title.localeCompare(b.title))
 
+  function buildTags() {
+    // fold any uncommitted draft into the tag set
+    const d = tagDraft.trim().toLowerCase().replace(/^#/, '')
+    return d && !tags.includes(d) ? [...tags, d] : tags
+  }
   function save() {
     onSave({
       title: title.trim() || task.title,
@@ -280,8 +286,11 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
       priority,
       space_id: spaceId,
       roadmap_item_id: krId,
-    }, tags)
+    }, buildTags())
   }
+  // Dismissing the sheet (backdrop tap, swipe-down) commits edits — bottom-sheet convention.
+  const saveAndClose = () => { save() }
+  saveAndCloseRef.current = saveAndClose
 
   const LBL: React.CSSProperties = { fontSize: 10, fontWeight: 500, color: 'var(--nw-label)', letterSpacing: '.16em', textTransform: 'uppercase', marginBottom: 7 }
   const CHIP = (active: boolean): React.CSSProperties => ({
@@ -293,7 +302,7 @@ function TaskDetailSheet({ task, tags: initialTags, allTags, spaces, roadmapItem
 
   return (
     <>
-      <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.55)' }} />
+      <div onClick={saveAndClose} style={{ position: 'fixed', inset: 0, zIndex: 70, background: 'rgba(0,0,0,.55)' }} />
       <div style={{
         position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 71,
         background: 'var(--navy-800)', borderTop: '1px solid var(--navy-600)',
